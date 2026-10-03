@@ -15,22 +15,24 @@
     <div class="hud-item"><span class="icon">💰</span><span id="gold">0</span></div>
     <div class="hud-item"><span class="icon">⭐</span><span id="level">1</span><div class="xp-bar"><div id="xp-fill"></div></div></div>
   </div>
-  <div id="hud-actions" class="hidden">
-    <button id="btn-potion">🧪 <span id="potion-count">5</span></button>
-    <button id="btn-soulshot">⚡ <span id="soulshot-count">0</span></button>
-  </div>
+
   <div id="hud-location">
     <div id="location-name">Talking Island</div>
     <div id="location-sub">Поля гремлинов</div>
   </div>
-  <div id="hud-actions" class="hidden">
-    <button id="btn-potion">🧪 <span id="potion-count">5</span></button>
-    <button id="btn-soulshot">⚡ <span id="soulshot-count">0</span></button>
-  </div>
+
   <div id="combat-log"></div>
 
   <div id="joystick" class="hidden">
     <div id="joystick-base"><div id="joystick-stick"></div></div>
+  </div>
+
+  <div id="hud-actions" class="hidden">
+    <div class="hud-stat hud-potion" data-potion="epic"><span class="hud-icon">🏺</span><span class="hud-count" id="pot-epic">0</span></div>
+    <div class="hud-stat hud-potion" data-potion="large"><span class="hud-icon">🍷</span><span class="hud-count" id="pot-large">0</span></div>
+    <div class="hud-stat hud-potion" data-potion="medium"><span class="hud-icon">⚗️</span><span class="hud-count" id="pot-medium">0</span></div>
+    <div class="hud-stat hud-potion" data-potion="small"><span class="hud-icon">🧪</span><span class="hud-count" id="pot-small">5</span></div>
+    <div class="hud-stat" id="hud-soulshot"><span class="hud-icon">⚡</span><span class="hud-count" id="soulshot-count">0</span></div>
   </div>
 
   <div id="bottom-panel" class="hidden">
@@ -41,7 +43,6 @@
     <button data-panel="auction"><span class="bp-icon">⚖</span><span class="bp-label">Аукцион</span><span class="bp-badge" id="bp-auction-badge">0</span></button>
   </div>
 
-  <!-- Карта -->
   <div id="modal-map" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>🗺 Карта мира</h2><button class="modal-close" data-modal="map">✕</button></div>
@@ -52,7 +53,6 @@
     </div>
   </div>
 
-  <!-- Герой -->
   <div id="modal-hero" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>🧙 Герой</h2><button class="modal-close" data-modal="hero">✕</button></div>
@@ -83,7 +83,6 @@
     </div>
   </div>
 
-  <!-- Заточка -->
   <div id="modal-enhance" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>⚒ Заточка</h2><button class="modal-close" data-modal="enhance">✕</button></div>
@@ -95,7 +94,6 @@
     </div>
   </div>
 
-  <!-- Магазин -->
   <div id="modal-shop" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>🏪 Магазин</h2><button class="modal-close" data-modal="shop">✕</button></div>
@@ -112,13 +110,9 @@
     </div>
   </div>
 
-  <!-- Аукцион -->
   <div id="modal-auction" class="modal hidden">
     <div class="modal-window">
-      <div class="modal-header">
-        <h2>⚖ Аукцион</h2>
-        <button class="modal-close" data-modal="auction">✕</button>
-      </div>
+      <div class="modal-header"><h2>⚖ Аукцион</h2><button class="modal-close" data-modal="auction">✕</button></div>
       <div class="modal-body">
         <div class="tab-bar">
           <button class="tab-btn active" data-tab="buy">Купить</button>
@@ -132,7 +126,6 @@
     </div>
   </div>
 
-  <!-- Popup -->
   <div id="item-popup" class="popup hidden">
     <div class="popup-window">
       <div id="item-popup-body"></div>

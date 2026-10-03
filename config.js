@@ -16,7 +16,6 @@ export const SLOT_NAMES = {
   boots:'Сапоги', cloak:'Плащ', ring:'Кольцо', amulet:'Амулет',
 };
 
-// === ГРЕЙДЫ (как в L2) ===
 export const GRADES = {
   ng: { name:'No-Grade', short:'NG', color:'#94a3b8', mult:1.0,  levelReq:1  },
   d:  { name:'D-Grade',  short:'D',  color:'#22c55e', mult:1.6,  levelReq:5  },
@@ -27,7 +26,6 @@ export const GRADES = {
 };
 export const GRADE_ORDER = ['ng','d','c','b','a','s'];
 
-// Один комплект на грейд — по 8 предметов
 export const GRADE_ITEMS = {
   ng: {
     weapon: { name:'Меч новичка',       icon:'🗡️' },
@@ -91,7 +89,6 @@ export const GRADE_ITEMS = {
   },
 };
 
-// Базовые статы слота (на NG)
 export const BASE_STATS = {
   weapon: { attack: 8 },
   helmet: { hp: 20, defense: 2 },
@@ -103,7 +100,36 @@ export const BASE_STATS = {
   amulet: { hp: 20, attack: 3 },
 };
 
-// === ЛОКАЦИИ ===
+export const EQUIP_PRICES = {
+  ng: 150, d: 800, c: 3500, b: 15000, a: 60000, s: 250000,
+};
+export const SCROLL_PRICES = {
+  ng: 60, d: 300, c: 1200, b: 5000, a: 20000, s: 80000,
+};
+
+export function scrollType(slot) {
+  return slot === 'weapon' ? 'weapon' : 'armor';
+}
+
+export const POTIONS = {
+  small:  { name: 'Малое зелье HP',     icon: '🧪', heal: 150,  price: 50,   color: '#ef4444' },
+  medium: { name: 'Зелье HP',           icon: '⚗️', heal: 400,  price: 150,  color: '#f97316' },
+  large:  { name: 'Сильное зелье HP',   icon: '🍷', heal: 900,  price: 500,  color: '#a855f7' },
+  epic:   { name: 'Эпическое зелье HP', icon: '🏺', heal: 2000, price: 2000, color: '#fbbf24' },
+};
+export const POTION_ORDER = ['small', 'medium', 'large', 'epic'];
+export const POTION_AUTO_HP_PERCENT = 0.5;
+export const POTION_COOLDOWN = 3;
+
+export const SOULSHOT_PRICES = {
+  ng: 10, d: 40, c: 150, b: 600, a: 2500, s: 10000,
+};
+
+export const START_ITEMS = {
+  potions: { small: 5, medium: 0, large: 0, epic: 0 },
+  soulshots: { ng: 20, d: 0, c: 0, b: 0, a: 0, s: 0 },
+};
+
 export const LOCATIONS = {
   talking_island: { name:'Talking Island', sub:'Поля гремлинов', mobs:'talking_island', unlockLevel:1,  cols:12, rows:20 },
   giran:          { name:'Giran',          sub:'Порт и болота',  mobs:'giran',          unlockLevel:5,  cols:12, rows:20 },
@@ -113,7 +139,6 @@ export const LOCATIONS = {
 };
 export const TELEPORT_COST = 500;
 
-// === МОБЫ ===
 export const MOBS = {
   talking_island: [
     { id:'gremlin', name:'Гремлин', emoji:'👹', hp:40,  attack:3,  speed:1.2, reward:15, xp:5,  size:0.55 },
@@ -135,30 +160,4 @@ export const MOBS = {
     { id:'demon',  name:'Демон',  emoji:'😈', hp:700,  attack:30, speed:1.4, reward:250, xp:90,  size:0.75 },
     { id:'dragon', name:'Дракон', emoji:'🐉', hp:1200, attack:45, speed:1.0, reward:500, xp:180, size:0.95 },
   ],
-};
-// Цены в магазине
-export const EQUIP_PRICES = {
-  ng: 150, d: 800, c: 3500, b: 15000, a: 60000, s: 250000,
-};
-export const SCROLL_PRICES = {
-  ng: 60, d: 300, c: 1200, b: 5000, a: 20000, s: 80000,
-};
-
-// Тип свитка по слоту
-export function scrollType(slot) {
-  return slot === 'weapon' ? 'weapon' : 'armor';
-}
-// Зелья
-export const POTION_HP_PRICE = 50;
-export const POTION_HP_HEAL = 150;
-
-// Соски (soulshots)
-export const SOULSHOT_PRICES = {
-  ng: 10, d: 40, c: 150, b: 600, a: 2500, s: 10000,
-};
-
-// Стартовый набор
-export const START_ITEMS = {
-  potions: { hp: 5 },
-  soulshots: { ng: 20, d: 0, c: 0, b: 0, a: 0, s: 0 },
 };

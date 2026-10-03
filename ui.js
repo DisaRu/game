@@ -1,4 +1,4 @@
-import { LOCATIONS, SLOTS, SLOT_NAMES, GRADES, TELEPORT_COST, GRADE_ORDER, scrollType } from './config.js';
+import { LOCATIONS, SLOTS, SLOT_NAMES, GRADES, TELEPORT_COST, GRADE_ORDER, scrollType, POTION_ORDER, POTIONS } from './config.js';
 import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor, createItem } from './items.js';
 import { equipItem, unequipItem, canEquip, tryEnhance, MAX_ENHANCE, ENHANCE_CHANCE } from './hero.js';
 import { buyListing, listItem, sellToBot } from './auction.js';
@@ -135,7 +135,6 @@ function showMapInfo(id) {
 function renderHero() {
   const hero = state.hero;
 
-  // Манекен
   const man = document.getElementById('mannequin');
   man.innerHTML = '';
   for (const slot of SLOTS) {
@@ -161,7 +160,6 @@ function renderHero() {
     man.appendChild(el);
   }
 
-  // Статы персонажа
   const stats = document.getElementById('hero-stats');
   stats.innerHTML = `
     <div class="stat-row"><span>Уровень</span><span class="stat-val">${hero.level}</span></div>
@@ -172,7 +170,6 @@ function renderHero() {
     <div class="stat-row"><span>Радиус</span><span class="stat-val">${hero.range.toFixed(1)}</span></div>
   `;
 
-  // Рюкзак
   const grid = document.getElementById('backpack-grid');
   grid.innerHTML = '';
   if (hero.backpack.length === 0) {
@@ -194,7 +191,6 @@ function renderHero() {
     }
   }
 
-  // Свитки
   const sc = document.getElementById('scrolls-list');
   sc.innerHTML = '';
   const scrollIcons = { ng:'📜', d:'📗', c:'📘', b:'📙', a:'📕', s:'🌟' };
@@ -229,25 +225,28 @@ function renderHero() {
   }
   if (!hasScrolls) sc.innerHTML = '<div class="bp-empty">Нет свитков</div>';
 
-  // Зелья
   const pot = document.getElementById('potions-list');
   if (pot) {
     pot.innerHTML = '';
-    if (hero.potions.hp > 0) {
+    let hasPot = false;
+    for (const type of POTION_ORDER) {
+      const c = hero.potions[type] || 0;
+      if (c <= 0) continue;
+      hasPot = true;
+      const p = POTIONS[type];
       const el = document.createElement('div');
       el.className = 'potion-item';
+      el.style.borderColor = p.color;
       el.innerHTML = `
-        <span class="potion-icon">🧪</span>
-        <span class="scroll-name" style="color:#ef4444">Зелье HP</span>
-        <span class="potion-count">×${hero.potions.hp}</span>
+        <span class="potion-icon">${p.icon}</span>
+        <span class="scroll-name" style="color:${p.color}">${p.name}</span>
+        <span class="potion-count">×${c}</span>
       `;
       pot.appendChild(el);
-    } else {
-      pot.innerHTML = '<div class="bp-empty">Нет зелий</div>';
     }
+    if (!hasPot) pot.innerHTML = '<div class="bp-empty">Нет зелий</div>';
   }
 
-  // Соски
   const ss = document.getElementById('soulshots-list');
   if (ss) {
     ss.innerHTML = '';
@@ -454,30 +453,33 @@ function renderShop() {
       content.appendChild(row);
     }
   } else if (shopCat === 'potions') {
-    const price = shop.stock.potionPrice;
-    const row = document.createElement('div');
-    row.className = 'shop-row';
-    row.innerHTML = `
-      <div class="auction-icon">🧪</div>
-      <div class="auction-info">
-        <div class="auction-name">Зелье HP</div>
-        <div class="auction-grade" style="color:#ef4444">Восстанавливает 150 HP</div>
-        <div class="auction-stats"><span>У тебя: ${state.hero.potions.hp}</span></div>
-      </div>
-      <div class="auction-price">${price}💰</div>
-      <button ${state.gold < price ? 'disabled' : ''}>Купить</button>
-    `;
-    row.querySelector('button').addEventListener('click', (e) => {
-      e.stopPropagation();
-      const r = buyPotion(shop, state.hero, state);
-      if (r.ok) {
-        toast('Куплено зелье', 'epic');
-        callbacks.onEquipChange && callbacks.onEquipChange();
-        renderShop();
-        refreshUI();
-      } else if (r.reason === 'no_gold') toast('Недостаточно золота', 'epic');
-    });
-    content.appendChild(row);
+    for (const type of POTION_ORDER) {
+      const p = shop.stock.potions[type];
+      const have = state.hero.potions[type] || 0;
+      const row = document.createElement('div');
+      row.className = 'shop-row';
+      row.innerHTML = `
+        <div class="auction-icon">${p.icon}</div>
+        <div class="auction-info">
+          <div class="auction-name">${p.name}</div>
+          <div class="auction-grade" style="color:${p.color}">Восстанавливает ${p.heal} HP</div>
+          <div class="auction-stats"><span>У тебя: ${have}</span></div>
+        </div>
+        <div class="auction-price">${p.price}💰</div>
+        <button ${state.gold < p.price ? 'disabled' : ''}>Купить</button>
+      `;
+      row.querySelector('button').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const r = buyPotion(shop, state.hero, state, type);
+        if (r.ok) {
+          toast(`Куплено: ${p.name}`, 'rare');
+          callbacks.onEquipChange && callbacks.onEquipChange();
+          renderShop();
+          refreshUI();
+        } else if (r.reason === 'no_gold') toast('Недостаточно золота', 'epic');
+      });
+      content.appendChild(row);
+    }
   } else if (shopCat === 'soulshots') {
     const entry = shop.stock.soulshots[shopGrade];
     const have = state.hero.soulshots[shopGrade] || 0;

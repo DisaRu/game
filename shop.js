@@ -1,9 +1,7 @@
-import { GRADE_ORDER, GRADE_ITEMS, SLOTS, EQUIP_PRICES, SCROLL_PRICES, POTION_HP_PRICE, SOULSHOT_PRICES } from './config.js';
+import { GRADE_ORDER, GRADE_ITEMS, SLOTS, EQUIP_PRICES, SCROLL_PRICES, POTIONS, SOULSHOT_PRICES } from './config.js';
 import { createItem } from './items.js';
 
-export function createShop() {
-  return { stock: null };
-}
+export function createShop() { return { stock: null }; }
 
 export function buildStock() {
   const equipment = {};
@@ -26,16 +24,15 @@ export function buildStock() {
   for (const grade of GRADE_ORDER) {
     soulshots[grade] = { grade, price: SOULSHOT_PRICES[grade] };
   }
-  return { equipment, scrolls, soulshots, potionPrice: POTION_HP_PRICE };
+  return { equipment, scrolls, soulshots, potions: { ...POTIONS } };
 }
 
 export function buyEquipment(shop, hero, state, grade, slot) {
   const price = Math.floor(EQUIP_PRICES[grade] * (slot === 'weapon' ? 1.5 : 1));
   if (state.gold < price) return { ok: false, reason: 'no_gold' };
   state.gold -= price;
-  const item = createItem(grade, slot);
-  hero.backpack.push(item);
-  return { ok: true, item, price };
+  hero.backpack.push(createItem(grade, slot));
+  return { ok: true, price };
 }
 
 export function buyScroll(shop, hero, state, grade, type) {
@@ -46,11 +43,13 @@ export function buyScroll(shop, hero, state, grade, type) {
   return { ok: true, price };
 }
 
-export function buyPotion(shop, hero, state) {
-  if (state.gold < POTION_HP_PRICE) return { ok: false, reason: 'no_gold' };
-  state.gold -= POTION_HP_PRICE;
-  hero.potions.hp++;
-  return { ok: true, price: POTION_HP_PRICE };
+export function buyPotion(shop, hero, state, type) {
+  const p = POTIONS[type];
+  if (!p) return { ok: false };
+  if (state.gold < p.price) return { ok: false, reason: 'no_gold' };
+  state.gold -= p.price;
+  hero.potions[type] = (hero.potions[type] || 0) + 1;
+  return { ok: true, price: p.price, type };
 }
 
 export function buySoulshot(shop, hero, state, grade) {

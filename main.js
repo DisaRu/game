@@ -1,5 +1,5 @@
 import { CONFIG, LOCATIONS, TELEPORT_COST } from './config.js';
-import { createHero, updateHero, addXp, damageHero, recalcStats, useHpPotion, canUseSoulshot, consumeSoulshot } from './hero.js';
+import { createHero, updateHero, addXp, damageHero, recalcStats, useHpPotion, canUseSoulshot, consumeSoulshot, autoUsePotion } from './hero.js';
 import { createMob, createGroupId, pickMobDef, updateMob, aggroGroup } from './mobs.js';
 import { rollDrops, gradeName } from './items.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
@@ -112,7 +112,8 @@ function startGame(classType) {
   state.hero = createHero(classType);
   state.hero.x = COLS / 2; state.hero.y = ROWS / 2;
   state.mobs = []; state.projectiles = []; state.effects = [];
-state.gold = CONFIG.startGold || 3000; state.spawnTimer = 1;
+  state.gold = CONFIG.startGold || 3000;
+  state.spawnTimer = 1;
 
   document.getElementById('class-select').classList.add('hidden');
   document.getElementById('bottom-panel').classList.remove('hidden');
@@ -124,6 +125,9 @@ state.gold = CONFIG.startGold || 3000; state.spawnTimer = 1;
   });
 
   updateHUD(); updateLocationDisplay(); refreshUI();
+
+  document.getElementById('hud-actions').classList.remove('hidden');
+  updateHudActions();
 
   for (let i = 0; i < 5; i++) trySpawnMob();
 }
@@ -148,6 +152,24 @@ function updateHUD() {
   document.getElementById('gold').textContent = state.gold;
   document.getElementById('level').textContent = h.level;
   document.getElementById('xp-fill').style.width = Math.min(100, (h.xp / h.xpToNext) * 100) + '%';
+}
+
+function updateHudActions() {
+  if (!state.hero) return;
+  const h = state.hero;
+
+  const potMap = { small: h.potions.small, medium: h.potions.medium, large: h.potions.large, epic: h.potions.epic };
+  for (const [type, count] of Object.entries(potMap)) {
+    document.getElementById('pot-' + type).textContent = count || 0;
+    const el = document.querySelector(`.hud-potion[data-potion="${type}"]`);
+    if (el) el.style.display = count > 0 ? '' : 'none';
+  }
+
+  const ssGrade = h.equipment.weapon?.grade;
+  const ssCount = ssGrade ? (h.soulshots[ssGrade] || 0) : 0;
+  document.getElementById('soulshot-count').textContent = ssCount;
+  const ssEl = document.getElementById('hud-soulshot');
+  if (ssEl) ssEl.style.display = ssCount > 0 ? '' : 'none';
 }
 
 function updateLocationDisplay() {
@@ -238,7 +260,6 @@ function update(dt) {
     return;
   }
 
-  // Тик аукциона и магазина
   tickAuction(auction, dt, hero.level);
   const sold = collectSold(auction, state);
   if (sold > 0) toast(`Продано с аукциона: +${sold}💰`, 'legendary');
@@ -271,7 +292,17 @@ function update(dt) {
     }
   }
 
-  updateHero(hero, dt, state.mobs, state.projectiles, moveInput, { cols: COLS, rows: ROWS });
+  updateHero(hero, dt, state.mobs, state.projectiles, moveInput, { cols: COLS, rows: ROWS }, state.effects);
+
+  const potResult = autoUsePotion(hero, dt);
+  if (potResult) {
+    toast(`+${potResult.healed} HP`, 'rare');
+    state.effects.push({
+      x: hero.x, y: hero.y - 1,
+      life: 1.0, maxLife: 1.0,
+      color: potResult.color, text: '+' + potResult.healed, big: true,
+    });
+  }
 
   for (let i = state.projectiles.length - 1; i >= 0; i--) {
     const p = state.projectiles[i];
@@ -314,7 +345,7 @@ function update(dt) {
       addXp(hero, m.xp);
       sfxDeath();
 
-     const drops = rollDrops(hero.level);
+      const drops = rollDrops(hero.level);
       for (const it of drops.items) {
         hero.backpack.push(it);
         toast(`${it.icon} ${it.name}`, it.grade);
@@ -346,6 +377,7 @@ function update(dt) {
   }
 
   updateHUD();
+  updateHudActions();
 }
 
 requestAnimationFrame(loop);

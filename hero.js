@@ -1,13 +1,9 @@
-import { CONFIG, SLOTS, GRADES, START_ITEMS, POTION_HP_HEAL } from './config.js';
+import { CONFIG, SLOTS, GRADES, START_ITEMS, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN } from './config.js';
 import { itemStats } from './items.js';
-import { scrollType } from './config.js';
 
 export function createHero(classType) {
   const base = CONFIG.hero[classType];
   const hero = {
-        potions: { hp: START_ITEMS.potions.hp },
-    soulshots: { ...START_ITEMS.soulshots },
-    soulshotActive: false,
     classType, name: base.name, emoji: base.emoji,
     level: 1, xp: 0, xpToNext: CONFIG.level.baseXp,
     baseMaxHp: base.hp, hp: base.hp, maxHp: base.hp,
@@ -17,14 +13,18 @@ export function createHero(classType) {
     x: 0, y: 0, facing: 1,
     equipment: { weapon:null, helmet:null, armor:null, gloves:null, boots:null, cloak:null, ring:null, amulet:null },
     backpack: [],
-   scrolls: {
+    scrolls: {
       ng: { weapon: 3, armor: 3 },
       d:  { weapon: 1, armor: 1 },
       c:  { weapon: 0, armor: 0 },
       b:  { weapon: 0, armor: 0 },
       a:  { weapon: 0, armor: 0 },
       s:  { weapon: 0, armor: 0 },
-    },    totalGold: 0, totalKills: 0,
+    },
+    potions: { small: 5, medium: 0, large: 0, epic: 0 },
+    soulshots: { ng: 20, d: 0, c: 0, b: 0, a: 0, s: 0 },
+    potionCooldown: 0,
+    totalGold: 0, totalKills: 0,
   };
   recalcStats(hero);
   return hero;
@@ -105,7 +105,7 @@ export const MAX_ENHANCE = 15;
 
 export function tryEnhance(hero, item) {
   if (item.enhance >= MAX_ENHANCE) return { ok:false, reason:'max' };
-  const stype = scrollType(item.slot);
+  const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
   const have = hero.scrolls[item.grade]?.[stype] || 0;
   if (have <= 0) return { ok:false, reason:'no_scroll' };
   hero.scrolls[item.grade][stype]--;
@@ -124,7 +124,63 @@ export function tryEnhance(hero, item) {
   return { ok:true, result:'fail' };
 }
 
-export function updateHero(hero, dt, mobs, projectiles, input, bounds) {
+// === ЗЕЛЬЯ ===
+export function useHpPotion(hero, type) {
+  if (!type) {
+    for (const t of ['small', 'medium', 'large', 'epic']) {
+      if ((hero.potions[t] || 0) > 0) { type = t; break; }
+    }
+  }
+  if (!type) return { ok:false, reason:'no_potion' };
+  if ((hero.potions[type] || 0) <= 0) return { ok:false, reason:'no_potion' };
+  if (hero.hp >= hero.maxHp) return { ok:false, reason:'full_hp' };
+  hero.potions[type]--;
+  const heal = POTIONS[type].heal;
+  const healed = Math.min(heal, hero.maxHp - hero.hp);
+  hero.hp += healed;
+  return { ok:true, healed, type, color: POTIONS[type].color };
+}
+
+// Автоматическое использование зелья при HP < 50%
+export function autoUsePotion(hero, dt) {
+  if (hero.potionCooldown > 0) hero.potionCooldown -= dt;
+  if (hero.potionCooldown > 0) return null;
+  if (hero.hp >= hero.maxHp) return null;
+  if (hero.hp / hero.maxHp > POTION_AUTO_HP_PERCENT) return null;
+
+  const needed = hero.maxHp - hero.hp;
+  const order = ['small', 'medium', 'large', 'epic'];
+  for (const type of order) {
+    if ((hero.potions[type] || 0) <= 0) continue;
+    const p = POTIONS[type];
+    if (p.heal >= needed * 0.5 || type === 'epic') {
+      hero.potions[type]--;
+      const healed = Math.min(p.heal, hero.maxHp - hero.hp);
+      hero.hp += healed;
+      hero.potionCooldown = POTION_COOLDOWN;
+      return { type, healed, color: p.color };
+    }
+  }
+  return null;
+}
+
+// === СОСКИ ===
+export function canUseSoulshot(hero) {
+  const weapon = hero.equipment.weapon;
+  if (!weapon) return false;
+  return (hero.soulshots[weapon.grade] || 0) > 0;
+}
+
+export function consumeSoulshot(hero) {
+  const weapon = hero.equipment.weapon;
+  if (!weapon) return false;
+  const grade = weapon.grade;
+  if ((hero.soulshots[grade] || 0) <= 0) return false;
+  hero.soulshots[grade]--;
+  return true;
+}
+
+export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) {
   if (hero.dead) return;
   if (hero.hitAnim > 0) hero.hitAnim -= dt;
   if (hero.attackAnim > 0) hero.attackAnim -= dt;
@@ -158,39 +214,27 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds) {
 
   hero.cooldown = 1 / hero.attackSpeed;
   hero.attackAnim = 0.2;
+
+  let damage = hero.attack;
+  if (canUseSoulshot(hero)) {
+    if (consumeSoulshot(hero)) {
+      damage *= 2;
+      if (effects) {
+        effects.push({
+          x: hero.x, y: hero.y - 0.9,
+          life: 0.45, maxLife: 0.45,
+          color: '#fbbf24', text: '⚡', big: true,
+        });
+      }
+    }
+  }
+
   const tx = target.x - hero.x, ty = target.y - hero.y;
   const d = Math.hypot(tx, ty) || 1;
   projectiles.push({
     x: hero.x, y: hero.y,
     vx: (tx/d) * base.projectileSpeed, vy: (ty/d) * base.projectileSpeed,
-    damage: hero.attack, aoe: base.aoe,
+    damage, aoe: base.aoe,
     color: base.projectileColor, life: 2, trail: [],
   });
-}
-export function useHpPotion(hero) {
-  if (hero.potions.hp <= 0) return { ok:false, reason:'no_potion' };
-  if (hero.hp >= hero.maxHp) return { ok:false, reason:'full_hp' };
-  hero.potions.hp--;
-  const healed = Math.min(POTION_HP_HEAL, hero.maxHp - hero.hp);
-  hero.hp += healed;
-  return { ok:true, healed };
-}
-
-export function canUseSoulshot(hero) {
-  if (!hero.soulshotActive) return false;
-  const weapon = hero.equipment.weapon;
-  if (!weapon) return false;
-  const grade = weapon.grade;
-  if ((hero.soulshots[grade] || 0) <= 0) return false;
-  return true;
-}
-
-export function consumeSoulshot(hero) {
-  const weapon = hero.equipment.weapon;
-  if (!weapon) return false;
-  const grade = weapon.grade;
-  if ((hero.soulshots[grade] || 0) <= 0) return false;
-  hero.soulshots[grade]--;
-  if (hero.soulshots[grade] === 0) hero.soulshotActive = false;
-  return true;
 }

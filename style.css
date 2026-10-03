@@ -35,19 +35,30 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 
 #hud-actions {
   position: fixed; right: 8px; bottom: 68px;
-  display: flex; flex-direction: column; gap: 6px; z-index: 30;
+  display: flex; flex-direction: column-reverse; gap: 6px; z-index: 30;
 }
 #hud-actions button {
-  background: rgba(15, 23, 42, 0.9); border: 2px solid #334155;
+  background: rgba(15, 23, 42, 0.9);
+  border: 2px solid #334155;
   color: #fff; font-family: inherit; font-size: 14px; font-weight: bold;
-  padding: 8px 12px; border-radius: 8px; cursor: pointer;
-  display: flex; align-items: center; gap: 6px; min-width: 70px;
+  padding: 6px 10px; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 64px; justify-content: space-between;
 }
 #hud-actions button:active { transform: scale(0.95); }
-#hud-actions button.active { border-color: #4ade80; background: rgba(20, 83, 45, 0.9); box-shadow: 0 0 12px rgba(74,222,128,0.5); }
-#hud-actions button:disabled { opacity: 0.4; }
-#btn-potion { border-color: #ef4444; }
+#hud-actions button:disabled { opacity: 0.35; }
+#hud-actions .icon { font-size: 18px; }
+#hud-actions .count { color: #fbbf24; font-size: 12px; }
+.hud-potion[data-potion="small"]  { border-color: #ef4444; }
+.hud-potion[data-potion="medium"] { border-color: #f97316; }
+.hud-potion[data-potion="large"]  { border-color: #a855f7; }
+.hud-potion[data-potion="epic"]   { border-color: #fbbf24; }
 #btn-soulshot { border-color: #fbbf24; }
+#btn-soulshot.active {
+  background: rgba(20, 83, 45, 0.9);
+  border-color: #4ade80;
+  box-shadow: 0 0 12px rgba(74,222,128,0.6);
+}
 
 #combat-log {
   position: fixed; bottom: 60px; right: 8px; color: #94a3b8; font-size: 11px;
@@ -401,3 +412,144 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 #death-screen #respawn-timer { color: #fbbf24; font-weight: bold; }
 
 .hidden { display: none !important; }
+/* === Заточка (enhance) === */
+.enhance-slots {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.enhance-slot {
+  aspect-ratio: 1;
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s;
+}
+.enhance-slot.selected {
+  border-color: #4ade80;
+  background: #14532d;
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+}
+.enhance-slot.empty {
+  color: #475569;
+  font-size: 10px;
+  cursor: not-allowed;
+  text-align: center;
+  padding: 4px;
+  line-height: 1.1;
+}
+.enhance-slot .enh {
+  position: absolute;
+  top: 2px; right: 4px;
+  font-size: 11px;
+  color: #fbbf24;
+  font-weight: bold;
+  text-shadow: 0 0 3px #000;
+}
+.enhance-detail {
+  padding: 12px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  color: #cbd5e1;
+}
+.enhance-detail h3 { color: #4ade80; font-size: 15px; margin-bottom: 8px; }
+.enhance-detail .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+.enhance-detail .val { color: #fbbf24; font-weight: bold; }
+.enhance-detail .val.good { color: #4ade80; }
+.enhance-detail .val.bad { color: #ef4444; }
+.enhance-btn {
+  width: 100%;
+  background: #16a34a;
+  border: 2px solid #4ade80;
+  color: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 10px;
+}
+.enhance-btn:disabled { background: #334155; border-color: #475569; opacity: 0.6; cursor: not-allowed; }
+/* === HUD actions (банки + соски) === */
+#hud-actions {
+  position: fixed; right: 8px; bottom: 64px;
+  display: flex; flex-direction: column-reverse; gap: 5px;
+  z-index: 30;
+}
+#hud-actions button {
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #334155;
+  color: #fff; font-family: inherit; font-weight: bold;
+  padding: 5px 10px; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 62px; justify-content: space-between;
+}
+#hud-actions button:active { transform: scale(0.95); }
+#hud-actions button:disabled { opacity: 0.35; }
+#hud-actions .hud-icon { font-size: 18px; }
+#hud-actions .hud-count { color: #fbbf24; font-size: 12px; }
+.hud-potion[data-potion="small"]  { border-color: #ef4444; }
+.hud-potion[data-potion="medium"] { border-color: #f97316; }
+.hud-potion[data-potion="large"]  { border-color: #a855f7; }
+.hud-potion[data-potion="epic"]   { border-color: #fbbf24; }
+#btn-soulshot { border-color: #fbbf24; }
+#btn-soulshot.active {
+  background: rgba(20, 83, 45, 0.9);
+  border-color: #4ade80;
+  box-shadow: 0 0 12px rgba(74,222,128,0.6);
+}
+
+/* === Заточка (enhance) === */
+.enhance-slots {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.enhance-slot {
+  aspect-ratio: 1;
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; cursor: pointer; position: relative;
+  transition: all 0.15s;
+}
+.enhance-slot.selected {
+  border-color: #4ade80; background: #14532d;
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+}
+.enhance-slot.empty {
+  color: #475569; font-size: 10px; cursor: not-allowed;
+  text-align: center; padding: 4px; line-height: 1.1;
+}
+.enhance-slot .enh {
+  position: absolute; top: 2px; right: 4px;
+  font-size: 11px; color: #fbbf24; font-weight: bold;
+  text-shadow: 0 0 3px #000;
+}
+.enhance-detail {
+  padding: 12px; background: #1e293b;
+  border: 1px solid #334155; border-radius: 10px;
+  color: #cbd5e1;
+}
+.enhance-detail h3 { color: #4ade80; font-size: 15px; margin-bottom: 8px; }
+.enhance-detail .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+.enhance-detail .val { color: #fbbf24; font-weight: bold; }
+.enhance-detail .val.good { color: #4ade80; }
+.enhance-detail .val.bad { color: #ef4444; }
+.enhance-btn {
+  width: 100%; background: #16a34a; border: 2px solid #4ade80; color: #fff;
+  padding: 12px; border-radius: 8px; font-family: inherit;
+  font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px;
+}
+.enhance-btn:disabled { background: #334155; border-color: #475569; opacity: 0.6; cursor: not-allowed; }
