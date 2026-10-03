@@ -2,17 +2,28 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Jump Tower</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <canvas id="game"></canvas>
+
   <div id="hud">
-    <div>Уровень: <span id="level">1</span></div>
+    <div>Уровень: <span id="level">1</span> — <span id="level-name"></span></div>
     <div>Время: <span id="time">0.00</span></div>
     <div>Смертей: <span id="deaths">0</span></div>
-    <div id="win" class="hidden">Уровень пройден!</div>
+    <div style="font-size:11px;opacity:0.6;margin-top:6px;">R — рестарт · N — следующий</div>
   </div>
+
+  <div id="win" class="hidden">Уровень пройден! Нажми N</div>
+
+  <div id="touch-controls">
+    <div class="touch-btn" id="btn-left">◀</div>
+    <div class="touch-btn" id="btn-right">▶</div>
+    <div class="touch-btn" id="btn-jump">▲</div>
+  </div>
+
   <script type="module" src="main.js"></script>
 </body>
 </html>
