@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Jump Tower</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,10 +14,18 @@
     <div>Уровень: <span id="level">1</span> — <span id="level-name"></span></div>
     <div>Время: <span id="time">0.00</span></div>
     <div>Смертей: <span id="deaths">0</span></div>
-    <div style="font-size:11px;opacity:0.6;margin-top:6px;">R — рестарт · N — следующий</div>
   </div>
 
-  <div id="win" class="hidden">Уровень пройден! Нажми N</div>
+  <div id="result" class="hidden">
+    <h2>Уровень пройден!</h2>
+    <div class="result-row">Время: <span id="result-time">0.00</span> сек</div>
+    <div class="result-row">Смертей: <span id="result-deaths">0</span></div>
+    <div class="result-row">Игроков прошло: <span id="result-players">—</span></div>
+    <div class="result-buttons">
+      <button id="btn-retry">Заново</button>
+      <button id="btn-next">Следующий</button>
+    </div>
+  </div>
 
   <div id="touch-controls">
     <div class="touch-btn" id="btn-left">◀</div>

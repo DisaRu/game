@@ -1,10 +1,7 @@
-// render.js — отрисовка всех типов объектов
-
 export function render(ctx, canvas, level, player, camera, entities) {
   ctx.fillStyle = '#1a1a2e';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // сетка
   ctx.strokeStyle = '#252540';
   ctx.lineWidth = 1;
   const step = 80;
@@ -20,11 +17,9 @@ export function render(ctx, canvas, level, player, camera, entities) {
   ctx.save();
   ctx.translate(-camera.x, -camera.y);
 
-  for (const e of entities) {
-    drawEntity(ctx, e);
-  }
-
+  for (const e of entities) drawEntity(ctx, e);
   drawPlayer(ctx, player);
+
   ctx.restore();
 }
 
@@ -38,7 +33,6 @@ function drawEntity(ctx, e) {
     case 'moving':
       ctx.fillStyle = '#38bdf8';
       ctx.fillRect(e.x, e.y, e.w, e.h);
-      // стрелка направления
       ctx.fillStyle = '#0c4a6e';
       ctx.fillRect(e.x + e.w / 2 - 4, e.y + e.h / 2 - 2, 8, 4);
       break;
@@ -52,7 +46,6 @@ function drawEntity(ctx, e) {
       } else {
         ctx.fillStyle = '#8b5a3c';
         ctx.fillRect(e.x, e.y, e.w, e.h);
-        // трещины
         ctx.strokeStyle = '#5a3a2a';
         ctx.beginPath();
         ctx.moveTo(e.x + e.w * 0.3, e.y);
@@ -75,10 +68,9 @@ function drawEntity(ctx, e) {
       }
       break;
 
-    case 'turret':
+    case 'turret': {
       ctx.fillStyle = '#ef4444';
       ctx.fillRect(e.x, e.y, e.w, e.h);
-      // ствол
       ctx.fillStyle = '#7f1d1d';
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
       const barrel = 12;
@@ -86,16 +78,13 @@ function drawEntity(ctx, e) {
       if (e.dir === 'right') ctx.fillRect(e.x + e.w, cy - 3, barrel, 6);
       if (e.dir === 'up')    ctx.fillRect(cx - 3, e.y - barrel, 6, barrel);
       if (e.dir === 'down')  ctx.fillRect(cx - 3, e.y + e.h, 6, barrel);
-      // пули
       ctx.fillStyle = '#fbbf24';
-      for (const b of e.bullets) {
-        ctx.fillRect(b.x, b.y, b.w, b.h);
-      }
+      for (const b of e.bullets) ctx.fillRect(b.x, b.y, b.w, b.h);
       break;
+    }
 
-    case 'spike':
+    case 'spike': {
       ctx.fillStyle = '#dc2626';
-      // треугольники
       const count = Math.max(1, Math.floor(e.w / 15));
       const sw = e.w / count;
       for (let i = 0; i < count; i++) {
@@ -107,22 +96,22 @@ function drawEntity(ctx, e) {
         ctx.fill();
       }
       break;
+    }
 
-    case 'crusher':
+    case 'crusher': {
       ctx.fillStyle = '#f59e0b';
       ctx.fillRect(e.x, e.y, e.w, e.h);
-      // зубцы снизу
       ctx.fillStyle = '#b45309';
       const teeth = Math.floor(e.w / 20);
       for (let i = 0; i < teeth; i++) {
         ctx.fillRect(e.x + i * 20, e.y + e.h, 10, 6);
       }
       break;
+    }
 
     case 'goal':
       ctx.fillStyle = '#4ade80';
       ctx.fillRect(e.x, e.y, e.w, e.h);
-      // пульсация
       ctx.strokeStyle = 'rgba(74, 222, 128, 0.5)';
       ctx.lineWidth = 3;
       ctx.strokeRect(e.x - 2, e.y - 2, e.w + 4, e.h + 4);
