@@ -1,45 +1,103 @@
-export function render(ctx, canvas, state, layout) {
-  const { cellPx, offsetX, offsetY, COLS, ROWS } = layout;
+export function render(ctx, canvas, state, layout, camera) {
+  const { cellPx } = layout;
 
   if (!state.hero) {
-    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    bg.addColorStop(0, '#1a1030'); bg.addColorStop(1, '#06090f');
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     return;
   }
 
-  const boardW = cellPx * COLS, boardH = cellPx * ROWS;
-
-  // фон по биому зоны
-  const zoneBg = state.zoneBg || '#1a2a10';
-  ctx.fillStyle = zoneBg;
+  ctx.fillStyle = state.zoneBg || '#1a2a10';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const grassGrad = ctx.createLinearGradient(0, offsetY, 0, offsetY + boardH);
-  grassGrad.addColorStop(0, 'rgba(0,0,0,0.3)');
-  grassGrad.addColorStop(1, 'rgba(255,255,255,0.05)');
-  ctx.fillStyle = grassGrad;
-  ctx.fillRect(offsetX, offsetY, boardW, boardH);
+  // === Тряска экрана ===
+  let shakeX = 0, shakeY = 0;
+  if (state.shake && state.shake.t > 0) {
+    shakeX = (Math.random() - 0.5) * state.shake.power;
+    shakeY = (Math.random() - 0.5) * state.shake.power;
+  }
 
-  drawDecor(ctx, offsetX, offsetY, boardW, boardH);
+  ctx.save();
+  ctx.translate(-camera.x * cellPx + shakeX, -camera.y * cellPx + shakeY);
 
-  ctx.strokeStyle = 'rgba(74, 222, 128, 0.3)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 8]);
-  ctx.strokeRect(offsetX, offsetY, boardW, boardH);
-  ctx.setLineDash([]);
+  const startCol = Math.max(0, Math.floor(camera.x) - 1);
+  const endCol = Math.min(layout.COLS, Math.ceil(camera.x + camera.w) + 1);
+  const startRow = Math.max(0, Math.floor(camera.y) - 1);
+  const endRow = Math.min(layout.ROWS, Math.ceil(camera.y + camera.h) + 1);
 
-  // мобы
+  // Сетка
+  ctx.strokeStyle = 'rgba(100, 200, 120, 0.06)';
+  ctx.lineWidth = 1;
+  for (let x = startCol; x <= endCol; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * cellPx, startRow * cellPx);
+    ctx.lineTo(x * cellPx, endRow * cellPx);
+    ctx.stroke();
+  }
+  for (let y = startRow; y <= endRow; y++) {
+    ctx.beginPath();
+    ctx.moveTo(startCol * cellPx, y * cellPx);
+    ctx.lineTo(endCol * cellPx, y * cellPx);
+    ctx.stroke();
+  }
+
+  // === AoE-маркеры ===
+  if (state.aoeList) {
+    for (const aoe of state.aoeList) {
+      drawAoe(ctx, aoe, cellPx);
+    }
+  }
+
+  // === Портал в данж ===
+  if (state.portal && state.portal.active) {
+    const px = state.portal.x * cellPx;
+    const py = state.portal.y * cellPx;
+    const pulse = 1 + Math.sin(state.portal.pulse) * 0.15;
+    const r = cellPx * 0.9 * pulse;
+
+    ctx.save();
+    ctx.shadowColor = '#a855f7';
+    ctx.shadowBlur = 25;
+    ctx.font = `${Math.floor(cellPx * 1.2)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🏛', px, py);
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(168, 85, 247, ' + (0.5 + Math.sin(state.portal.pulse*2) * 0.3) + ')';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // === Мобы ===
   for (const m of state.mobs) {
     if (m.dead) continue;
-    const px = offsetX + m.x * cellPx, py = offsetY + m.y * cellPx;
+    if (m.x < startCol - 1 || m.x > endCol + 1) continue;
+    if (m.y < startRow - 1 || m.y > endRow + 1) continue;
+
+    const px = m.x * cellPx, py = m.y * cellPx;
     const size = m.size * cellPx;
     const scale = m.spawnAnim > 0 ? (1 - m.spawnAnim / 0.3) : 1;
     const shake = m.hitFlash > 0 ? (Math.random() - 0.5) * 4 : 0;
 
-    const auraRadius = size * 0.75 * scale;
+    // Свечение босса перед кастом
+    if (m.boss && m.castGlow > 0) {
+      const glow = ctx.createRadialGradient(px, py, 0, px, py, size * 1.5);
+      glow.addColorStop(0, 'rgba(255, 200, 50, ' + (0.6 * m.castGlow) + ')');
+      glow.addColorStop(1, 'rgba(255, 200, 50, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(px, py, size * 1.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    let auraRadius = size * 0.75 * scale;
+    if (auraRadius <= 0.1) auraRadius = 0.1;
     const rg = ctx.createRadialGradient(px, py, 0, px, py, auraRadius);
-    if (m.hitFlash > 0) {
+    if (m.boss) {
+      rg.addColorStop(0, 'rgba(220, 30, 30, 0.8)');
+      rg.addColorStop(1, 'rgba(220, 30, 30, 0)');
+    } else if (m.hitFlash > 0) {
       rg.addColorStop(0, 'rgba(255,255,255,0.8)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
     } else if (m.aggro) {
       rg.addColorStop(0, 'rgba(220, 60, 60, 0.6)'); rg.addColorStop(1, 'rgba(220, 60, 60, 0)');
@@ -53,6 +111,7 @@ export function render(ctx, canvas, state, layout) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
+    if (m.boss) { ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 20; }
     ctx.fillText(m.emoji, px + shake, py);
     ctx.restore();
 
@@ -60,19 +119,22 @@ export function render(ctx, canvas, state, layout) {
       const w = size * 0.9, h = 3;
       const ratio = Math.max(0, m.hp / m.maxHp);
       ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(px - w/2, py - size*0.6 - 8, w, h);
-      ctx.fillStyle = '#ef4444'; ctx.fillRect(px - w/2, py - size*0.6 - 8, w*ratio, h);
+      ctx.fillStyle = m.boss ? '#dc2626' : '#ef4444';
+      ctx.fillRect(px - w/2, py - size*0.6 - 8, w*ratio, h);
     }
   }
 
-  // герой
-  drawHero(ctx, state.hero, cellPx, offsetX, offsetY);
+  // === Герой ===
+  drawHero(ctx, state.hero, cellPx);
 
-  // снаряды
+  // === Снаряды ===
   for (const p of state.projectiles) {
-    const px = offsetX + p.x * cellPx, py = offsetY + p.y * cellPx;
+    if (p.x < startCol - 2 || p.x > endCol + 2) continue;
+    if (p.y < startRow - 2 || p.y > endRow + 2) continue;
+
+    const px = p.x * cellPx, py = p.y * cellPx;
     const isMage = p.weaponType === 'staff';
 
-    // трейл
     if (p.trail) {
       for (let i = 0; i < p.trail.length; i++) {
         const t = p.trail[i];
@@ -80,7 +142,7 @@ export function render(ctx, canvas, state, layout) {
         ctx.globalAlpha = a;
         ctx.fillStyle = p.color;
         ctx.beginPath();
-        ctx.arc(offsetX + t.x*cellPx, offsetY + t.y*cellPx, cellPx * (isMage ? 0.10 : 0.05), 0, Math.PI*2);
+        ctx.arc(t.x * cellPx, t.y * cellPx, cellPx * (isMage ? 0.10 : 0.05), 0, Math.PI*2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -90,12 +152,10 @@ export function render(ctx, canvas, state, layout) {
     ctx.shadowBlur = isMage ? 14 : 6;
     ctx.fillStyle = p.color;
     if (isMage) {
-      // шар
       ctx.beginPath(); ctx.arc(px, py, cellPx * 0.13, 0, Math.PI*2); ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.arc(px, py, cellPx * 0.06, 0, Math.PI*2); ctx.fill();
     } else {
-      // стрела — тонкая полоска
       const angle = Math.atan2(p.vy, p.vx);
       ctx.save();
       ctx.translate(px, py);
@@ -106,9 +166,33 @@ export function render(ctx, canvas, state, layout) {
     ctx.shadowBlur = 0;
   }
 
-  // эффекты
+  // === Цепные молнии ===
   for (const fx of state.effects) {
-    const px = offsetX + fx.x * cellPx, py = offsetY + fx.y * cellPx;
+    if (fx.kind !== 'chain') continue;
+    const a = fx.life / fx.maxLife;
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = fx.color;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = fx.color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(fx.x1 * cellPx, fx.y1 * cellPx);
+    const midX = ((fx.x1 + fx.x2) / 2) * cellPx;
+    const midY = ((fx.y1 + fx.y2) / 2) * cellPx + (Math.random() - 0.5) * 20;
+    ctx.lineTo(midX, midY);
+    ctx.lineTo(fx.x2 * cellPx, fx.y2 * cellPx);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  // === Эффекты ===
+  for (const fx of state.effects) {
+    if (fx.kind === 'chain') continue;
+    if (fx.x < startCol - 2 || fx.x > endCol + 2) continue;
+    if (fx.y < startRow - 2 || fx.y > endRow + 2) continue;
+
+    const px = fx.x * cellPx, py = fx.y * cellPx;
     const a = fx.life / fx.maxLife;
     const size = fx.big ? 0.9 : 0.6;
     ctx.globalAlpha = a;
@@ -121,42 +205,92 @@ export function render(ctx, canvas, state, layout) {
     ctx.fillText(fx.text, px, y);
     ctx.globalAlpha = 1;
   }
+
+  ctx.restore();
 }
 
-function drawDecor(ctx, offsetX, offsetY, boardW, boardH) {
-  if (!drawDecor.cache || drawDecor.cacheW !== boardW) {
-    const items = [];
-    let seed = 42;
-    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-    for (let i = 0; i < 80; i++) {
-      items.push({
-        x: offsetX + rnd() * boardW,
-        y: offsetY + rnd() * boardH,
-        size: 2 + rnd() * 5,
-        type: rnd() < 0.6 ? 'grass' : 'stone',
-      });
+function drawAoe(ctx, aoe, cellPx) {
+  const a = aoe.life / aoe.maxLife;
+  const progress = 1 - a;
+  const px = aoe.x * cellPx;
+  const py = aoe.y * cellPx;
+  const intensity = 0.3 + progress * 0.7;
+
+  ctx.save();
+  ctx.globalAlpha = intensity;
+
+  if (aoe.type === 'circle' || aoe.type === 'marker') {
+    let r = aoe.radius * cellPx;
+    if (r <= 0.1) r = 0.1;
+    ctx.fillStyle = aoe.color + '40';
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = aoe.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = aoe.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px, py, r * (1 - progress), 0, Math.PI * 2); ctx.stroke();
+  } else if (aoe.type === 'line') {
+    const w = aoe.thickness * cellPx;
+    const h = aoe.length * cellPx;
+    ctx.fillStyle = aoe.color + '40';
+    ctx.fillRect(px - w/2, py - h/2, w, h);
+    ctx.strokeStyle = aoe.color;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(px - w/2, py - h/2, w, h);
+    ctx.fillStyle = aoe.color;
+    const shrink = 1 - progress;
+    ctx.fillRect(px - w/2, py - h/2 * shrink, w, h * shrink);
+  } else if (aoe.type === 'ring') {
+    // Расширяющееся кольцо
+    let rIn = aoe.innerRadius * cellPx;
+    const rOut = aoe.outerRadius * cellPx;
+    if (rIn <= 0.1) rIn = 0.1;
+
+    // Безопасная зона внутри
+    ctx.fillStyle = 'rgba(74, 222, 128, 0.18)';
+    ctx.beginPath(); ctx.arc(px, py, rIn, 0, Math.PI * 2); ctx.fill();
+
+    // Опасная зона (кольцо)
+    ctx.fillStyle = aoe.color + '40';
+    ctx.beginPath();
+    ctx.arc(px, py, rOut, 0, Math.PI * 2);
+    ctx.arc(px, py, rIn, 0, Math.PI * 2, true);
+    ctx.fill();
+
+    // Контуры
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px, py, rIn, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.strokeStyle = aoe.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(px, py, rOut, 0, Math.PI * 2); ctx.stroke();
+  } else if (aoe.type === 'fire') {
+    for (const s of aoe.spots) {
+      if (s.life <= 0) continue;
+      const sx = s.x * cellPx;
+      const sy = s.y * cellPx;
+      let r = s.radius * cellPx;
+      if (r <= 0.1) r = 0.1;
+      const alpha = Math.min(1, s.life / 2);
+
+      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+      grad.addColorStop(0, 'rgba(251, 146, 60, ' + (alpha * 0.9) + ')');
+      grad.addColorStop(0.5, 'rgba(234, 88, 12, ' + (alpha * 0.6) + ')');
+      grad.addColorStop(1, 'rgba(120, 30, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
     }
-    drawDecor.cache = items;
-    drawDecor.cacheW = boardW;
   }
-  for (const it of drawDecor.cache) {
-    if (it.type === 'grass') {
-      ctx.strokeStyle = 'rgba(120, 200, 100, 0.35)'; ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(it.x, it.y); ctx.lineTo(it.x - 2, it.y - it.size);
-      ctx.moveTo(it.x, it.y); ctx.lineTo(it.x + 2, it.y - it.size);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = 'rgba(120, 120, 120, 0.35)';
-      ctx.beginPath(); ctx.arc(it.x, it.y, it.size * 0.6, 0, Math.PI*2); ctx.fill();
-    }
-  }
+
+  ctx.restore();
 }
 
-function drawHero(ctx, hero, cellPx, offsetX, offsetY) {
+function drawHero(ctx, hero, cellPx) {
   if (!hero || hero.dead) return;
-  const px = offsetX + hero.x * cellPx, py = offsetY + hero.y * cellPx;
-  const r = cellPx * 0.55;
+  const px = hero.x * cellPx, py = hero.y * cellPx;
+  const r = Math.max(1, cellPx * 0.55);
   const scale = hero.attackAnim > 0 ? 1 + hero.attackAnim * 0.5 : 1;
 
   ctx.save(); ctx.translate(px, py); ctx.scale(scale, scale);
@@ -173,10 +307,4 @@ function drawHero(ctx, hero, cellPx, offsetX, offsetY) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(hero.emoji, 0, 0);
   ctx.restore();
-
-  const w = r * 2, h = 4;
-  const ratio = Math.max(0, hero.hp / hero.maxHp);
-  ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(px - w/2, py - r - 12, w, h);
-  ctx.fillStyle = ratio > 0.3 ? '#4ade80' : '#ef4444';
-  ctx.fillRect(px - w/2, py - r - 12, w * ratio, h);
 }

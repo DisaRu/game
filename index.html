@@ -34,11 +34,15 @@
     <div id="joystick-base"><div id="joystick-stick"></div></div>
   </div>
 
-  <div id="hud-actions" class="hidden">
+    <div id="hud-actions" class="hidden">
     <div class="hud-stat hud-potion" data-potion="epic"><span class="hud-icon">🏺</span><span class="hud-count" id="pot-epic">0</span></div>
     <div class="hud-stat hud-potion" data-potion="large"><span class="hud-icon">🍷</span><span class="hud-count" id="pot-large">0</span></div>
     <div class="hud-stat hud-potion" data-potion="medium"><span class="hud-icon">⚗️</span><span class="hud-count" id="pot-medium">0</span></div>
     <div class="hud-stat hud-potion" data-potion="small"><span class="hud-icon">🧪</span><span class="hud-count" id="pot-small">5</span></div>
+        <div class="hud-stat hud-buff" data-buff="range" style="display:none"><span class="hud-icon">📏</span><span class="hud-count">0</span></div>
+    <div class="hud-stat hud-buff" data-buff="speed" style="display:none"><span class="hud-icon">⚡</span><span class="hud-count">0</span></div>
+    <div class="hud-stat hud-buff" data-buff="crit" style="display:none"><span class="hud-icon">💥</span><span class="hud-count">0</span></div>
+    <div class="hud-stat hud-buff" data-buff="attack" style="display:none"><span class="hud-icon">🗡</span><span class="hud-count">0</span></div>
     <div class="hud-stat" id="hud-soulshot"><span class="hud-icon">⚡</span><span class="hud-count" id="soulshot-count">0</span></div>
   </div>
 
@@ -59,8 +63,13 @@
         <div class="ls-cell"><div class="ls-ico">✨</div><div class="ls-val" id="ls-blessed">0</div></div>
       </div>
     </div>
-    <div id="city-zones"></div>
+        <div id="city-zones"></div>
     <button id="btn-open-teleport" class="city-btn">🌍 Телепорт в другой город</button>
+
+    <div id="dev-codes">
+      <input id="dev-code-input" type="text" placeholder="dev-код" autocomplete="off">
+      <button id="dev-code-apply">Активировать</button>
+    </div>
   </div>
 
   <div id="bottom-panel" class="hidden">

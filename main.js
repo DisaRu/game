@@ -1,21 +1,25 @@
-import { CONFIG, GRADE_ORDER } from './config.js';
-import { createHero, updateHero, addXp, damageHero, autoUsePotion } from './hero.js';
+import { CONFIG, GRADE_ORDER, BUFF_SCROLLS, BUFF_ORDER, BUFF_DROP_CHANCE, MOBS } from './config.js';
 import { createMob, createGroupId, pickMobDefFromZone, updateMob, aggroGroup } from './mobs.js';
-import { rollDrops, gradeName, createItem, createBlessedScroll } from './items.js';
+import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets } from './hero.js';
+import { rollDrops, gradeName, createItem, createBlessedScroll, createBuffScroll } from './items.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
 import { createShop, buildStock } from './shop.js';
 import { render } from './render.js';
 import { initUI, refreshUI, toast, showCityScreen, hideCityScreen } from './ui.js';
 import { CITIES, CITY_ORDER, findZone, cityTeleportCost } from './cities.js';
+import { spawnPortalInZone, updatePortal, getPortalCooldown, createDungeon, rollBossDrops, spawnGuard } from './dungeon.js';
+import { castBossAoe, checkAoeHit, checkFireHit, GUARD_CALL, BOSS_AOE } from './bosses.js';
 import {
   initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie
 } from './audio.js';
 
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let COLS = 12, ROWS = 20;
 
-const layout = { COLS, ROWS, cellPx: 40, offsetX: 0, offsetY: 0 };
+let COLS = 24, ROWS = 36;
+const layout = { COLS, ROWS, cellPx: 36, offsetX: 0, offsetY: 0 };
+const camera = { x: 0, y: 0, w: 0, h: 0 };
 
 const state = {
   hero: null, mobs: [], projectiles: [], effects: [],
@@ -25,11 +29,15 @@ const state = {
   inBattle: false,
   zoneBg: '#1a2a10',
   spawnTimer: 0,
-  respawnTimer: 0,
-  paused: false,
+  deathTimer: 10,
+
   sessionStats: { gold: 0, xp: 0, kills: 0, items: 0, scrolls: 0, blessed: 0 },
   lastSession: null,
-  deathTimer: 10,
+
+  // Данж
+  portal: null,
+  dungeon: null,
+  aoeList: [],
 };
 
 const auction = createAuction();
@@ -43,12 +51,20 @@ const input = {
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-  const availH = canvas.height - 100 - 56;
   layout.COLS = COLS; layout.ROWS = ROWS;
-  layout.cellPx = Math.min(canvas.width / COLS, availH / ROWS);
-  layout.offsetX = (canvas.width - layout.cellPx * COLS) / 2;
-  layout.offsetY = 80 + Math.max(0, (availH - layout.cellPx * ROWS) / 2);
+  layout.cellPx = CONFIG.map.cellPx;
+  layout.offsetX = 0; layout.offsetY = 0;
+  camera.w = canvas.width / layout.cellPx;
+  camera.h = canvas.height / layout.cellPx;
 }
+
+function updateCamera(hero) {
+  const targetX = hero.x + 0.5 - camera.w / 2;
+  const targetY = hero.y + 0.5 - camera.h / 2;
+  camera.x = Math.max(0, Math.min(COLS - camera.w, targetX));
+  camera.y = Math.max(0, Math.min(ROWS - camera.h, targetY));
+}
+
 window.addEventListener('resize', resize);
 resize();
 
@@ -65,6 +81,7 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
 });
 
+// Джойстик
 const joyEl = document.getElementById('joystick');
 const joyBase = document.getElementById('joystick-base');
 const joyStick = document.getElementById('joystick-stick');
@@ -115,15 +132,92 @@ canvas.addEventListener('touchmove', handleJoyMove, { passive: true });
 canvas.addEventListener('touchend', handleJoyEnd, { passive: true });
 canvas.addEventListener('touchcancel', handleJoyEnd, { passive: true });
 
+// Тап по canvas — вход в портал / выход из данжа
+canvas.addEventListener('click', (e) => {
+  if (!state.inBattle || !state.hero) return;
+  // Проверка попадания в портал
+  if (state.portal && state.portal.active && !state.dungeon) {
+    const px = (e.clientX) / layout.cellPx + camera.x;
+    const py = (e.clientY) / layout.cellPx + camera.y;
+    const d = Math.hypot(state.portal.x - px, state.portal.y - py);
+    if (d < 1.5) {
+      enterDungeon();
+    }
+  }
+});
+
 document.querySelectorAll('.class-btn').forEach(btn => {
   btn.addEventListener('click', () => startGame(btn.dataset.class));
 });
 
+// HUD-кнопки
+function bindHudActions() {
+  document.querySelectorAll('.hud-potion').forEach(el => {
+    el.addEventListener('click', () => {
+      const h = state.hero; if (!h) return;
+      const type = el.dataset.potion;
+      if ((h.potions[type] || 0) <= 0) return;
+      h.activePotion = (h.activePotion === type) ? null : type;
+      updateHudActions();
+    });
+  });
+
+  const ssBtn = document.getElementById('hud-soulshot');
+  if (ssBtn) {
+    ssBtn.addEventListener('click', () => {
+      const h = state.hero; if (!h) return;
+      const w = h.equipment.weapon;
+      if (!w) { toast('Нужно оружие', 'epic'); return; }
+      if ((h.soulshots[w.grade] || 0) <= 0) { toast('Нет сосок', 'epic'); return; }
+      h.soulshotActive = !h.soulshotActive;
+      updateHudActions();
+    });
+  }
+
+  document.querySelectorAll('.hud-buff').forEach(el => {
+    el.addEventListener('click', () => {
+      const h = state.hero; if (!h) return;
+      const type = el.dataset.buff;
+      const now = Date.now();
+
+      if (h.activeBuffs[type] && h.activeBuffs[type] > now) {
+        delete h.activeBuffs[type];
+        recalcStats(h);
+        updateHudActions();
+        return;
+      }
+
+      const idx = h.backpack.findIndex(x => x.kind === 'buff' && x.buffType === type);
+      if (idx < 0) { toast('Нет свитка', 'epic'); return; }
+      const stack = h.backpack[idx];
+      if (stack.count && stack.count > 1) {
+        stack.count -= 1;
+      } else {
+        h.backpack.splice(idx, 1);
+      }
+      const def = BUFF_SCROLLS[type];
+      h.activeBuffs[type] = now + def.duration * 1000;
+      recalcStats(h);
+      toast(`${def.icon} ${def.name} активирован`, 'legendary');
+      updateHudActions();
+    });
+  });
+}
+bindHudActions();
+// DEBUG: нажми B — получишь 3 blessed
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyB' && state.hero) {
+    for (let i = 0; i < 3; i++) {
+      addToBackpack(state.hero, createBlessedScroll());
+    }
+    toast('✨ +3 Blessed (debug)', 'unique');
+    updateHudActions();
+  }
+});
 function startGame(classType) {
   initAudio();
   state.hero = createHero(classType);
-  state.hero.x = COLS/2;
-  state.hero.y = ROWS/2;
+  state.hero.x = COLS/2; state.hero.y = ROWS/2;
   state.gold = CONFIG.startGold;
   state.currentCity = 'talking_island';
   state.currentZone = null;
@@ -168,6 +262,11 @@ function enterZone(zoneId) {
   state.hero.hp = state.hero.maxHp;
   state.inBattle = true;
 
+  // Портал
+  state.portal = spawnPortalInZone(zone);
+  state.dungeon = null;
+  state.aoeList = [];
+
   document.getElementById('zone-name').textContent = zone.name;
   document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
 
@@ -175,16 +274,61 @@ function enterZone(zoneId) {
   updateHUD();
 }
 
+function enterDungeon() {
+  const zone = state.currentZone;
+  if (!zone) return;
+
+  state.dungeon = createDungeon(zone, state.currentCity);
+  state.mobs = state.dungeon.mobs.slice();
+  state.mobs.push(state.dungeon.boss);
+  state.projectiles = []; state.effects = [];
+  state.aoeList = [];
+  state.portal.active = false;
+  state.hero.x = COLS/2; state.hero.y = ROWS - 4;
+  state.hero.hp = state.hero.maxHp;
+
+  toast('🏛 Данж открыт!', 'legendary');
+  document.getElementById('zone-name').textContent = 'Данж: ' + zone.name;
+  document.getElementById('zone-diff').textContent = '💀';
+}
+
+function exitDungeon(won) {
+  if (state.dungeon) {
+    // если вышли не убив босса — портал на кулдаун (данж закрыт)
+    state.portal.active = false;
+    state.portal.respawnAt = getPortalCooldown();
+  }
+  state.dungeon = null;
+  state.aoeList = [];
+  state.mobs = [];
+  state.projectiles = [];
+  state.effects = [];
+
+  if (won) {
+    // возврат в зону
+    state.hero.x = COLS/2; state.hero.y = ROWS/2;
+    toast('🏆 Данж зачищен!', 'legendary');
+    document.getElementById('zone-name').textContent = state.currentZone.name;
+    document.getElementById('zone-diff').textContent = state.currentZone.diff === 'easy' ? '🟢' : state.currentZone.diff === 'medium' ? '🟡' : '🔴';
+  } else {
+    // умер — возврат в город
+    state.inBattle = false;
+    state.currentZone = null;
+    state.portal = null;
+    showCityScreen();
+  }
+}
+
 function returnToCity() {
   if (state.sessionStats.kills > 0 || state.sessionStats.gold > 0) {
-    state.lastSession = {
-      zone: state.currentZone?.name || '—',
-      ...state.sessionStats,
-    };
+    state.lastSession = { zone: state.currentZone?.name || '—', ...state.sessionStats };
   }
   state.inBattle = false;
   state.mobs = []; state.projectiles = []; state.effects = [];
   state.currentZone = null;
+  state.dungeon = null;
+  state.portal = null;
+  state.aoeList = [];
   playTeleportAnim(() => {
     showCityScreen();
     updateHUD();
@@ -196,8 +340,8 @@ function travelToCity(cityId, cost) {
   state.gold -= cost;
   state.currentCity = cityId;
   state.inBattle = false;
-  state.mobs = [];
-  state.currentZone = null;
+  state.mobs = []; state.currentZone = null;
+  state.dungeon = null; state.portal = null; state.aoeList = [];
   rebuildShopStock();
   playTeleportAnim(() => {
     showCityScreen();
@@ -228,17 +372,50 @@ function updateHUD() {
 
 function updateHudActions() {
   const h = state.hero; if (!h) return;
+
   const potMap = { small: h.potions.small, medium: h.potions.medium, large: h.potions.large, epic: h.potions.epic };
   for (const [type, count] of Object.entries(potMap)) {
     document.getElementById('pot-' + type).textContent = count || 0;
     const el = document.querySelector(`.hud-potion[data-potion="${type}"]`);
-    if (el) el.style.display = count > 0 ? '' : 'none';
+    if (!el) continue;
+    el.style.display = count > 0 ? '' : 'none';
+    el.classList.toggle('active', h.activePotion === type);
   }
+
   const ssGrade = h.equipment.weapon?.grade;
   const ssCount = ssGrade ? (h.soulshots[ssGrade] || 0) : 0;
   document.getElementById('soulshot-count').textContent = ssCount;
   const ssEl = document.getElementById('hud-soulshot');
-  if (ssEl) ssEl.style.display = ssCount > 0 ? '' : 'none';
+  if (ssEl) {
+    ssEl.style.display = ssCount > 0 ? '' : 'none';
+    ssEl.classList.toggle('active', h.soulshotActive);
+  }
+
+  const now = Date.now();
+  for (const type of BUFF_ORDER) {
+    const el = document.querySelector(`.hud-buff[data-buff="${type}"]`);
+    if (!el) continue;
+    const have = h.backpack.some(x => x.kind === 'buff' && x.buffType === type);
+    const active = h.activeBuffs[type] && h.activeBuffs[type] > now;
+    if (!have && !active) {
+      el.style.display = 'none';
+    } else {
+      el.style.display = '';
+      el.classList.toggle('active', !!active);
+      if (active) {
+        const sec = Math.ceil((h.activeBuffs[type] - now) / 1000);
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        el.querySelector('.hud-count').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+      } else {
+        let count = 0;
+        for (const x of h.backpack) {
+          if (x.kind === 'buff' && x.buffType === type) count += (x.count || 1);
+        }
+        el.querySelector('.hud-count').textContent = count;
+      }
+    }
+  }
 }
 
 function log(msg, color) {
@@ -273,6 +450,7 @@ function findSpawnPoint() {
 
 function trySpawnMob() {
   if (!state.currentZone) return;
+  if (state.dungeon) return; // в данже спавн мобов — своя логика
   const sp = state.currentZone.spawn;
   if (state.mobs.length >= sp.maxMobs) return;
 
@@ -303,7 +481,6 @@ function heroDie() {
   sfxHeroDie();
   log(`💀 Погиб! -${lost} опыта`, '#ef4444');
 
-  // Заполнить отчёт
   document.getElementById('lost-xp').textContent = lost;
   document.getElementById('sr-gold').textContent = state.sessionStats.gold;
   document.getElementById('sr-xp').textContent = state.sessionStats.xp;
@@ -312,10 +489,7 @@ function heroDie() {
   document.getElementById('sr-scrolls').textContent = state.sessionStats.scrolls;
   document.getElementById('sr-blessed').textContent = state.sessionStats.blessed;
 
-  state.lastSession = {
-    zone: state.currentZone?.name || '—',
-    ...state.sessionStats,
-  };
+  state.lastSession = { zone: state.currentZone?.name || '—', ...state.sessionStats };
 
   document.getElementById('death-screen').classList.remove('hidden');
   state.deathTimer = 10;
@@ -334,6 +508,9 @@ function respawnHero() {
   state.mobs = []; state.projectiles = []; state.spawnTimer = 2;
   state.inBattle = false;
   state.currentZone = null;
+  state.dungeon = null;
+  state.portal = null;
+  state.aoeList = [];
   updateHUD();
   showCityScreen();
 }
@@ -351,14 +528,14 @@ let lastTime = performance.now();
 function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
-  if (state.hero && state.inBattle && !state.paused) update(dt);
-  if (state.inBattle) render(ctx, canvas, state, layout);
+  if (state.hero && state.inBattle && !state.hero.dead) update(dt);
+  if (state.inBattle) render(ctx, canvas, state, layout, camera);
   requestAnimationFrame(loop);
 }
 
 function update(dt) {
   const hero = state.hero;
-   if (hero.dead) {
+  if (hero.dead) {
     state.deathTimer -= dt;
     document.getElementById('respawn-timer').textContent = Math.ceil(Math.max(0, state.deathTimer));
     if (state.deathTimer <= 0) {
@@ -379,25 +556,75 @@ function update(dt) {
     down: input.down || input.joyY > 0.2,
   };
 
-  const sp = state.currentZone.spawn;
-  state.spawnTimer -= dt;
-  if (state.spawnTimer <= 0) {
-    trySpawnMob();
-    state.spawnTimer = sp.interval * (0.7 + Math.random() * 0.6);
+  // Портал обновляем только в обычной зоне
+  if (state.portal && !state.dungeon) {
+    updatePortal(state.portal, dt, !!state.dungeon);
   }
 
+  // Спавн обычных мобов (только вне данжа)
+  if (!state.dungeon) {
+    const sp = state.currentZone.spawn;
+    state.spawnTimer -= dt;
+    if (state.spawnTimer <= 0) {
+      trySpawnMob();
+      state.spawnTimer = sp.interval * (0.7 + Math.random() * 0.6);
+    }
+  }
+
+  // === Мобы ===
   for (const m of state.mobs) {
     if (m.dead) continue;
     const action = updateMob(m, dt, hero, hero.x, hero.y);
     m.x = Math.max(0.3, Math.min(COLS - 0.3, m.x));
     m.y = Math.max(0.3, Math.min(ROWS - 0.3, m.y));
-    if (action === 'attack') {
-      const result = damageHero(hero, m.attack);
+
+    // Босс кастует AoE
+       if (m.boss && !m.dead) {
+      // Свечение перед кастом
+      if (m.castGlow > 0) m.castGlow -= dt;
+
+      // AoE
+      m.aoeTimer -= dt;
+      if (m.aoeTimer <= 0) {
+        const grade = m.grade || 'ng';
+        const aoeDef = BOSS_AOE[grade] || BOSS_AOE.ng;
+        const interval = aoeDef.interval;
+        m.aoeTimer = interval[0] + Math.random() * (interval[1] - interval[0]);
+        m.castGlow = 0.6;
+        const aoe = castBossAoe(m, hero);
+        if (aoe) state.aoeList.push(aoe);
+      }
+
+      // Призыв охраны
+      const call = GUARD_CALL[m.grade || 'ng'] || GUARD_CALL.ng;
+      m.guardTimer -= dt;
+      if (m.guardTimer <= 0) {
+        m.guardTimer = call.interval;
+        const guardsAlive = state.mobs.filter(x => x.dungeonGuard && !x.dead).length;
+        const canSpawn = Math.min(call.count, call.max - guardsAlive);
+        for (let g = 0; g < canSpawn; g++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 3 + Math.random() * 4;
+          const gx = Math.max(1, Math.min(COLS - 1, m.x + Math.cos(angle) * dist));
+          const gy = Math.max(1, Math.min(ROWS - 1, m.y + Math.sin(angle) * dist));
+          const guard = spawnGuard(state.currentZone, gx, gy, null);
+          state.mobs.push(guard);
+        }
+        if (canSpawn > 0) {
+          toast(`⚠️ Босс призвал ${canSpawn} охраны`, 'epic');
+        }
+      }
+    }
+
+     if (action === 'attack') {
+      // Урон моба = % от maxHp героя
+      const mobDmg = m.boss ? bossDamageFor(hero) : mobDamageFor(hero, state.currentZone.diff);
+      const result = damageHero(hero, mobDmg);
       if (result === 'dodge') {
         state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a5f3fc', text: 'DODGE' });
       } else {
         sfxHeroHit();
-        state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + Math.floor(m.attack) });
+        state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + mobDmg });
         if (result === 'dead') { heroDie(); return; }
       }
       updateHUD();
@@ -411,6 +638,54 @@ function update(dt) {
     state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: potResult.color, text: '+' + potResult.healed, big: true });
   }
 
+  // === AoE ===
+   // === AoE ===
+  for (let i = state.aoeList.length - 1; i >= 0; i--) {
+    const aoe = state.aoeList[i];
+    aoe.life -= dt;
+
+    // Горящая земля — тики каждую секунду
+    if (aoe.type === 'fire') {
+      // Пока delay не прошёл — ничего
+      if (aoe.life > aoe.life - 0.01 || aoe.life <= 5) {
+        // Прошёл delay, огонь горит
+        for (const s of aoe.spots) {
+          if (s.life <= 0) continue;
+          s.life -= dt;
+          s.tickTimer -= dt;
+          if (s.tickTimer <= 0) {
+            s.tickTimer = 1.0;
+            const d = Math.hypot(s.x - hero.x, s.y - hero.y);
+            if (d <= s.radius) {
+              const dmg = Math.max(1, s.damage - Math.floor(hero.defense * 0.5));
+              hero.hp -= dmg;
+              hero.hitAnim = 0.15;
+              state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ea580c', text: '-' + Math.floor(dmg) });
+              sfxHeroHit();
+              if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; heroDie(); return; }
+            }
+          }
+        }
+      }
+    } else if (aoe.life <= 0) {
+      // Обычный взрыв
+      if (checkAoeHit(aoe, hero)) {
+        const dmg = bossAoeDamageFor(hero);   // 25% maxHp
+        const reduced = dmg;
+        hero.hp -= reduced;
+        hero.hitAnim = 0.2;
+        state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: '#dc2626', text: '-' + Math.floor(reduced), big: true });
+        sfxHeroHit();
+        if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; heroDie(); return; }
+      }
+      state.aoeList.splice(i, 1);
+      continue;
+    }
+
+    if (aoe.life <= -10) state.aoeList.splice(i, 1);
+  }
+
+  // Снаряды
   for (let i = state.projectiles.length - 1; i >= 0; i--) {
     const p = state.projectiles[i];
     p.trail.push({ x: p.x, y: p.y });
@@ -428,6 +703,7 @@ function update(dt) {
         const dmgColor = p.isCrit ? '#f97316' : '#facc15';
         const dmgText = (p.isCrit ? '💥' : '-') + Math.floor(p.damage);
         state.effects.push({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: dmgColor, text: dmgText, big: p.isCrit });
+             // Маг AoE
         if (p.aoe > 0) {
           for (const other of state.mobs) {
             if (other === m || other.dead) continue;
@@ -437,6 +713,38 @@ function update(dt) {
             }
           }
         }
+
+        // Цепная атака от заточки
+        const chainCount = getChainTargets(hero);
+        if (chainCount > 0) {
+          const candidates = state.mobs
+            .filter(x => !x.dead && x !== m && Math.hypot(x.x - m.x, x.y - m.y) <= 4)
+            .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))
+            .slice(0, chainCount);
+
+          let prev = m;
+          for (const target of candidates) {
+            target.hp -= p.damage * 0.7;
+            target.hitFlash = 0.12; target.aggro = true;
+            if (target.groupId) aggroGroup(state.mobs, target.groupId);
+            state.effects.push({
+              x: target.x, y: target.y - 0.5,
+              life: 0.5, maxLife: 0.5,
+              color: '#a855f7',
+              text: '-' + Math.floor(p.damage * 0.7),
+            });
+            // Визуал цепи
+            state.effects.push({
+              kind: 'chain',
+              x1: prev.x, y1: prev.y,
+              x2: target.x, y2: target.y,
+              life: 0.25, maxLife: 0.25,
+              color: '#a855f7',
+            });
+            prev = target;
+          }
+        }
+
         hit = true; break;
       }
     }
@@ -449,7 +757,7 @@ function update(dt) {
   for (let i = state.mobs.length - 1; i >= 0; i--) {
     const m = state.mobs[i];
     if (m.hp <= 0) {
-         m.dead = true;
+      m.dead = true;
       state.gold += m.reward;
       addXp(hero, m.xp);
       state.sessionStats.gold += m.reward;
@@ -457,6 +765,42 @@ function update(dt) {
       state.sessionStats.kills++;
       sfxDeath();
 
+      // Дроп с босса
+      if (m.boss && state.dungeon) {
+        const drops = rollBossDrops(hero, state.currentZone, state.dungeon.cityGrade);
+        state.gold += drops.gold;
+        state.sessionStats.gold += drops.gold;
+        toast(`💰 +${drops.gold} с босса`, 'legendary');
+
+        for (const t of drops.buffs) {
+          const sc = createBuffScroll(t);
+          if (sc) addToBackpack(hero, sc);
+        }
+        if (drops.buffs.length > 0) {
+          toast(`📜 Свитки ×${drops.buffs.length}`, 'legendary');
+        }
+
+        if (drops.blessed > 0) {
+          addToBackpack(hero, createBlessedScroll());
+          toast('✨ Blessed Scroll!', 'unique');
+        }
+
+        if (drops.item) {
+          const item = createItem(drops.item, ['weapon','armor','helmet','boots','gloves','cloak','ring','amulet'][Math.floor(Math.random()*8)],
+            state.hero.weaponType);
+          if (item) {
+            addToBackpack(hero, item);
+            toast(`⚔ ${item.name}!`, drops.item);
+          }
+        }
+
+        // Убил босса — выходим из данжа в зону
+        state.mobs.splice(i, 1);
+        setTimeout(() => exitDungeon(true), 1500);
+        continue;
+      }
+
+      // Дроп с обычных/чемпионов
       const drops = rollDrops(CITIES[state.currentCity].grade, m.champion);
       for (const it of drops.items) {
         hero.backpack.push(it);
@@ -470,9 +814,22 @@ function update(dt) {
         toast(`📜 Свиток: ${gradeName(sc.grade)}`, sc.grade);
       }
       if (drops.blessed > 0) {
-        hero.blessed += drops.blessed;
+        for (let k = 0; k < drops.blessed; k++) {
+          addToBackpack(hero, createBlessedScroll());
+        }
         state.sessionStats.blessed += drops.blessed;
         toast(`✨ Blessed Scroll найден!`, 'unique');
+      }
+
+      const buffChance = m.champion ? BUFF_DROP_CHANCE.champion : BUFF_DROP_CHANCE.normal;
+      if (Math.random() < buffChance) {
+        const types = ['attack','crit','speed','range'];
+        const t = types[Math.floor(Math.random() * types.length)];
+        const scroll = createBuffScroll(t);
+        if (scroll) {
+          addToBackpack(hero, scroll);
+          toast(`📜 ${scroll.name}`, 'legendary');
+        }
       }
 
       state.mobs.splice(i, 1);
@@ -490,7 +847,113 @@ function update(dt) {
     if (state.effects[i].life <= 0) state.effects.splice(i, 1);
   }
 
+  updateCamera(hero);
   updateHUD();
 }
+// ===== DEV-КОДЫ =====
+function applyDevCode(code) {
+  code = code.trim().toLowerCase();
+  if (!code) return;
 
+  const hero = state.hero;
+  if (!hero) return;
+
+  // Формат: d12, c12, b12, a12, s12
+  // d = D-грейд, c = C, b = B, a = A, s = S
+  const match = code.match(/^([dcbas])(\d+)$/);
+  if (match) {
+    const grade = match[1];
+    const level = Math.min(20, Math.max(1, parseInt(match[2], 10)));
+
+    // Убираем старое снаряжение в рюкзак (чтобы не пропало)
+    for (const slot of ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet']) {
+      if (hero.equipment[slot]) {
+        hero.backpack.push(hero.equipment[slot]);
+        hero.equipment[slot] = null;
+      }
+    }
+
+    // Создаём фулл-сет
+    const slots = ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet'];
+    for (const slot of slots) {
+      const wt = slot === 'weapon' ? hero.weaponType : null;
+      const item = createItem(grade, slot, wt);
+      if (!item) continue;
+      item.enhance = level;
+      hero.equipment[slot] = item;
+    }
+
+    // Дополнительно: +100 свитков нужного грейда
+    if (!hero.scrolls[grade]) hero.scrolls[grade] = { weapon: 0, armor: 0 };
+    hero.scrolls[grade].weapon += 100;
+    hero.scrolls[grade].armor += 100;
+
+    // +20 blessed
+    for (let i = 0; i < 20; i++) {
+      addToBackpack(hero, createBlessedScroll());
+    }
+
+    // +20 бафф-свитков каждого типа
+    for (const t of ['attack','crit','speed','range']) {
+      for (let i = 0; i < 5; i++) {
+        const sc = createBuffScroll(t);
+        if (sc) addToBackpack(hero, sc);
+      }
+    }
+
+    // +100 зелий каждого типа
+    for (const t of ['small','medium','large','epic']) {
+      hero.potions[t] = (hero.potions[t] || 0) + 100;
+    }
+
+    // +1000 сосок нужного грейда
+    hero.soulshots[grade] = (hero.soulshots[grade] || 0) + 1000;
+
+    // Голда
+    state.gold += 100000;
+
+    recalcStats(hero);
+    updateHUD();
+    refreshUI();
+    toast(`🎁 Dev: ${grade.toUpperCase()}-сет +${level}`, 'unique');
+    return;
+  }
+
+  // Отдельные коды
+  if (code === 'gold') {
+    state.gold += 1000000;
+    updateHUD();
+    toast('💰 +1 000 000 золота', 'unique');
+    return;
+  }
+  if (code === 'level') {
+    hero.level += 50;
+    hero.baseMaxHp += 50 * 25;
+    hero.baseAttack += 50 * 3;
+    recalcStats(hero);
+    updateHUD();
+    toast(`⭐ +50 уровней`, 'unique');
+    return;
+  }
+  if (code === 'full') {
+    // Максимум всего: S+20, все свитки, зелья, соски, blessed
+    applyDevCode('s20');
+    return;
+  }
+
+  toast('❌ Неизвестный код', 'epic');
+}
+
+// Привязка к кнопке
+document.getElementById('dev-code-apply').addEventListener('click', () => {
+  const input = document.getElementById('dev-code-input');
+  applyDevCode(input.value);
+  input.value = '';
+});
+document.getElementById('dev-code-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    applyDevCode(e.target.value);
+    e.target.value = '';
+  }
+});
 requestAnimationFrame(loop);

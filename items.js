@@ -1,5 +1,4 @@
-import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION } from './config.js';
-
+import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION, BUFF_SCROLLS } from './config.js';
 let nextItemId = 1;
 
 export function createItem(grade, slot, weaponType = null) {
@@ -18,7 +17,7 @@ export function createItem(grade, slot, weaponType = null) {
   };
 }
 
-export function createBlessedScroll() {
+export function createBlessedScroll(count = 1) {
   return {
     id: nextItemId++,
     kind: 'blessed',
@@ -26,6 +25,22 @@ export function createBlessedScroll() {
     icon: '✨',
     slot: 'blessed',
     grade: 'any',
+    count: count,
+  };
+}
+
+export function createBuffScroll(type, count = 1) {
+  const def = BUFF_SCROLLS[type];
+  if (!def) return null;
+  return {
+    id: nextItemId++,
+    kind: 'buff',
+    buffType: type,
+    name: def.name,
+    icon: def.icon,
+    slot: 'buff',
+    grade: 'buff',
+    count: count,
   };
 }
 
@@ -35,11 +50,22 @@ export function itemStats(item) {
   const mainKey = enhanceKeys[0];
   const secondKey = enhanceKeys[1];
   const res = {};
+
   for (const [k, v] of Object.entries(item.baseStats || {})) {
+    // Скорость атаки и вампиризм — БЕЗ множителя грейда, только от заточки
+    if (k === 'attackSpeed' || k === 'lifesteal') {
+      let val = v;
+      if (k === mainKey) val *= (1 + item.enhance * 0.15);
+      else if (k === secondKey) val *= (1 + item.enhance * 0.10);
+      res[k] = Math.round(val * 10) / 10;
+      continue;
+    }
+
     const isPerc = PERCENT_STATS.includes(k);
     let val = v * g.mult;
-    if (k === mainKey) val *= (1 + item.enhance * 0.15);
-    else if (k === secondKey) val *= (1 + item.enhance * 0.10);
+    if (k === mainKey) val *= (1 + item.enhance * 0.45);
+    else if (k === secondKey) val *= (1 + item.enhance * 0.30);
+
     if (k === 'range') {
       res[k] = Math.round(val * 100) / 100;
     } else if (isPerc) {
@@ -50,10 +76,11 @@ export function itemStats(item) {
   }
   return res;
 }
-
 export function estimateItemValue(item) {
   if (!item) return 0;
   if (item.kind === 'blessed') return 5000;
+  if (item.kind === 'buff') return 3000;
+
   const g = GRADES[item.grade];
   if (!g) return 100;
   const enhMult = 1 + item.enhance * 0.7;

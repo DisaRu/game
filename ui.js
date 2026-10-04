@@ -1,4 +1,4 @@
-import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt } from './config.js';
+import {BUFF_SCROLLS, SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt } from './config.js';
 import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor } from './items.js';
 import { equipItem, unequipItem, canEquip, tryEnhance } from './hero.js';
 import { buyListing, listItem, sellToBot } from './auction.js';
@@ -203,13 +203,16 @@ function updateEnhanceLive() {
   if (headIcon) headIcon.textContent = item.icon;
   if (headName) headName.textContent = `${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}`;
 
-  const rows = detail.querySelectorAll('.eh-body .row');
+   const rows = detail.querySelectorAll('.eh-body .row');
   const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
   const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
-  const chance = item.enhance < MAX_ENHANCE ? (ENHANCE_CHANCE[item.enhance] ?? 0) : 0;
-  const willBreak = willBreakAt(item.enhance);
   const isMax = item.enhance >= MAX_ENHANCE;
 
+  const willBreak = willBreakAt(item.enhance);
+  const chance = item.enhance < MAX_ENHANCE ? (ENHANCE_CHANCE[item.enhance] ?? 0) : 0;
+  const blessedCount = hero.backpack
+    .filter(x => x.kind === 'blessed')
+    .reduce((sum, x) => sum + (x.count || 1), 0);
   // row[1] Заточка
   if (rows[1]) rows[1].querySelector('.val').textContent = `+${item.enhance} / +${MAX_ENHANCE}`;
 
@@ -235,13 +238,17 @@ function updateEnhanceLive() {
   }
 
   // row[5] Blessed
-  if (rows[5]) rows[5].querySelector('.val').textContent = hero.blessed;
+    // row[5] Blessed
+  if (rows[5]) {
+    const v = rows[5].querySelector('.val');
+    v.textContent = blessedCount;
+    v.className = 'val ' + (blessedCount > 0 ? 'good' : 'bad');
+  }
 
   const btnN = detail.querySelector('.enhance-btn:not(.blessed-btn)');
   const btnB = detail.querySelector('.blessed-btn');
   if (btnN) btnN.disabled = (isMax || scrollsHave <= 0);
-  if (btnB) btnB.disabled = (isMax || scrollsHave <= 0 || hero.blessed <= 0);
-}
+  if (btnB) btnB.disabled = (isMax || scrollsHave <= 0 || blessedCount <= 0);}
 
 function getBackpackEnhanceList(skipMax = false) {
   const hero = state.hero;
@@ -426,17 +433,43 @@ function renderHero() {
   grid.innerHTML = '';
   if (hero.backpack.length === 0) grid.innerHTML = '<div class="bp-empty">Рюкзак пуст</div>';
   else {
-    for (const item of hero.backpack) {
+        for (const item of hero.backpack) {
       const el = document.createElement('div');
       el.className = 'bp-item';
-      el.style.borderColor = gradeColor(item.grade);
-      el.innerHTML = `
-        ${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}
-        <div class="bp-icon">${item.icon}</div>
-        <div class="bp-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div>
-        <div class="bp-name">${item.name}</div>
-        <div class="bp-stats">${statsCompact(item)}</div>
-      `;
+      el.style.borderColor = item.kind === 'buff' ? BUFF_SCROLLS[item.buffType].color
+                            : item.kind === 'blessed' ? '#fbbf24'
+                            : gradeColor(item.grade);
+
+      const cnt = item.count || 1;
+      const countBadge = cnt > 1 ? `<span class="bp-count">×${cnt}</span>` : '';
+
+      if (item.kind === 'buff') {
+        const def = BUFF_SCROLLS[item.buffType];
+        el.innerHTML = `
+          ${countBadge}
+          <div class="bp-icon">${item.icon}</div>
+          <div class="bp-grade" style="color:${def.color}">SCROLL</div>
+          <div class="bp-name">${item.name}</div>
+          <div class="bp-stats"><span style="color:${def.color};font-weight:bold">${def.desc}</span></div>
+        `;
+      } else if (item.kind === 'blessed') {
+        el.innerHTML = `
+          ${countBadge}
+          <div class="bp-icon">${item.icon}</div>
+          <div class="bp-grade" style="color:#fbbf24">BLESSED</div>
+          <div class="bp-name">${item.name}</div>
+          <div class="bp-stats"><span style="color:#fbbf24;font-weight:bold">Защита</span></div>
+        `;
+      } else {
+        el.innerHTML = `
+          ${countBadge}
+          ${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}
+          <div class="bp-icon">${item.icon}</div>
+          <div class="bp-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div>
+          <div class="bp-name">${item.name}</div>
+          <div class="bp-stats">${statsCompact(item)}</div>
+        `;
+      }
       el.addEventListener('pointerdown', (e) => startDrag(e, item, 'backpack'));
       grid.appendChild(el);
     }
@@ -534,6 +567,7 @@ function renderEnhance() {
   bpEl.innerHTML = '';
   for (const item of hero.backpack) {
     if (item.kind === 'blessed') continue;
+    if (item.kind === 'buff') continue;
     bpEl.appendChild(makeEnhanceItemEl(item));
   }
 
@@ -546,6 +580,9 @@ function renderEnhance() {
 
 function isItemStillPresent(item) {
   const hero = state.hero;
+   const blessedCount = hero.backpack
+    .filter(x => x.kind === 'blessed')
+    .reduce((sum, x) => sum + (x.count || 1), 0);
   if (hero.backpack.indexOf(item) >= 0) return true;
   for (const slot of SLOTS) if (hero.equipment[slot] === item) return true;
   return false;
@@ -585,7 +622,7 @@ function showEnhanceDetail(item) {
         <div class="row" style="opacity:0.35"><span>Шанс успеха</span><span class="val">—</span></div>
         <div class="row" style="opacity:0.35"><span>Сгорание</span><span class="val">—</span></div>
         <div class="row" style="opacity:0.35"><span>Свитков</span><span class="val">—</span></div>
-        <div class="row" style="opacity:0.35"><span>Blessed ✨</span><span class="val">${hero.blessed}</span></div>
+        <div class="row" style="opacity:0.35"><span>Blessed ✨</span><span class="val">${blessedCount}</span></div>
       </div>
       <div class="enhance-buttons">
         <button class="enhance-btn" disabled>⚒ Точить</button>
@@ -602,8 +639,10 @@ function showEnhanceDetail(item) {
   const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
   const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
   const isMax = item.enhance >= MAX_ENHANCE;
-  const blessedAvailable = hero.blessed > 0;
-
+  const blessedCount = hero.backpack
+    .filter(x => x.kind === 'blessed')
+    .reduce((sum, x) => sum + (x.count || 1), 0);
+  const blessedAvailable = blessedCount > 0;
   detail.innerHTML = `
     <div class="eh-head">
       <span class="eh-icon">${item.icon}</span>
@@ -617,7 +656,7 @@ function showEnhanceDetail(item) {
         : `<div class="row"><span>Шанс успеха</span><span class="val ${chance >= 0.5 ? 'good' : 'bad'}">${(chance*100).toFixed(0)}%</span></div>
            <div class="row"><span>Сгорание</span><span class="val ${willBreak ? 'bad' : 'good'}">${willBreak ? '🔥 Да' : '✓ Нет'}</span></div>
            <div class="row"><span>Свитков ${stype === 'weapon' ? 'оружия' : 'брони'}</span><span class="val ${scrollsHave > 0 ? '' : 'bad'}">${scrollsHave}</span></div>
-           <div class="row"><span>Blessed ✨</span><span class="val ${blessedAvailable ? 'good' : 'bad'}">${hero.blessed}</span></div>`}
+           <div class="row"><span>Blessed ✨</span><span class="val ${blessedAvailable ? 'good' : 'bad'}">${blessedCount}</span></div>`}
     </div>
     <div class="enhance-buttons">
       <button class="enhance-btn" ${(isMax || scrollsHave <= 0) ? 'disabled' : ''}>⚒ Точить</button>
@@ -868,8 +907,8 @@ function renderAuctionSell() {
     row.innerHTML = `
       <div class="auction-icon">${item.icon}</div>
       <div class="sell-info">
-        <div class="sell-name" style="color:${gradeColor(item.grade)}">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
-        <div class="auction-stats">${item.kind === 'blessed' ? 'Редкий предмет' : statsCompact(item)}</div>
+        <div class="sell-name" style="color:${gradeColor(item.grade)}">${item.name}${item.count > 1 ? ' ×' + item.count : ''}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
+                <div class="auction-stats">${item.kind === 'blessed' ? 'Редкий предмет' : statsCompact(item)}</div>
         <div class="sell-prices">Аукцион: ~${estimate}💰 · Боту: ${Math.floor(estimate*0.5)}💰</div>
       </div>
     `;
@@ -1110,7 +1149,11 @@ function onDragEnd(e) {
 
 function handleDrop(data, target) {
   const { item, sourceType } = data;
-  if (target.drop === 'slot' && sourceType === 'backpack') {
+       if (target.drop === 'slot' && sourceType === 'backpack') {
+    if (item.kind === 'buff' || item.kind === 'blessed') {
+      toast('Это нельзя надеть', 'epic');
+      return;
+    }
     const r = equipItem(state.hero, item);
     if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
     else if (r.reason === 'class') toast('Это оружие другого класса', 'epic');

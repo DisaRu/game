@@ -1,9 +1,17 @@
 export const CONFIG = {
+  map: {
+    cols: 24,
+    rows: 36,
+    cellPx: 36,
+    cameraClamp: true,
+    renderRadius: 20,   // рендерим мобов в радиусе 20 клеток
+    updateRadius: 40,   // обновляем в радиусе 40 клеток
+  },
   hero: {
     archer: { name:'Лучник', emoji:'🏹', hp:200, attack:15, attackSpeed:1.5, range:4.5, projectileSpeed:16, projectileColor:'#4ade80', aoe:0, moveSpeed:3.5, weapon:'bow' },
     mage:   { name:'Маг',    emoji:'🔮', hp:150, attack:22, attackSpeed:0.9, range:3.5, projectileSpeed:10, projectileColor:'#c084fc', aoe:1.2, moveSpeed:3.2, weapon:'staff' },
   },
-  level: { baseXp:50, xpGrowth:1.35, maxLevel:80, hpPerLevel:25, attackPerLevel:3 },
+  level: { baseXp:50, xpGrowth:1.35, maxLevel:80, hpPerLevel:80, attackPerLevel:3 },
   death: { respawnTime:10, xpLossPercent:0.10 },
   startGold: 30000,
 };
@@ -50,12 +58,12 @@ export const BASE_STATS = {
 };
 
 export const GRADES = {
-  ng: { name:'No-Grade', short:'NG', color:'#94a3b8', mult:1.0,  tier: 1, levelReq: 1  },
-  d:  { name:'D-Grade',  short:'D',  color:'#22c55e', mult:1.6,  tier: 2, levelReq: 5  },
-  c:  { name:'C-Grade',  short:'C',  color:'#3b82f6', mult:2.5,  tier: 3, levelReq: 15 },
-  b:  { name:'B-Grade',  short:'B',  color:'#a855f7', mult:4.0,  tier: 4, levelReq: 30 },
-  a:  { name:'A-Grade',  short:'A',  color:'#f59e0b', mult:6.5,  tier: 5, levelReq: 45 },
-  s:  { name:'S-Grade',  short:'S',  color:'#ef4444', mult:10.0, tier: 6, levelReq: 60 },
+  ng: { name:'No-Grade', short:'NG', color:'#94a3b8', mult:1.0,   tier: 1, levelReq: 1  },
+  d:  { name:'D-Grade',  short:'D',  color:'#22c55e', mult:2.5,   tier: 2, levelReq: 5  },
+  c:  { name:'C-Grade',  short:'C',  color:'#3b82f6', mult:6.0,   tier: 3, levelReq: 15 },
+  b:  { name:'B-Grade',  short:'B',  color:'#a855f7', mult:15.0,  tier: 4, levelReq: 30 },
+  a:  { name:'A-Grade',  short:'A',  color:'#f59e0b', mult:40.0,  tier: 5, levelReq: 45 },
+  s:  { name:'S-Grade',  short:'S',  color:'#ef4444', mult:100.0, tier: 6, levelReq: 60 },
 };
 export const GRADE_ORDER = ['ng','d','c','b','a','s'];
 
@@ -176,7 +184,21 @@ export const POTIONS = {
 export const POTION_ORDER = ['small','medium','large','epic'];
 export const POTION_AUTO_HP_PERCENT = 0.5;
 export const POTION_COOLDOWN = 3;
-
+export const BUFF_SCROLLS = {
+  attack: { id:'attack', name:'Свиток ярости',  icon:'🗡', color:'#ef4444', stat:'attack',    bonus:0.20, duration:20*60,  desc:'+20% атака' },
+  crit:   { id:'crit',   name:'Свиток удачи',   icon:'💥', color:'#f97316', stat:'critChance',bonus:15,    duration:20*60,  desc:'+15% крит' },
+  speed:  { id:'speed',  name:'Свиток ветра',   icon:'⚡', color:'#fde047', stat:'attackSpeed',bonus:0.50, duration:20*60,  desc:'+50% скор. атаки' },
+  range:  { id:'range',  name:'Свиток охоты',   icon:'📏', color:'#a3e635', stat:'range',     bonus:0.50, duration:20*60,  desc:'+50% дальность' },
+};
+export const BUFF_ORDER = ['attack','crit','speed','range'];
+// Урон мобов и боссов — % от maxHp героя
+export const MOB_DAMAGE_PERCENT = {
+  easy:   0.015,   // 1.5% за удар
+  medium: 0.030,   // 3%
+  hard:   0.050,   // 5%
+};
+export const BOSS_DAMAGE_PERCENT = 0.08;   // босс — 8% за удар
+export const BOSS_AOE_PERCENT = 0.25;      // AoE босса — 25%
 export const START_ITEMS = {
   potions: { small:5, medium:0, large:0, epic:0 },
   soulshots: { ng:20, d:0, c:0, b:0, a:0, s:0 },
@@ -204,4 +226,8 @@ export const CHAMPION = {
   rewardMult: 3,
   xpMult: 3,
   blessedDropChance: 0.02,
+};
+export const BUFF_DROP_CHANCE = {
+  normal: 0.008,
+  champion: 0.05,
 };
