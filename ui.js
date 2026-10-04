@@ -1,9 +1,10 @@
-import {BUFF_SCROLLS, SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt } from './config.js';
+import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt } from './config.js';
 import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor } from './items.js';
 import { equipItem, unequipItem, canEquip, tryEnhance } from './hero.js';
 import { buyListing, listItem, sellToBot } from './auction.js';
 import { buyEquipment, buyScroll, buyPotion, buySoulshot } from './shop.js';
 import { CITIES, CITY_ORDER, cityTeleportCost, zoneDifficultyLabel } from './cities.js';
+import { BUFF_SCROLLS } from './config.js';
 
 let state = null;
 let auction = null;
@@ -203,42 +204,37 @@ function updateEnhanceLive() {
   if (headIcon) headIcon.textContent = item.icon;
   if (headName) headName.textContent = `${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}`;
 
-   const rows = detail.querySelectorAll('.eh-body .row');
+  const rows = detail.querySelectorAll('.eh-body .row');
   const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
   const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
-  const isMax = item.enhance >= MAX_ENHANCE;
-
   const willBreak = willBreakAt(item.enhance);
   const chance = item.enhance < MAX_ENHANCE ? (ENHANCE_CHANCE[item.enhance] ?? 0) : 0;
+  const isMax = item.enhance >= MAX_ENHANCE;
+
   const blessedCount = hero.backpack
     .filter(x => x.kind === 'blessed')
     .reduce((sum, x) => sum + (x.count || 1), 0);
-  // row[1] Заточка
+
   if (rows[1]) rows[1].querySelector('.val').textContent = `+${item.enhance} / +${MAX_ENHANCE}`;
 
-  // row[2] Шанс успеха
   if (rows[2] && !isMax) {
     const v = rows[2].querySelector('.val');
     v.textContent = `${(chance*100).toFixed(0)}%`;
     v.className = 'val ' + (chance >= 0.5 ? 'good' : 'bad');
   }
 
-  // row[3] Сгорание
   if (rows[3] && !isMax) {
     const v = rows[3].querySelector('.val');
     v.textContent = willBreak ? '🔥 Да' : '✓ Нет';
     v.className = 'val ' + (willBreak ? 'bad' : 'good');
   }
 
-  // row[4] Свитков
   if (rows[4]) {
     const v = rows[4].querySelector('.val');
     v.textContent = scrollsHave;
     v.className = 'val ' + (scrollsHave > 0 ? '' : 'bad');
   }
 
-  // row[5] Blessed
-    // row[5] Blessed
   if (rows[5]) {
     const v = rows[5].querySelector('.val');
     v.textContent = blessedCount;
@@ -248,13 +244,15 @@ function updateEnhanceLive() {
   const btnN = detail.querySelector('.enhance-btn:not(.blessed-btn)');
   const btnB = detail.querySelector('.blessed-btn');
   if (btnN) btnN.disabled = (isMax || scrollsHave <= 0);
-  if (btnB) btnB.disabled = (isMax || scrollsHave <= 0 || blessedCount <= 0);}
+  if (btnB) btnB.disabled = (isMax || scrollsHave <= 0 || blessedCount <= 0);
+}
 
 function getBackpackEnhanceList(skipMax = false) {
   const hero = state.hero;
   const list = [];
   for (const it of hero.backpack) {
     if (it.kind === 'blessed') continue;
+    if (it.kind === 'buff') continue;
     if (skipMax && it.enhance >= MAX_ENHANCE) continue;
     list.push(it);
   }
@@ -293,6 +291,87 @@ function updateShopCounts() {
   });
 }
 
+// ===== ДРАГ И ДРОП =====
+let dragData = null, dragGhost = null;
+let _dragStartTimer = null;
+let _dragStartX = 0;
+let _dragStartY = 0;
+let _dragPending = null;
+
+function startDrag(e, item, sourceType) {
+  _dragStartX = e.clientX;
+  _dragStartY = e.clientY;
+  _dragPending = { item, sourceType, e };
+
+  clearTimeout(_dragStartTimer);
+  _dragStartTimer = setTimeout(() => {
+    if (!_dragPending) return;
+    dragData = { item, sourceType };
+    dragGhost = document.createElement('div');
+    dragGhost.className = 'drag-ghost';
+    dragGhost.textContent = item.icon;
+    dragGhost.style.left = _dragPending.e.clientX + 'px';
+    dragGhost.style.top = _dragPending.e.clientY + 'px';
+    document.body.appendChild(dragGhost);
+    document.addEventListener('pointermove', onDragMove);
+    document.addEventListener('pointerup', onDragEnd);
+    _dragPending = null;
+  }, 150);
+}
+
+document.addEventListener('pointermove', (e) => {
+  if (_dragPending) {
+    const dx = Math.abs(e.clientX - _dragStartX);
+    const dy = Math.abs(e.clientY - _dragStartY);
+    if (dx > 8 || dy > 8) {
+      clearTimeout(_dragStartTimer);
+      _dragPending = null;
+    }
+  }
+}, { passive: true });
+
+document.addEventListener('pointerup', () => {
+  clearTimeout(_dragStartTimer);
+  _dragPending = null;
+});
+
+function onDragMove(e) {
+  if (!dragGhost) return;
+  dragGhost.style.left = e.clientX + 'px';
+  dragGhost.style.top = e.clientY + 'px';
+  document.querySelectorAll('.drop-hover').forEach(el => el.classList.remove('drop-hover'));
+  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
+  if (target) target.classList.add('drop-hover');
+}
+
+function onDragEnd(e) {
+  document.removeEventListener('pointermove', onDragMove);
+  document.removeEventListener('pointerup', onDragEnd);
+  if (dragGhost) { dragGhost.remove(); dragGhost = null; }
+  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
+  document.querySelectorAll('.drop-hover').forEach(el => el.classList.remove('drop-hover'));
+  if (target && dragData) handleDrop(dragData, target.dataset);
+  dragData = null;
+}
+
+function handleDrop(data, target) {
+  const { item, sourceType } = data;
+  if (target.drop === 'slot' && sourceType === 'backpack') {
+    if (item.kind === 'buff' || item.kind === 'blessed') {
+      toast('Это нельзя надеть', 'epic');
+      return;
+    }
+    const r = equipItem(state.hero, item);
+    if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
+    else if (r.reason === 'class') toast('Это оружие другого класса', 'epic');
+    else toast('Нельзя надеть', 'epic');
+  } else if (target.drop === 'backpack' && sourceType === 'equip') {
+    const r = unequipItem(state.hero, item.slot);
+    if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
+  }
+}
+
+// ===== INIT =====
 export function initUI(s, a, sh, cb = {}) {
   state = s; auction = a; shop = sh; callbacks = cb;
 
@@ -394,6 +473,7 @@ export function closeModal(name) {
   hideItemPopup();
 }
 
+// ===== ГЕРОЙ =====
 function renderHero() {
   const hero = state.hero;
   const man = document.getElementById('mannequin');
@@ -433,7 +513,7 @@ function renderHero() {
   grid.innerHTML = '';
   if (hero.backpack.length === 0) grid.innerHTML = '<div class="bp-empty">Рюкзак пуст</div>';
   else {
-        for (const item of hero.backpack) {
+    for (const item of hero.backpack) {
       const el = document.createElement('div');
       el.className = 'bp-item';
       el.style.borderColor = item.kind === 'buff' ? BUFF_SCROLLS[item.buffType].color
@@ -499,14 +579,6 @@ function renderHero() {
       sc.appendChild(el);
     }
   }
-  if (hero.blessed > 0) {
-    hasScrolls = true;
-    const el = document.createElement('div');
-    el.className = 'scroll-item';
-    el.style.borderColor = '#fbbf24';
-    el.innerHTML = `<span class="scroll-icon">✨</span><span class="scroll-name" style="color:#fbbf24">Blessed Scroll</span><span class="scroll-count">×${hero.blessed}</span>`;
-    sc.appendChild(el);
-  }
   if (!hasScrolls) sc.innerHTML = '<div class="bp-empty">Нет свитков</div>';
 
   const pot = document.getElementById('potions-list');
@@ -541,6 +613,7 @@ function renderHero() {
   if (!hasSS) ss.innerHTML = '<div class="bp-empty">Нет сосок</div>';
 }
 
+// ===== ЗАТОЧКА =====
 function renderEnhance() {
   const hero = state.hero;
 
@@ -580,9 +653,6 @@ function renderEnhance() {
 
 function isItemStillPresent(item) {
   const hero = state.hero;
-   const blessedCount = hero.backpack
-    .filter(x => x.kind === 'blessed')
-    .reduce((sum, x) => sum + (x.count || 1), 0);
   if (hero.backpack.indexOf(item) >= 0) return true;
   for (const slot of SLOTS) if (hero.equipment[slot] === item) return true;
   return false;
@@ -613,6 +683,10 @@ function showEnhanceDetail(item) {
   const detail = document.getElementById('enhance-detail');
 
   if (!item) {
+    const blessedCount = hero.backpack
+      .filter(x => x.kind === 'blessed')
+      .reduce((sum, x) => sum + (x.count || 1), 0);
+
     detail.dataset.itemId = '';
     detail.innerHTML = `
       <div class="eh-head"><span class="eh-icon" style="opacity:0.35">—</span><span class="eh-name" style="opacity:0.4">Выбери предмет</span></div>
@@ -643,6 +717,7 @@ function showEnhanceDetail(item) {
     .filter(x => x.kind === 'blessed')
     .reduce((sum, x) => sum + (x.count || 1), 0);
   const blessedAvailable = blessedCount > 0;
+
   detail.innerHTML = `
     <div class="eh-head">
       <span class="eh-icon">${item.icon}</span>
@@ -734,6 +809,7 @@ function showBigEnhanceAnim(item, useBlessed) {
   }, 2200);
 }
 
+// ===== МАГАЗИН =====
 function renderShop() {
   const gradeInfo = document.getElementById('shop-grade-info');
   if (gradeInfo && shop.stock) {
@@ -856,6 +932,7 @@ function renderShop() {
   }
 }
 
+// ===== АУКЦИОН =====
 function renderAuction() {
   if (currentAuctionTab === 'buy') renderAuctionBuy();
   if (currentAuctionTab === 'sell') renderAuctionSell();
@@ -902,13 +979,28 @@ function renderAuctionSell() {
   if (bp.length === 0) { el.innerHTML = '<div class="empty-state">Рюкзак пуст</div>'; return; }
   for (const item of bp) {
     const estimate = estimateItemValue(item);
+    let statsLine = '';
+    if (item.kind === 'blessed') {
+      statsLine = '<span style="color:#fbbf24;font-weight:bold">✨ Универсальный свиток</span>';
+    } else if (item.kind === 'buff') {
+      const def = BUFF_SCROLLS[item.buffType];
+      statsLine = `<span style="color:${def.color};font-weight:bold">${def.icon} ${def.desc}</span>`;
+    } else {
+      statsLine = statsCompact(item);
+    }
+    const nameColor = item.kind === 'blessed' ? '#fbbf24'
+                    : item.kind === 'buff' ? BUFF_SCROLLS[item.buffType].color
+                    : gradeColor(item.grade);
+
     const row = document.createElement('div');
     row.className = 'sell-item-row';
     row.innerHTML = `
       <div class="auction-icon">${item.icon}</div>
       <div class="sell-info">
-        <div class="sell-name" style="color:${gradeColor(item.grade)}">${item.name}${item.count > 1 ? ' ×' + item.count : ''}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
-                <div class="auction-stats">${item.kind === 'blessed' ? 'Редкий предмет' : statsCompact(item)}</div>
+        <div class="sell-name" style="color:${nameColor}">
+          ${item.name}${item.count > 1 ? ' ×' + item.count : ''}${item.enhance > 0 ? ' +' + item.enhance : ''}
+        </div>
+        <div class="auction-stats">${statsLine}</div>
         <div class="sell-prices">Аукцион: ~${estimate}💰 · Боту: ${Math.floor(estimate*0.5)}💰</div>
       </div>
     `;
@@ -944,13 +1036,25 @@ function showSellPopup(item) {
   const botPrice = Math.floor(estimate * 0.5);
   const popup = document.getElementById('item-popup');
   const body = document.getElementById('item-popup-body');
+
+  let headInfo = '';
+  if (item.kind === 'blessed') {
+    headInfo = '<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#fbbf24">✨ Blessed Scroll</span></div>' +
+               '<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val">Спасает от сгорания</span></div>';
+  } else if (item.kind === 'buff') {
+    const def = BUFF_SCROLLS[item.buffType];
+    headInfo = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:${def.color}">${def.desc}</span></div>
+                <div class="stat-row"><span class="stat-name">Длительность</span><span class="stat-val">20 мин</span></div>`;
+  } else {
+    headInfo = `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div>
+      ${statsMultiline(item)}`;
+  }
+
   body.innerHTML = `
     <div class="item-icon-big">${item.icon}</div>
     <h3>${item.name} ${item.enhance > 0 ? `+${item.enhance}` : ''}</h3>
-    ${item.kind === 'blessed' ? '<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val">Blessed Scroll</span></div>' :
-      `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div>
-       ${statsMultiline(item)}`}
-    <div style="display:flex;gap:8px;margin-top:14px">
+    ${headInfo}
+    <div style="display:flex;gap:6px;margin-top:10px">
       <button class="popup-close" id="pp-auction" style="border-color:#4ade80;color:#4ade80;flex:1">Аукцион: ${estimate}💰</button>
       <button class="popup-close" id="pp-bot" style="border-color:#fbbf24;color:#fbbf24;flex:1">Боту: ${botPrice}💰</button>
     </div>
@@ -959,14 +1063,27 @@ function showSellPopup(item) {
 
   document.getElementById('pp-auction').addEventListener('click', () => {
     const r = listItem(auction, state.hero, item, estimate);
-    if (r.ok) { toast(`Выставлено`, 'rare'); hideItemPopup(); renderAuctionSell(); }
+    if (r.ok) {
+      toast(`Выставлено: ${item.name}`, 'rare');
+      hideItemPopup();
+      renderAuctionSell();
+      renderHero();
+    }
   });
   document.getElementById('pp-bot').addEventListener('click', () => {
     const r = sellToBot(state.hero, item);
-    if (r.ok) { state.gold += r.price; toast(`Продано: +${r.price}💰`, 'rare'); hideItemPopup(); renderAuctionSell(); callbacks.onEquipChange && callbacks.onEquipChange(); }
+    if (r.ok) {
+      state.gold += r.price;
+      toast(`Продано: +${r.price}💰`, 'rare');
+      hideItemPopup();
+      renderAuctionSell();
+      renderHero();
+      callbacks.onEquipChange && callbacks.onEquipChange();
+    }
   });
 }
 
+// ===== POPUP =====
 export function showItemPopup(item, context) {
   const popup = document.getElementById('item-popup');
   const body = document.getElementById('item-popup-body');
@@ -1110,57 +1227,6 @@ function renderTeleport() {
       });
     }
     list.appendChild(el);
-  }
-}
-
-let dragData = null, dragGhost = null;
-
-function startDrag(e, item, sourceType) {
-  e.preventDefault(); e.stopPropagation();
-  dragData = { item, sourceType };
-  dragGhost = document.createElement('div');
-  dragGhost.className = 'drag-ghost';
-  dragGhost.textContent = item.icon;
-  dragGhost.style.left = e.clientX + 'px';
-  dragGhost.style.top = e.clientY + 'px';
-  document.body.appendChild(dragGhost);
-  document.addEventListener('pointermove', onDragMove);
-  document.addEventListener('pointerup', onDragEnd);
-}
-
-function onDragMove(e) {
-  if (!dragGhost) return;
-  dragGhost.style.left = e.clientX + 'px';
-  dragGhost.style.top = e.clientY + 'px';
-  document.querySelectorAll('.drop-hover').forEach(el => el.classList.remove('drop-hover'));
-  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
-  if (target) target.classList.add('drop-hover');
-}
-
-function onDragEnd(e) {
-  document.removeEventListener('pointermove', onDragMove);
-  document.removeEventListener('pointerup', onDragEnd);
-  if (dragGhost) { dragGhost.remove(); dragGhost = null; }
-  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
-  document.querySelectorAll('.drop-hover').forEach(el => el.classList.remove('drop-hover'));
-  if (target && dragData) handleDrop(dragData, target.dataset);
-  dragData = null;
-}
-
-function handleDrop(data, target) {
-  const { item, sourceType } = data;
-       if (target.drop === 'slot' && sourceType === 'backpack') {
-    if (item.kind === 'buff' || item.kind === 'blessed') {
-      toast('Это нельзя надеть', 'epic');
-      return;
-    }
-    const r = equipItem(state.hero, item);
-    if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
-    else if (r.reason === 'class') toast('Это оружие другого класса', 'epic');
-    else toast('Нельзя надеть', 'epic');
-  } else if (target.drop === 'backpack' && sourceType === 'equip') {
-    const r = unequipItem(state.hero, item.slot);
-    if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
   }
 }
 
