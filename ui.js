@@ -29,15 +29,13 @@ const ENHANCE_STATS_MAP = {
   amulet: ['lifesteal','hp'],
 };
 
-// ===== LONG-PRESS =====
+// ===== LONG-PRESS (покупка) =====
 let _holdBuy = null;
-let _holdEnhance = null;
 let _lastLongPressTime = 0;
 let _suppressNextClick = false;
 
 function _startHold(btn, onTick, holdMs = 400, repeatMs = 100) {
   _killHold(_holdBuy); _holdBuy = null;
-  _killHold(_holdEnhance); _holdEnhance = null;
   btn.classList.add('holding');
   const st = { btn, timeout: null, interval: null, alive: true, ticked: false };
   st.timeout = setTimeout(() => {
@@ -68,10 +66,9 @@ function _killHold(st) {
 }
 
 function _endHoldBuy() { if (_holdBuy) { _killHold(_holdBuy); _holdBuy = null; } }
-function _endHoldEnhance() { if (_holdEnhance) { _killHold(_holdEnhance); _holdEnhance = null; } }
 
-window.addEventListener('pointerup', () => { _endHoldBuy(); _endHoldEnhance(); });
-window.addEventListener('pointercancel', () => { _endHoldBuy(); _endHoldEnhance(); });
+window.addEventListener('pointerup', () => { _endHoldBuy(); });
+window.addEventListener('pointercancel', () => { _endHoldBuy(); });
 
 function bindBuyButton(btn, buyFn) {
   if (!btn) return;
@@ -89,84 +86,200 @@ function bindBuyButton(btn, buyFn) {
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
+// ===== АВТО-ТОЧКА =====
+let _autoEnhance = null;      // { alive, interval, useBlessed, ticked }
+let _lastAutoTime = 0;
+let _suppressNextEnhanceClick = false;
+
+function _stopAutoEnhance() {
+  if (!_autoEnhance) return;
+  _autoEnhance.alive = false;
+  if (_autoEnhance.interval) clearInterval(_autoEnhance.interval);
+  document.querySelectorAll('.enhance-btn.holding, .blessed-btn.holding').forEach(b => b.classList.remove('holding'));
+  if (_autoEnhance.ticked) {
+    _suppressNextEnhanceClick = true;
+    _lastAutoTime = Date.now();
+  }
+  _autoEnhance = null;
+}
+
+window.addEventListener('pointerup', _stopAutoEnhance);
+window.addEventListener('pointercancel', _stopAutoEnhance);
+
+function _selectEnhanceCard(item) {
+  document.querySelectorAll('.enhance-item').forEach(e => e.classList.remove('selected'));
+  const card = document.querySelector(`.enhance-item[data-item-id="${item.id}"]`);
+  if (card) card.classList.add('selected');
+}
+
+function _switchToNextEnhanceTarget(currentItem, useBlessed) {
+  const list = getBackpackEnhanceList(true);
+  const idx = list.indexOf(currentItem);
+  let next = null;
+  if (idx >= 0 && idx + 1 < list.length) next = list[idx + 1];
+  else if (idx - 1 >= 0) next = list[idx - 1];
+  if (!next) return false;
+
+  const stype = next.slot === 'weapon' ? 'weapon' : 'armor';
+  const scrolls = state.hero.scrolls[next.grade]?.[stype] || 0;
+  if (scrolls <= 0) return false;
+
+  enhanceSelectedItem = next;
+  _selectEnhanceCard(next);
+  showEnhanceDetail(next);
+  return true;
+}
+
+function _doAutoTick(useBlessed) {
+  const hero = state.hero;
+  const item = enhanceSelectedItem;
+  if (!item) { _stopAutoEnhance(); return false; }
+
+  // +12 — переключаемся
+  if (item.enhance >= 12) {
+    if (!_switchToNextEnhanceTarget(item, useBlessed)) {
+      _stopAutoEnhance();
+      return false;
+    }
+    return true;
+  }
+
+  // Свитков нет — переключаемся
+  const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
+  const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
+  if (scrollsHave <= 0) {
+    if (!_switchToNextEnhanceTarget(item, useBlessed)) {
+      _stopAutoEnhance();
+      return false;
+    }
+    return true;
+  }
+
+  // ЗАПОМИНАЕМ позицию ДО заточки
+  const listBefore = getBackpackEnhanceList(true);
+  const idxBefore = listBefore.indexOf(item);
+
+  const r = tryEnhance(hero, item, useBlessed);
+
+  if (!r.ok) {
+    if (!_switchToNextEnhanceTarget(item, useBlessed)) {
+      _stopAutoEnhance();
+      return false;
+    }
+    return true;
+  }
+
+  playEnhanceAnim(r.result, item, r.blessedUsed);
+  callbacks.onEquipChange && callbacks.onEquipChange();
+
+  if (r.result === 'destroyed') {
+    // удаляем карточку
+    const oldCard = document.querySelector(`.enhance-item[data-item-id="${item.id}"]`);
+    if (oldCard) oldCard.remove();
+
+    // список ПОСЛЕ удаления
+    const listAfter = getBackpackEnhanceList(true);
+    let next = null;
+    if (idxBefore >= 0 && listAfter.length > 0) {
+      const pos = Math.min(idxBefore, listAfter.length - 1);
+      next = listAfter[pos];
+    } else if (listAfter.length > 0) {
+      next = listAfter[0];
+    }
+
+    if (!next) {
+      _stopAutoEnhance();
+      enhanceSelectedItem = null;
+      showEnhanceDetail(null);
+      return false;
+    }
+
+    enhanceSelectedItem = next;
+    _selectEnhanceCard(next);
+    showEnhanceDetail(next);
+    return true;
+  }
+
+  updateEnhanceItemCard(item);
+  updateEnhanceLive();
+
+  if (item.enhance >= 12) {
+    if (!_switchToNextEnhanceTarget(item, useBlessed)) {
+      _stopAutoEnhance();
+      return false;
+    }
+  }
+  return true;
+}
+
 function bindEnhanceButton(btn, getItem, useBlessed) {
   if (!btn) return;
+
   btn.addEventListener('click', (e) => {
-    if (_suppressNextClick) { _suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
-    if (Date.now() - _lastLongPressTime < 500) return;
+    if (_suppressNextEnhanceClick) { _suppressNextEnhanceClick = false; e.preventDefault(); e.stopPropagation(); return; }
+    if (Date.now() - _lastAutoTime < 500) return;
     e.preventDefault(); e.stopPropagation();
     doOneEnhance(getItem(), useBlessed);
   });
+
   btn.addEventListener('pointerdown', (e) => {
     if (btn.disabled) return;
     e.preventDefault(); e.stopPropagation();
+
     const item = getItem();
     if (!item) return;
-    if (item.enhance >= 12) return;
-    _holdEnhance = _startHold(btn, () => {
-      const it = getItem();
-      if (!it) return { ok: false };
-      if (it.enhance >= 12) { _endHoldEnhance(); return { ok: false }; }
 
-      const r = tryEnhance(state.hero, it, useBlessed);
-      if (!r.ok) { _endHoldEnhance(); return { ok: false }; }
+    btn.classList.add('holding');
+    _autoEnhance = { alive: true, interval: null, useBlessed, ticked: false };
 
-      playEnhanceAnim(r.result, it, r.blessedUsed);
-      callbacks.onEquipChange && callbacks.onEquipChange();
+    setTimeout(() => {
+      if (!_autoEnhance || !_autoEnhance.alive) return;
+      const ok = _doAutoTick(useBlessed);
+      if (!ok) { _stopAutoEnhance(); return; }
+      _autoEnhance.ticked = true;
 
-      if (r.result === 'destroyed') {
-        const oldCard = document.querySelector(`.enhance-item[data-item-id="${it.id}"]`);
-        if (oldCard) oldCard.remove();
-
-        const next = getNextEnhanceItem(it, true);
-        enhanceSelectedItem = next;
-        document.querySelectorAll('.enhance-item').forEach(e => e.classList.remove('selected'));
-
-        if (!next) {
-          showEnhanceDetail(null);
-          return { ok: false };
+      _autoEnhance.interval = setInterval(() => {
+        if (!_autoEnhance || !_autoEnhance.alive) {
+          if (_autoEnhance) clearInterval(_autoEnhance.interval);
+          return;
         }
-
-        const newCard = document.querySelector(`.enhance-item[data-item-id="${next.id}"]`);
-        if (newCard) newCard.classList.add('selected');
-
-        showEnhanceDetail(next);
-
-        const detail = document.getElementById('enhance-detail');
-        const newBtn = useBlessed
-          ? detail.querySelector('.blessed-btn')
-          : detail.querySelector('.enhance-btn:not(.blessed-btn)');
-        if (newBtn && _holdEnhance && _holdEnhance.alive && !newBtn.disabled) {
-          newBtn.classList.add('holding');
-          _holdEnhance.btn = newBtn;
-          return { ok: true };
-        }
-        return { ok: false };
-      }
-
-      updateEnhanceItemCard(it);
-      updateEnhanceLive();
-      return { ok: true };
-    }, 400, 300);
+        const ok2 = _doAutoTick(_autoEnhance.useBlessed);
+        if (!ok2) { _stopAutoEnhance(); return; }
+        _autoEnhance.ticked = true;
+      }, 250);
+    }, 400);
   });
+
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 function doOneEnhance(item, useBlessed) {
   if (!item) return;
   const hero = state.hero;
+
   if (item.enhance >= 12) {
     showBigEnhanceAnim(item, useBlessed);
     return;
   }
+
   const r = tryEnhance(hero, item, useBlessed);
   if (!r.ok) { toast('Нельзя', 'epic'); return; }
   playEnhanceAnim(r.result, item, r.blessedUsed);
 
   if (r.result === 'destroyed') {
+    const listBefore = getBackpackEnhanceList(true);
+    const idxBefore = listBefore.indexOf(item);
+
     const oldCard = document.querySelector(`.enhance-item[data-item-id="${item.id}"]`);
     if (oldCard) oldCard.remove();
-    const next = getNextEnhanceItem(item, true);
+
+    const listAfter = getBackpackEnhanceList(true);
+    let next = null;
+    if (idxBefore >= 0 && listAfter.length > 0) {
+      const pos = Math.min(idxBefore, listAfter.length - 1);
+      next = listAfter[pos];
+    }
+
     enhanceSelectedItem = next;
     document.querySelectorAll('.enhance-item').forEach(e => e.classList.remove('selected'));
     if (next) {
@@ -268,14 +381,6 @@ function getNextBackpackItem(currentItem, skipMax = false) {
   if (idx + 1 < list.length) return list[idx + 1];
   if (idx - 1 >= 0) return list[idx - 1];
   return null;
-}
-
-function getNextEnhanceItem(currentItem, skipMax = false) {
-  const hero = state.hero;
-  for (const slot of SLOTS) {
-    if (hero.equipment[slot] === currentItem) return null;
-  }
-  return getNextBackpackItem(currentItem, skipMax);
 }
 
 function updateShopCounts() {
