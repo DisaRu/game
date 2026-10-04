@@ -1,79 +1,86 @@
-import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, EQUIP_PRICES, SCROLL_PRICES } from './config.js';
+import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION } from './config.js';
 
 let nextItemId = 1;
 
-export function maxGradeForLevel(level) {
-  if (level >= 50) return 's';
-  if (level >= 35) return 'a';
-  if (level >= 20) return 'b';
-  if (level >= 10) return 'c';
-  if (level >= 5)  return 'd';
-  return 'ng';
-}
-
-export function rollGrade(heroLevel) {
-  const maxIdx = GRADE_ORDER.indexOf(maxGradeForLevel(heroLevel));
-  const r = Math.random();
-  if (r < 0.5) return GRADE_ORDER[maxIdx];
-  if (r < 0.8 && maxIdx >= 1) return GRADE_ORDER[maxIdx - 1];
-  if (maxIdx >= 2) return GRADE_ORDER[maxIdx - 2];
-  return GRADE_ORDER[0];
-}
-
-export function createItem(grade, slot, enhance = 0) {
-  const def = GRADE_ITEMS[grade][slot];
+export function createItem(grade, slot, weaponType = null) {
+  let key = slot;
+  if (slot === 'weapon') key = 'weapon_' + (weaponType === 'staff' ? 'mage' : 'archer');
+  const def = GRADE_ITEMS[grade][key];
+  if (!def) return null;
   return {
     id: nextItemId++,
     kind: 'equip',
-    slot, grade, enhance,
+    slot, grade, enhance: 0,
+    weaponType: slot === 'weapon' ? (weaponType || 'bow') : null,
     name: def.name,
     icon: def.icon,
     baseStats: { ...BASE_STATS[slot] },
   };
 }
 
-export function generateItem(heroLevel, forceGrade = null, forceSlot = null) {
-  const grade = forceGrade || rollGrade(heroLevel);
-  const slot = forceSlot || SLOTS[Math.floor(Math.random() * SLOTS.length)];
-  return createItem(grade, slot);
-}
-
-export function itemPrice(item) {
-  return EQUIP_PRICES[item.grade] || 100;
-}
-
-export function scrollPrice(grade) {
-  return SCROLL_PRICES[grade] || 100;
+export function createBlessedScroll() {
+  return {
+    id: nextItemId++,
+    kind: 'blessed',
+    name: 'Blessed Scroll',
+    icon: '✨',
+    slot: 'blessed',
+    grade: 'any',
+  };
 }
 
 export function itemStats(item) {
-  const g = GRADES[item.grade];
-  const enhMult = 1 + item.enhance * 0.12;
+  const g = GRADES[item.grade] || { mult: 1 };
+  const enhanceKeys = ENHANCE_STATS[item.slot] || [];
+  const mainKey = enhanceKeys[0];
+  const secondKey = enhanceKeys[1];
   const res = {};
-  for (const [k, v] of Object.entries(item.baseStats)) {
-    res[k] = Math.floor(v * g.mult * enhMult);
+  for (const [k, v] of Object.entries(item.baseStats || {})) {
+    const isPerc = PERCENT_STATS.includes(k);
+    let val = v * g.mult;
+    if (k === mainKey) val *= (1 + item.enhance * 0.15);
+    else if (k === secondKey) val *= (1 + item.enhance * 0.10);
+    if (k === 'range') {
+      res[k] = Math.round(val * 100) / 100;
+    } else if (isPerc) {
+      res[k] = Math.round(val * 10) / 10;
+    } else {
+      res[k] = Math.floor(val);
+    }
   }
   return res;
 }
 
 export function estimateItemValue(item) {
+  if (!item) return 0;
+  if (item.kind === 'blessed') return 5000;
   const g = GRADES[item.grade];
-  const enhMult = 1 + item.enhance * 0.5;
+  if (!g) return 100;
+  const enhMult = 1 + item.enhance * 0.7;
   return Math.floor(100 * g.mult * enhMult);
 }
 
-export function gradeName(grade) { return GRADES[grade].name; }
-export function gradeShort(grade) { return GRADES[grade].short; }
-export function gradeColor(grade) { return GRADES[grade].color; }
-export function gradeLevelReq(grade) { return GRADES[grade].levelReq; }
+export function gradeName(g) { return GRADES[g]?.name || '—'; }
+export function gradeShort(g) { return GRADES[g]?.short || '?'; }
+export function gradeColor(g) { return GRADES[g]?.color || '#94a3b8'; }
 
-export function rollDrops(heroLevel) {
-  const drops = { items: [], scrolls: [] };
-  if (Math.random() < 0.12) drops.items.push(generateItem(heroLevel));
-  if (Math.random() < 0.25) {
-    const grade = rollGrade(heroLevel);
+export function rollDrops(zoneGrade, isChampion) {
+  const drops = { items: [], scrolls: [], blessed: 0 };
+  const itemChance = isChampion ? 0.09 : 0.03;
+  const scrollChance = isChampion ? 0.24 : 0.08;
+
+  if (Math.random() < itemChance) {
+    const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
+    const weaponType = slot === 'weapon' ? (Math.random() < 0.5 ? 'bow' : 'staff') : null;
+    const item = createItem(zoneGrade, slot, weaponType);
+    if (item) drops.items.push(item);
+  }
+  if (Math.random() < scrollChance) {
     const type = Math.random() < 0.3 ? 'weapon' : 'armor';
-    drops.scrolls.push({ grade, type });
+    drops.scrolls.push({ grade: zoneGrade, type });
+  }
+  if (isChampion && Math.random() < CHAMPION.blessedDropChance) {
+    drops.blessed = 1;
   }
   return drops;
 }

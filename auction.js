@@ -1,33 +1,36 @@
-import { generateItem, estimateItemValue } from './items.js';
+import { createItem, estimateItemValue } from './items.js';
+import { GRADE_ORDER, SLOTS } from './config.js';
 
 const SELLER_NAMES = ['Kratos','Aragorn','Legolas','Gandalf','Frodo','Sauron','Eowyn','Boromir','Galadriel','Elrond','Xerxes','Zeus','Odin','Loki','Thor'];
-
 const MAX_LISTINGS = 10;
+
+function randomItem() {
+  const grade = GRADE_ORDER[Math.floor(Math.random() * GRADE_ORDER.length)];
+  const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
+  const wt = slot === 'weapon' ? (Math.random() < 0.5 ? 'bow' : 'staff') : null;
+  return createItem(grade, slot, wt);
+}
 
 export function createAuction() {
   const auction = { listings: [], myListings: [], nextListingTimer: 3, nextId: 1 };
-  for (let i = 0; i < 6; i++) addBotListing(auction, 1);
+  for (let i = 0; i < 6; i++) addBotListing(auction);
   return auction;
 }
 
-function addBotListing(auction, heroLevel) {
-  const item = generateItem(heroLevel);
+function addBotListing(auction) {
+  const item = randomItem();
+  if (!item) return;
   const price = Math.floor(estimateItemValue(item) * (1.0 + Math.random() * 0.5));
   const seller = SELLER_NAMES[Math.floor(Math.random() * SELLER_NAMES.length)] + '#' + Math.floor(Math.random() * 9000 + 1000);
-  auction.listings.push({
-    id: auction.nextId++, item, price, sellerName: seller,
-  });
+  auction.listings.push({ id: auction.nextId++, item, price, sellerName: seller });
 }
 
-export function tickAuction(auction, dt, heroLevel) {
-  // Жёсткая обрезка — никогда больше MAX_LISTINGS
-  if (auction.listings.length > MAX_LISTINGS) {
-    auction.listings.length = MAX_LISTINGS;
-  }
+export function tickAuction(auction, dt) {
+  if (auction.listings.length > MAX_LISTINGS) auction.listings.length = MAX_LISTINGS;
   auction.nextListingTimer -= dt;
   if (auction.nextListingTimer <= 0) {
     auction.nextListingTimer = 6 + Math.random() * 6;
-    if (auction.listings.length < MAX_LISTINGS) addBotListing(auction, heroLevel);
+    if (auction.listings.length < MAX_LISTINGS) addBotListing(auction);
   }
   for (const l of auction.myListings) {
     if (l.sold) continue;

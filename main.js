@@ -1,11 +1,12 @@
-import { CONFIG, LOCATIONS, TELEPORT_COST } from './config.js';
-import { createHero, updateHero, addXp, damageHero, recalcStats, useHpPotion, canUseSoulshot, consumeSoulshot, autoUsePotion } from './hero.js';
-import { createMob, createGroupId, pickMobDef, updateMob, aggroGroup } from './mobs.js';
-import { rollDrops, gradeName } from './items.js';
+import { CONFIG, GRADE_ORDER } from './config.js';
+import { createHero, updateHero, addXp, damageHero, autoUsePotion } from './hero.js';
+import { createMob, createGroupId, pickMobDefFromZone, updateMob, aggroGroup } from './mobs.js';
+import { rollDrops, gradeName, createItem, createBlessedScroll } from './items.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
 import { createShop, buildStock } from './shop.js';
 import { render } from './render.js';
-import { initUI, refreshUI, toast } from './ui.js';
+import { initUI, refreshUI, toast, showCityScreen, hideCityScreen } from './ui.js';
+import { CITIES, CITY_ORDER, findZone, cityTeleportCost } from './cities.js';
 import {
   initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie
 } from './audio.js';
@@ -17,17 +18,26 @@ let COLS = 12, ROWS = 20;
 const layout = { COLS, ROWS, cellPx: 40, offsetX: 0, offsetY: 0 };
 
 const state = {
-  hero: null, mobs: [], projectiles: [], effects: [], gold: 0,
-  currentLocation: 'talking_island', spawnTimer: CONFIG.spawn.baseInterval,
-  respawnTimer: 0, paused: false,
+  hero: null, mobs: [], projectiles: [], effects: [],
+  gold: 3000,
+  currentCity: 'talking_island',
+  currentZone: null,
+  inBattle: false,
+  zoneBg: '#1a2a10',
+  spawnTimer: 0,
+  respawnTimer: 0,
+  paused: false,
+  sessionStats: { gold: 0, xp: 0, kills: 0, items: 0, scrolls: 0, blessed: 0 },
+  lastSession: null,
+  deathTimer: 10,
 };
 
 const auction = createAuction();
 const shop = createShop();
 
 const input = {
-  left: false, right: false, up: false, down: false,
-  joyActive: false, joyX: 0, joyY: 0, joyStartX: 0, joyStartY: 0,
+  left:false, right:false, up:false, down:false,
+  joyActive:false, joyX:0, joyY:0, joyStartX:0, joyStartY:0,
 };
 
 function resize() {
@@ -61,8 +71,8 @@ const joyStick = document.getElementById('joystick-stick');
 let joyTouchId = null;
 
 function handleJoyStart(e) {
-  if (!state.hero) return;
-  if (e.target.closest('#bottom-panel') || e.target.closest('.modal')) return;
+  if (!state.hero || !state.inBattle) return;
+  if (e.target.closest('#bottom-panel') || e.target.closest('.modal') || e.target.closest('#city-screen')) return;
   for (const touch of e.changedTouches) {
     const x = touch.clientX, y = touch.clientY;
     if (y > window.innerHeight - 56) continue;
@@ -82,9 +92,9 @@ function handleJoyMove(e) {
     if (touch.identifier !== joyTouchId) continue;
     let dx = touch.clientX - input.joyStartX;
     let dy = touch.clientY - input.joyStartY;
-    const dist = Math.hypot(dx, dy), maxDist = 60;
-    if (dist > maxDist) { dx = (dx/dist)*maxDist; dy = (dy/dist)*maxDist; }
-    input.joyX = dx / maxDist; input.joyY = dy / maxDist;
+    const dist = Math.hypot(dx, dy), maxD = 60;
+    if (dist > maxD) { dx = dx/dist*maxD; dy = dy/dist*maxD; }
+    input.joyX = dx / maxD; input.joyY = dy / maxD;
     joyStick.style.left = `calc(50% + ${dx}px)`;
     joyStick.style.top = `calc(50% + ${dy}px)`;
     break;
@@ -93,8 +103,10 @@ function handleJoyMove(e) {
 function handleJoyEnd(e) {
   for (const touch of e.changedTouches) {
     if (touch.identifier === joyTouchId) {
-      joyTouchId = null; input.joyActive = false; input.joyX = 0; input.joyY = 0;
-      joyEl.classList.add('hidden'); break;
+      joyTouchId = null; input.joyActive = false;
+      input.joyX = 0; input.joyY = 0;
+      joyEl.classList.add('hidden');
+      break;
     }
   }
 }
@@ -110,40 +122,88 @@ document.querySelectorAll('.class-btn').forEach(btn => {
 function startGame(classType) {
   initAudio();
   state.hero = createHero(classType);
-  state.hero.x = COLS / 2; state.hero.y = ROWS / 2;
-  state.mobs = []; state.projectiles = []; state.effects = [];
-  state.gold = CONFIG.startGold || 3000;
-  state.spawnTimer = 1;
+  state.hero.x = COLS/2;
+  state.hero.y = ROWS/2;
+  state.gold = CONFIG.startGold;
+  state.currentCity = 'talking_island';
+  state.currentZone = null;
+  state.inBattle = false;
 
   document.getElementById('class-select').classList.add('hidden');
   document.getElementById('bottom-panel').classList.remove('hidden');
 
-  shop.stock = buildStock();
+  rebuildShopStock();
+
   initUI(state, auction, shop, {
     onEquipChange: () => { updateHUD(); refreshUI(); },
-    onTravel: (id, cost) => travelTo(id, cost),
+    onEnterZone: (zoneId) => enterZone(zoneId),
+    onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
+    onReturnToCity: () => returnToCity(),
+    makeItem: (grade, slot, wt) => createItem(grade, slot, wt),
   });
 
-  updateHUD(); updateLocationDisplay(); refreshUI();
-
-  document.getElementById('hud-actions').classList.remove('hidden');
-  updateHudActions();
-
-  for (let i = 0; i < 5; i++) trySpawnMob();
+  updateHUD();
+  showCityScreen();
 }
 
-function travelTo(id, cost) {
-  state.gold -= cost;
-  state.currentLocation = id;
+function rebuildShopStock() {
+  const city = CITIES[state.currentCity];
+  shop.stock = buildStock(city.grade, state.hero.weaponType);
+}
+
+function enterZone(zoneId) {
+  const city = CITIES[state.currentCity];
+  const zone = findZone(state.currentCity, zoneId);
+  if (!zone) return;
+  if (state.gold < zone.teleportCost) { toast('Недостаточно золота', 'epic'); return; }
+
+  state.gold -= zone.teleportCost;
+  state.currentZone = zone;
+  state.zoneBg = city.bg;
   state.mobs = []; state.projectiles = []; state.effects = [];
-  state.spawnTimer = 1;
-  const loc = LOCATIONS[id];
-  COLS = loc.cols; ROWS = loc.rows;
-  layout.COLS = COLS; layout.ROWS = ROWS;
-  resize();
-  state.hero.x = COLS / 2; state.hero.y = ROWS / 2;
-  updateHUD(); updateLocationDisplay();
-  toast(`Телепорт: ${loc.name}`, 'legendary');
+  state.spawnTimer = 0.5;
+  state.hero.x = COLS/2; state.hero.y = ROWS/2;
+  state.sessionStats = { gold: 0, xp: 0, kills: 0, items: 0, scrolls: 0, blessed: 0 };
+  state.hero.dead = false;
+  state.hero.hp = state.hero.maxHp;
+  state.inBattle = true;
+
+  document.getElementById('zone-name').textContent = zone.name;
+  document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
+
+  hideCityScreen();
+  updateHUD();
+}
+
+function returnToCity() {
+  if (state.sessionStats.kills > 0 || state.sessionStats.gold > 0) {
+    state.lastSession = {
+      zone: state.currentZone?.name || '—',
+      ...state.sessionStats,
+    };
+  }
+  state.inBattle = false;
+  state.mobs = []; state.projectiles = []; state.effects = [];
+  state.currentZone = null;
+  playTeleportAnim(() => {
+    showCityScreen();
+    updateHUD();
+  });
+}
+
+function travelToCity(cityId, cost) {
+  if (state.gold < cost) return;
+  state.gold -= cost;
+  state.currentCity = cityId;
+  state.inBattle = false;
+  state.mobs = [];
+  state.currentZone = null;
+  rebuildShopStock();
+  playTeleportAnim(() => {
+    showCityScreen();
+    updateHUD();
+    toast(`Телепорт: ${CITIES[cityId].name}`, 'legendary');
+  });
 }
 
 function updateHUD() {
@@ -151,20 +211,29 @@ function updateHUD() {
   document.getElementById('hp').textContent = `${Math.ceil(h.hp)}/${h.maxHp}`;
   document.getElementById('gold').textContent = state.gold;
   document.getElementById('level').textContent = h.level;
-  document.getElementById('xp-fill').style.width = Math.min(100, (h.xp / h.xpToNext) * 100) + '%';
+  document.getElementById('xp-fill').style.width = Math.min(100, (h.xp/h.xpToNext)*100) + '%';
+
+  const sAtk = document.getElementById('stat-atk');
+  if (sAtk) {
+    sAtk.textContent = Math.round(h.attack);
+    document.getElementById('stat-def').textContent = Math.round(h.defense);
+    document.getElementById('stat-range').textContent = h.range.toFixed(1);
+    document.getElementById('stat-crit').textContent = h.critChance.toFixed(0);
+    document.getElementById('stat-dodge').textContent = h.dodge.toFixed(0);
+    document.getElementById('stat-ls').textContent = h.lifesteal.toFixed(0);
+  }
+
+  updateHudActions();
 }
 
 function updateHudActions() {
-  if (!state.hero) return;
-  const h = state.hero;
-
+  const h = state.hero; if (!h) return;
   const potMap = { small: h.potions.small, medium: h.potions.medium, large: h.potions.large, epic: h.potions.epic };
   for (const [type, count] of Object.entries(potMap)) {
     document.getElementById('pot-' + type).textContent = count || 0;
     const el = document.querySelector(`.hud-potion[data-potion="${type}"]`);
     if (el) el.style.display = count > 0 ? '' : 'none';
   }
-
   const ssGrade = h.equipment.weapon?.grade;
   const ssCount = ssGrade ? (h.soulshots[ssGrade] || 0) : 0;
   document.getElementById('soulshot-count').textContent = ssCount;
@@ -172,51 +241,58 @@ function updateHudActions() {
   if (ssEl) ssEl.style.display = ssCount > 0 ? '' : 'none';
 }
 
-function updateLocationDisplay() {
-  const loc = LOCATIONS[state.currentLocation];
-  document.getElementById('location-name').textContent = loc.name;
-  document.getElementById('location-sub').textContent = loc.sub;
-}
-
 function log(msg, color) {
   const el = document.getElementById('combat-log');
   const div = document.createElement('div');
-  div.textContent = msg; div.style.color = color || '#94a3b8';
+  div.textContent = msg;
+  div.style.color = color || '#94a3b8';
   el.appendChild(div);
   setTimeout(() => div.remove(), 3000);
   while (el.children.length > 5) el.removeChild(el.firstChild);
 }
 
-function trySpawnMob() {
-  if (state.mobs.length >= CONFIG.spawn.maxMobs) return;
-  const def = pickMobDef(state.currentLocation);
-  const h = state.hero;
-  const levelMult = 1 + (h.level - 1) * 0.12;
-  const scaled = {
-    ...def,
-    hp: Math.floor(def.hp * levelMult),
-    attack: Math.floor(def.attack * levelMult),
-    reward: Math.floor(def.reward * (1 + (h.level - 1) * 0.08)),
-    xp: Math.floor(def.xp * (1 + (h.level - 1) * 0.1)),
-    level: def.level || 1,
-  };
+function findSpawnPoint() {
+  const hero = state.hero;
   let x, y, tries = 0;
   do {
     x = 1 + Math.random() * (COLS - 2);
     y = 1 + Math.random() * (ROWS - 2);
     tries++;
-  } while (tries < 20 && Math.hypot(x - h.x, y - h.y) < CONFIG.spawn.minDistanceFromHero);
+    if (tries > 30) break;
+    const distHero = Math.hypot(x - hero.x, y - hero.y);
+    if (distHero < 3) continue;
+    let tooClose = false;
+    for (const m of state.mobs) {
+      if (Math.hypot(x - m.x, y - m.y) < 1.2) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    return { x, y };
+  } while (true);
+  return { x, y };
+}
 
-  if (Math.random() < CONFIG.spawn.groupChance) {
-    const count = CONFIG.spawn.groupSize[0] + Math.floor(Math.random() * (CONFIG.spawn.groupSize[1] - CONFIG.spawn.groupSize[0] + 1));
+function trySpawnMob() {
+  if (!state.currentZone) return;
+  const sp = state.currentZone.spawn;
+  if (state.mobs.length >= sp.maxMobs) return;
+
+  const def = pickMobDefFromZone(state.currentZone);
+  const mult = state.currentZone.mult;
+  const pos = findSpawnPoint();
+
+  const isChampion = Math.random() < sp.champChance;
+  const mobOpts = { aggroRange: sp.aggroRange, wander: sp.wander, champion: isChampion };
+
+  if (Math.random() < sp.groupChance) {
+    const count = 3 + Math.floor(Math.random() * 3);
     const groupId = createGroupId();
     for (let i = 0; i < count; i++) {
-      const gx = Math.max(0.5, Math.min(COLS - 0.5, x + (Math.random() - 0.5) * 2));
-      const gy = Math.max(0.5, Math.min(ROWS - 0.5, y + (Math.random() - 0.5) * 2));
-      state.mobs.push(createMob(scaled, gx, gy, groupId));
+      const gx = Math.max(0.5, Math.min(COLS - 0.5, pos.x + (Math.random() - 0.5) * 2));
+      const gy = Math.max(0.5, Math.min(ROWS - 0.5, pos.y + (Math.random() - 0.5) * 2));
+      state.mobs.push(createMob(def, gx, gy, mult, { ...mobOpts, groupId }));
     }
   } else {
-    state.mobs.push(createMob(scaled, x, y));
+    state.mobs.push(createMob(def, pos.x, pos.y, mult, mobOpts));
   }
 }
 
@@ -226,41 +302,73 @@ function heroDie() {
   h.xp -= lost;
   sfxHeroDie();
   log(`💀 Погиб! -${lost} опыта`, '#ef4444');
+
+  // Заполнить отчёт
   document.getElementById('lost-xp').textContent = lost;
-  document.getElementById('respawn-timer').textContent = CONFIG.death.respawnTime;
+  document.getElementById('sr-gold').textContent = state.sessionStats.gold;
+  document.getElementById('sr-xp').textContent = state.sessionStats.xp;
+  document.getElementById('sr-kills').textContent = state.sessionStats.kills;
+  document.getElementById('sr-items').textContent = state.sessionStats.items;
+  document.getElementById('sr-scrolls').textContent = state.sessionStats.scrolls;
+  document.getElementById('sr-blessed').textContent = state.sessionStats.blessed;
+
+  state.lastSession = {
+    zone: state.currentZone?.name || '—',
+    ...state.sessionStats,
+  };
+
   document.getElementById('death-screen').classList.remove('hidden');
-  state.respawnTimer = CONFIG.death.respawnTime;
+  state.deathTimer = 10;
+
+  const btn = document.getElementById('btn-death-to-city');
+  btn.onclick = () => {
+    document.getElementById('death-screen').classList.add('hidden');
+    playTeleportAnim(() => respawnHero());
+  };
 }
 
 function respawnHero() {
   const h = state.hero;
   h.hp = h.maxHp; h.dead = false;
-  h.x = COLS / 2; h.y = ROWS / 2; h.cooldown = 0;
+  h.x = COLS/2; h.y = ROWS/2; h.cooldown = 0;
   state.mobs = []; state.projectiles = []; state.spawnTimer = 2;
-  document.getElementById('death-screen').classList.add('hidden');
+  state.inBattle = false;
+  state.currentZone = null;
   updateHUD();
-  log('Возврат в город', '#4ade80');
+  showCityScreen();
+}
+
+function playTeleportAnim(callback) {
+  const el = document.getElementById('teleport-anim');
+  el.classList.remove('hidden');
+  setTimeout(() => {
+    el.classList.add('hidden');
+    callback && callback();
+  }, 900);
 }
 
 let lastTime = performance.now();
 function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
-  if (state.hero && !state.paused) update(dt);
-  render(ctx, canvas, state, layout);
+  if (state.hero && state.inBattle && !state.paused) update(dt);
+  if (state.inBattle) render(ctx, canvas, state, layout);
   requestAnimationFrame(loop);
 }
 
 function update(dt) {
   const hero = state.hero;
-  if (hero.dead) {
-    state.respawnTimer -= dt;
-    document.getElementById('respawn-timer').textContent = Math.ceil(Math.max(0, state.respawnTimer));
-    if (state.respawnTimer <= 0) respawnHero();
+   if (hero.dead) {
+    state.deathTimer -= dt;
+    document.getElementById('respawn-timer').textContent = Math.ceil(Math.max(0, state.deathTimer));
+    if (state.deathTimer <= 0) {
+      document.getElementById('death-screen').classList.add('hidden');
+      playTeleportAnim(() => respawnHero());
+    }
     return;
   }
 
-  tickAuction(auction, dt, hero.level);
+  tickAuction(auction, dt);
   const sold = collectSold(auction, state);
   if (sold > 0) toast(`Продано с аукциона: +${sold}💰`, 'legendary');
 
@@ -271,11 +379,11 @@ function update(dt) {
     down: input.down || input.joyY > 0.2,
   };
 
+  const sp = state.currentZone.spawn;
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0) {
     trySpawnMob();
-    const interval = Math.max(CONFIG.spawn.minInterval, CONFIG.spawn.baseInterval - hero.level * 0.05);
-    state.spawnTimer = interval * (0.7 + Math.random() * 0.6);
+    state.spawnTimer = sp.interval * (0.7 + Math.random() * 0.6);
   }
 
   for (const m of state.mobs) {
@@ -284,10 +392,14 @@ function update(dt) {
     m.x = Math.max(0.3, Math.min(COLS - 0.3, m.x));
     m.y = Math.max(0.3, Math.min(ROWS - 0.3, m.y));
     if (action === 'attack') {
-      const died = damageHero(hero, m.attack);
-      sfxHeroHit();
-      state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + Math.floor(m.attack) });
-      if (died) { heroDie(); return; }
+      const result = damageHero(hero, m.attack);
+      if (result === 'dodge') {
+        state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a5f3fc', text: 'DODGE' });
+      } else {
+        sfxHeroHit();
+        state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + Math.floor(m.attack) });
+        if (result === 'dead') { heroDie(); return; }
+      }
       updateHUD();
     }
   }
@@ -296,18 +408,13 @@ function update(dt) {
 
   const potResult = autoUsePotion(hero, dt);
   if (potResult) {
-    toast(`+${potResult.healed} HP`, 'rare');
-    state.effects.push({
-      x: hero.x, y: hero.y - 1,
-      life: 1.0, maxLife: 1.0,
-      color: potResult.color, text: '+' + potResult.healed, big: true,
-    });
+    state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: potResult.color, text: '+' + potResult.healed, big: true });
   }
 
   for (let i = state.projectiles.length - 1; i >= 0; i--) {
     const p = state.projectiles[i];
     p.trail.push({ x: p.x, y: p.y });
-    if (p.trail.length > 4) p.trail.shift();
+    if (p.trail.length > 5) p.trail.shift();
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
 
     let hit = false;
@@ -318,7 +425,9 @@ function update(dt) {
         m.hp -= p.damage; m.hitFlash = 0.12; m.aggro = true;
         if (m.groupId) aggroGroup(state.mobs, m.groupId);
         sfxHit();
-        state.effects.push({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: '#facc15', text: '-' + Math.floor(p.damage) });
+        const dmgColor = p.isCrit ? '#f97316' : '#facc15';
+        const dmgText = (p.isCrit ? '💥' : '-') + Math.floor(p.damage);
+        state.effects.push({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: dmgColor, text: dmgText, big: p.isCrit });
         if (p.aoe > 0) {
           for (const other of state.mobs) {
             if (other === m || other.dead) continue;
@@ -340,25 +449,31 @@ function update(dt) {
   for (let i = state.mobs.length - 1; i >= 0; i--) {
     const m = state.mobs[i];
     if (m.hp <= 0) {
-      m.dead = true;
+         m.dead = true;
       state.gold += m.reward;
       addXp(hero, m.xp);
+      state.sessionStats.gold += m.reward;
+      state.sessionStats.xp += m.xp;
+      state.sessionStats.kills++;
       sfxDeath();
 
-      const drops = rollDrops(hero.level);
+      const drops = rollDrops(CITIES[state.currentCity].grade, m.champion);
       for (const it of drops.items) {
         hero.backpack.push(it);
+        state.sessionStats.items++;
         toast(`${it.icon} ${it.name}`, it.grade);
       }
       for (const sc of drops.scrolls) {
-        const grade = sc.grade;
-        const type = sc.type;
-        if (!hero.scrolls[grade]) hero.scrolls[grade] = { weapon: 0, armor: 0 };
-        hero.scrolls[grade][type] = (hero.scrolls[grade][type] || 0) + 1;
-        toast(`📜 Свиток ${type === 'weapon' ? 'оружия' : 'брони'}: ${gradeName(grade)}`, grade);
+        if (!hero.scrolls[sc.grade]) hero.scrolls[sc.grade] = { weapon: 0, armor: 0 };
+        hero.scrolls[sc.grade][sc.type]++;
+        state.sessionStats.scrolls++;
+        toast(`📜 Свиток: ${gradeName(sc.grade)}`, sc.grade);
       }
-
-      if (drops.items.length || drops.scrolls.length) refreshUI();
+      if (drops.blessed > 0) {
+        hero.blessed += drops.blessed;
+        state.sessionStats.blessed += drops.blessed;
+        toast(`✨ Blessed Scroll найден!`, 'unique');
+      }
 
       state.mobs.splice(i, 1);
     }
@@ -368,7 +483,6 @@ function update(dt) {
     sfxLevelUp();
     log(`⭐ Уровень ${hero.level}!`, '#a78bfa');
     updateHUD();
-    refreshUI();
   }
 
   for (let i = state.effects.length - 1; i >= 0; i--) {
@@ -377,7 +491,6 @@ function update(dt) {
   }
 
   updateHUD();
-  updateHudActions();
 }
 
 requestAnimationFrame(loop);

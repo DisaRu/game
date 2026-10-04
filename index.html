@@ -10,18 +10,25 @@
 <body>
   <canvas id="game"></canvas>
 
-  <div id="hud-top">
+  <div id="hud-top" class="hidden">
     <div class="hud-item"><span class="icon">❤️</span><span id="hp">200/200</span></div>
     <div class="hud-item"><span class="icon">💰</span><span id="gold">0</span></div>
     <div class="hud-item"><span class="icon">⭐</span><span id="level">1</span><div class="xp-bar"><div id="xp-fill"></div></div></div>
   </div>
 
-  <div id="hud-location">
-    <div id="location-name">Talking Island</div>
-    <div id="location-sub">Поля гремлинов</div>
+  <div id="hud-stats" class="hidden">
+    <span class="hs hs-atk">⚔ <b id="stat-atk">0</b></span>
+    <span class="hs hs-def">🛡 <b id="stat-def">0</b></span>
+    <span class="hs hs-range">📏 <b id="stat-range">4.5</b></span>
+    <span class="hs hs-crit">💥 <b id="stat-crit">0</b>%</span>
+    <span class="hs hs-dodge">💨 <b id="stat-dodge">0</b>%</span>
+    <span class="hs hs-ls">🩸 <b id="stat-ls">0</b>%</span>
+  </div>
+  <div id="hud-zone" class="hidden">
+    <div><span id="zone-diff">🟢</span> <span id="zone-name">Поля Гремлинов</span></div>
   </div>
 
-  <div id="combat-log"></div>
+  <div id="combat-log" class="hidden"></div>
 
   <div id="joystick" class="hidden">
     <div id="joystick-base"><div id="joystick-stick"></div></div>
@@ -35,22 +42,33 @@
     <div class="hud-stat" id="hud-soulshot"><span class="hud-icon">⚡</span><span class="hud-count" id="soulshot-count">0</span></div>
   </div>
 
+   <div id="city-screen" class="hidden">
+    <div class="city-header">
+      <div id="city-name">Talking Island</div>
+      <div id="city-sub">Стартовый остров</div>
+      <div id="city-grade">No-Grade</div>
+    </div>
+    <div id="last-session" class="last-session hidden">
+      <div class="ls-title">📦 Последняя сессия · <span id="ls-zone">—</span></div>
+      <div class="ls-grid">
+        <div class="ls-cell"><div class="ls-ico">💰</div><div class="ls-val" id="ls-gold">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">⭐</div><div class="ls-val" id="ls-xp">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">👹</div><div class="ls-val" id="ls-kills">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">⚔</div><div class="ls-val" id="ls-items">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">📜</div><div class="ls-val" id="ls-scrolls">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">✨</div><div class="ls-val" id="ls-blessed">0</div></div>
+      </div>
+    </div>
+    <div id="city-zones"></div>
+    <button id="btn-open-teleport" class="city-btn">🌍 Телепорт в другой город</button>
+  </div>
+
   <div id="bottom-panel" class="hidden">
-    <button data-panel="map"><span class="bp-icon">🗺</span><span class="bp-label">Карта</span></button>
+    <button data-panel="city"><span class="bp-icon">🏙</span><span class="bp-label">Город</span></button>
     <button data-panel="hero"><span class="bp-icon">🧙</span><span class="bp-label">Герой</span><span class="bp-badge" id="bp-hero-badge">0</span></button>
     <button data-panel="enhance"><span class="bp-icon">⚒</span><span class="bp-label">Заточка</span></button>
     <button data-panel="shop"><span class="bp-icon">🏪</span><span class="bp-label">Магазин</span></button>
     <button data-panel="auction"><span class="bp-icon">⚖</span><span class="bp-label">Аукцион</span><span class="bp-badge" id="bp-auction-badge">0</span></button>
-  </div>
-
-  <div id="modal-map" class="modal hidden">
-    <div class="modal-window">
-      <div class="modal-header"><h2>🗺 Карта мира</h2><button class="modal-close" data-modal="map">✕</button></div>
-      <div class="modal-body">
-        <div id="map-list"></div>
-        <div id="map-info" class="map-info hidden"></div>
-      </div>
-    </div>
   </div>
 
   <div id="modal-hero" class="modal hidden">
@@ -67,18 +85,10 @@
           <button class="tab-btn" data-hero-tab="potions">Зелья</button>
           <button class="tab-btn" data-hero-tab="soulshots">Соски</button>
         </div>
-        <div id="hero-tab-backpack" class="hero-tab-content">
-          <div class="backpack-grid" id="backpack-grid"></div>
-        </div>
-        <div id="hero-tab-scrolls" class="hero-tab-content hidden">
-          <div class="scrolls-list" id="scrolls-list"></div>
-        </div>
-        <div id="hero-tab-potions" class="hero-tab-content hidden">
-          <div class="potions-list" id="potions-list"></div>
-        </div>
-        <div id="hero-tab-soulshots" class="hero-tab-content hidden">
-          <div class="soulshots-list" id="soulshots-list"></div>
-        </div>
+        <div id="hero-tab-backpack" class="hero-tab-content"><div class="backpack-grid" id="backpack-grid"></div></div>
+        <div id="hero-tab-scrolls" class="hero-tab-content hidden"><div class="scrolls-list" id="scrolls-list"></div></div>
+        <div id="hero-tab-potions" class="hero-tab-content hidden"><div class="potions-list" id="potions-list"></div></div>
+        <div id="hero-tab-soulshots" class="hero-tab-content hidden"><div class="soulshots-list" id="soulshots-list"></div></div>
       </div>
     </div>
   </div>
@@ -87,8 +97,11 @@
     <div class="modal-window">
       <div class="modal-header"><h2>⚒ Заточка</h2><button class="modal-close" data-modal="enhance">✕</button></div>
       <div class="modal-body">
-        <div class="section-title">Выбери вещь</div>
-        <div class="enhance-slots" id="enhance-slots"></div>
+        <div id="enhance-hero-stats" class="enhance-hero-stats"></div>
+        <div class="section-title">Надето</div>
+        <div class="enhance-grid" id="enhance-equipped"></div>
+        <div class="section-title">Рюкзак</div>
+        <div class="enhance-grid" id="enhance-backpack"></div>
         <div class="enhance-detail" id="enhance-detail"><p class="muted">Нажми на вещь, чтобы заточить</p></div>
       </div>
     </div>
@@ -98,13 +111,13 @@
     <div class="modal-window">
       <div class="modal-header"><h2>🏪 Магазин</h2><button class="modal-close" data-modal="shop">✕</button></div>
       <div class="modal-body">
+        <div id="shop-grade-info" class="muted" style="margin-bottom:10px"></div>
         <div class="tab-bar" id="shop-cat-tabs">
           <button class="tab-btn active" data-shop-cat="equipment">Экип.</button>
           <button class="tab-btn" data-shop-cat="scrolls">Свитки</button>
           <button class="tab-btn" data-shop-cat="potions">Зелья</button>
           <button class="tab-btn" data-shop-cat="soulshots">Соски</button>
         </div>
-        <div class="grade-tabs" id="shop-grade-tabs"></div>
         <div id="shop-content"></div>
       </div>
     </div>
@@ -117,7 +130,7 @@
         <div class="tab-bar">
           <button class="tab-btn active" data-tab="buy">Купить</button>
           <button class="tab-btn" data-tab="sell">Продать</button>
-          <button class="tab-btn" data-tab="my">Мои лоты <span id="my-listings-count" class="muted"></span></button>
+          <button class="tab-btn" data-tab="my">Мои лоты</button>
         </div>
         <div id="auction-buy" class="tab-content"></div>
         <div id="auction-sell" class="tab-content hidden"></div>
@@ -126,10 +139,15 @@
     </div>
   </div>
 
-  <div id="item-popup" class="popup hidden">
-    <div class="popup-window">
-      <div id="item-popup-body"></div>
+  <div id="modal-teleport" class="modal hidden">
+    <div class="modal-window">
+      <div class="modal-header"><h2>🌍 Телепорт</h2><button class="modal-close" data-modal="teleport">✕</button></div>
+      <div class="modal-body"><div id="teleport-list"></div></div>
     </div>
+  </div>
+
+  <div id="item-popup" class="popup hidden">
+    <div class="popup-window"><div id="item-popup-body"></div></div>
   </div>
 
   <div id="toast-container"></div>
@@ -149,15 +167,28 @@
         <div class="class-desc">Мощные AoE заклинания</div>
       </button>
     </div>
-    <p style="margin-top:24px;font-size:11px;color:#64748b;">WASD или джойстик слева для движения</p>
+    <p style="margin-top:24px;font-size:11px;color:#64748b;">WASD или джойстик для движения</p>
   </div>
 
-  <div id="death-screen" class="overlay hidden">
+    <div id="death-screen" class="overlay hidden">
     <h2>💀 Ты погиб</h2>
     <p>Потеряно опыта: <span id="lost-xp">0</span></p>
-    <p>Возврат в город через <span id="respawn-timer">3</span>...</p>
+    <div class="session-report">
+      <div class="session-title">📦 Добыча за сессию</div>
+      <div class="sr-row"><span>💰 Золото</span><span id="sr-gold">0</span></div>
+      <div class="sr-row"><span>⭐ Опыт</span><span id="sr-xp">0</span></div>
+      <div class="sr-row"><span>👹 Убито мобов</span><span id="sr-kills">0</span></div>
+      <div class="sr-row"><span>⚔ Предметы</span><span id="sr-items">0</span></div>
+      <div class="sr-row"><span>📜 Свитки</span><span id="sr-scrolls">0</span></div>
+      <div class="sr-row"><span>✨ Blessed</span><span id="sr-blessed">0</span></div>
+    </div>
+    <button id="btn-death-to-city" class="city-btn">🏙 Вернуться в город</button>
+    <p style="font-size:11px;margin-top:10px">Авто-возврат через <span id="respawn-timer">10</span>...</p>
   </div>
-
+  <div id="teleport-anim" class="teleport-anim hidden">
+    <div class="tp-ring"></div>
+    <div class="tp-icon">🌍</div>
+  </div>
   <script type="module" src="main.js"></script>
 </body>
 </html>
