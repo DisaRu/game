@@ -291,86 +291,6 @@ function updateShopCounts() {
   });
 }
 
-// ===== ДРАГ И ДРОП =====
-let dragData = null, dragGhost = null;
-let _dragStartTimer = null;
-let _dragStartX = 0;
-let _dragStartY = 0;
-let _dragPending = null;
-
-function startDrag(e, item, sourceType) {
-  _dragStartX = e.clientX;
-  _dragStartY = e.clientY;
-  _dragPending = { item, sourceType, e };
-
-  clearTimeout(_dragStartTimer);
-  _dragStartTimer = setTimeout(() => {
-    if (!_dragPending) return;
-    dragData = { item, sourceType };
-    dragGhost = document.createElement('div');
-    dragGhost.className = 'drag-ghost';
-    dragGhost.textContent = item.icon;
-    dragGhost.style.left = _dragPending.e.clientX + 'px';
-    dragGhost.style.top = _dragPending.e.clientY + 'px';
-    document.body.appendChild(dragGhost);
-    document.addEventListener('pointermove', onDragMove);
-    document.addEventListener('pointerup', onDragEnd);
-    _dragPending = null;
-  }, 150);
-}
-
-document.addEventListener('pointermove', (e) => {
-  if (_dragPending) {
-    const dx = Math.abs(e.clientX - _dragStartX);
-    const dy = Math.abs(e.clientY - _dragStartY);
-    if (dx > 8 || dy > 8) {
-      clearTimeout(_dragStartTimer);
-      _dragPending = null;
-    }
-  }
-}, { passive: true });
-
-document.addEventListener('pointerup', () => {
-  clearTimeout(_dragStartTimer);
-  _dragPending = null;
-});
-
-function onDragMove(e) {
-  if (!dragGhost) return;
-  dragGhost.style.left = e.clientX + 'px';
-  dragGhost.style.top = e.clientY + 'px';
-  document.querySelectorAll('.drop-hover').forEach(el => el.classList.remove('drop-hover'));
-  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
-  if (target) target.classList.add('drop-hover');
-}
-
-function onDragEnd(e) {
-  document.removeEventListener('pointermove', onDragMove);
-  document.removeEventListener('pointerup', onDragEnd);
-  if (dragGhost) { dragGhost.remove(); dragGhost = null; }
-  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]');
-  document.querySelectorAll('.drop-hover').forEach(el => el.classList.remove('drop-hover'));
-  if (target && dragData) handleDrop(dragData, target.dataset);
-  dragData = null;
-}
-
-function handleDrop(data, target) {
-  const { item, sourceType } = data;
-  if (target.drop === 'slot' && sourceType === 'backpack') {
-    if (item.kind === 'buff' || item.kind === 'blessed') {
-      toast('Это нельзя надеть', 'epic');
-      return;
-    }
-    const r = equipItem(state.hero, item);
-    if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
-    else if (r.reason === 'class') toast('Это оружие другого класса', 'epic');
-    else toast('Нельзя надеть', 'epic');
-  } else if (target.drop === 'backpack' && sourceType === 'equip') {
-    const r = unequipItem(state.hero, item.slot);
-    if (r.ok) { callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
-  }
-}
-
 // ===== INIT =====
 export function initUI(s, a, sh, cb = {}) {
   state = s; auction = a; shop = sh; callbacks = cb;
@@ -482,13 +402,11 @@ function renderHero() {
     const item = hero.equipment[slot];
     const el = document.createElement('div');
     el.className = 'eq-slot' + (item ? '' : ' empty');
-    el.dataset.drop = 'slot';
     el.dataset.slot = slot;
     if (item) {
       el.innerHTML = `${item.icon}<span class="slot-label">${SLOT_NAMES[slot]}</span>${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}`;
       el.style.borderColor = gradeColor(item.grade);
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.bp-item')) return;
+      el.addEventListener('click', () => {
         showItemPopup(item, 'equip');
       });
     } else el.textContent = SLOT_NAMES[slot];
@@ -550,7 +468,7 @@ function renderHero() {
           <div class="bp-stats">${statsCompact(item)}</div>
         `;
       }
-      el.addEventListener('pointerdown', (e) => startDrag(e, item, 'backpack'));
+      el.addEventListener('click', () => showItemPopup(item, 'backpack'));
       grid.appendChild(el);
     }
   }
@@ -1083,7 +1001,6 @@ function showSellPopup(item) {
   });
 }
 
-// ===== POPUP =====
 export function showItemPopup(item, context) {
   const popup = document.getElementById('item-popup');
   const body = document.getElementById('item-popup-body');
