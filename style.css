@@ -2026,3 +2026,450 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   color: var(--text);
 }
 .cmp-btn-back:active { background: var(--bg-slot-dark); }
+/* ===== ОФЛАЙН-ФАРМ ===== */
+#hud-offline {
+  border-color: #6366f1;
+  background: linear-gradient(180deg, #1e1b4b 0%, #0a0515 100%);
+}
+#hud-offline .hud-icon { color: #a5b4fc; }
+
+.offline-overlay {
+  position: fixed;
+  bottom: 60px;
+  right: 8px;
+  z-index: 200;
+  padding: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.offline-overlay.hidden { display: none !important; }
+.offline-panel {
+  pointer-events: auto;
+  width: 300px;
+  background: linear-gradient(180deg, #0f172a 0%, #050810 100%);
+  border: 2px solid #6366f1;
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.6);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.offline-panel {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 380px;
+  background: linear-gradient(180deg, #0f172a 0%, #050810 100%);
+  border: 2px solid #6366f1;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 0 60px rgba(99, 102, 241, 0.7);
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.offline-panel {
+  width: 100%;
+  max-width: 420px;
+  background: linear-gradient(180deg, #0f172a 0%, #050810 100%);
+  border: 2px solid #6366f1;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.5);
+}
+
+.offline-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.offline-icon { font-size: 24px; animation: offlinePulse 2s infinite; }
+@keyframes offlinePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+.offline-title {
+  color: #a5b4fc;
+  font-size: 16px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.offline-zone {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.offline-timer {
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: #fbbf24;
+  margin-bottom: 8px;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
+}
+
+.offline-progress {
+  height: 6px;
+  background: #0a0510;
+  border: 1px solid #312e81;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.offline-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  transition: width 0.3s;
+}
+
+.offline-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.offline-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #0a0510;
+  border: 1px solid #312e81;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.os-label { color: #94a3b8; }
+.os-val { color: #fbbf24; font-weight: bold; }
+
+.offline-res {
+  background: #0a0510;
+  border: 1px solid #312e81;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+.or-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 2px 0;
+}
+.or-row span:first-child { color: #94a3b8; }
+.or-row span:last-child { color: #a5b4fc; font-weight: bold; }
+
+.offline-forecast {
+  text-align: center;
+  font-size: 10px;
+  color: #a5b4fc;
+  padding: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.offline-log {
+  background: #050810;
+  border: 1px solid #312e81;
+  border-radius: 4px;
+  padding: 6px 8px;
+  height: 100px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+.offline-log > div { padding: 1px 0; }
+.offline-log .log-death { color: #ef4444; font-weight: bold; }
+.offline-log .log-progress { color: #94a3b8; }
+
+.offline-btn {
+  width: 100%;
+  background: linear-gradient(180deg, #312e81 0%, #1e1b4b 100%);
+  border: 2px solid #6366f1;
+  color: #a5b4fc;
+  padding: 10px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.offline-btn:active { background: #6366f1; color: #fff; }
+
+/* Отчёт */
+#report-body {
+  padding: 10px 0;
+  font-size: 12px;
+}
+.report-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+.report-row span { color: #94a3b8; }
+.report-row b { color: #fbbf24; }
+.report-divider {
+  height: 1px;
+  background: #312e81;
+  margin: 8px 0;
+}
+/* ===== АВТОРИЗАЦИЯ ===== */
+.auth-box {
+  background: linear-gradient(180deg, #10182e 0%, #0a1428 100%);
+  border: 2px solid #d4af37;
+  border-radius: 8px;
+  padding: 20px;
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+.auth-title {
+  color: #d4af37;
+  font-size: 24px;
+  margin-bottom: 4px;
+  letter-spacing: 2px;
+}
+.auth-sub { color: #7a8aa8; font-size: 11px; margin-bottom: 16px; }
+.auth-box input {
+  width: 100%;
+  background: #0d1526;
+  border: 1px solid #2a3a5c;
+  color: #c8d1e6;
+  padding: 10px 12px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  margin-bottom: 8px;
+  outline: none;
+}
+.auth-box input:focus { border-color: #d4af37; }
+.auth-buttons { display: flex; gap: 6px; margin-top: 8px; }
+.auth-btn {
+  flex: 1;
+  background: #1a2340;
+  border: 1px solid #2a3a5c;
+  color: #c8d1e6;
+  padding: 10px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.auth-btn-primary { border-color: #4ade80; color: #4ade80; }
+.auth-error { color: #dc2626; font-size: 10px; margin-top: 8px; min-height: 14px; }
+
+/* ===== АККАУНТ ===== */
+.account-info {
+  position: fixed;
+  top: 60px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid #2a3a5c;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 10px;
+  z-index: 15000;
+  pointer-events: auto;
+  color: #c8d1e6;
+}
+.acc-logout {
+  background: transparent;
+  border: 1px solid #dc2626;
+  color: #dc2626;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.acc-logout:active { background: #dc2626; color: #fff; }
+.acc-email { color: #7a8aa8; }
+.acc-logout {
+  background: transparent;
+  border: 1px solid #dc2626;
+  color: #dc2626;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+/* ===== АВТОРИЗАЦИЯ ===== */
+.auth-box {
+  background: linear-gradient(180deg, #10182e 0%, #0a1428 100%);
+  border: 2px solid #d4af37;
+  border-radius: 8px;
+  padding: 20px;
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+.auth-title {
+  color: #d4af37;
+  font-size: 24px;
+  margin-bottom: 4px;
+  letter-spacing: 2px;
+}
+.auth-sub { color: #7a8aa8; font-size: 11px; margin-bottom: 16px; }
+.auth-box input {
+  width: 100%;
+  background: #0d1526;
+  border: 1px solid #2a3a5c;
+  color: #c8d1e6;
+  padding: 10px 12px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  margin-bottom: 8px;
+  outline: none;
+}
+.auth-box input:focus { border-color: #d4af37; }
+.auth-buttons { display: flex; gap: 6px; margin-top: 8px; }
+.auth-btn {
+  flex: 1;
+  background: #1a2340;
+  border: 1px solid #2a3a5c;
+  color: #c8d1e6;
+  padding: 10px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.auth-btn-primary { border-color: #4ade80; color: #4ade80; }
+.auth-error { color: #dc2626; font-size: 10px; margin-top: 8px; min-height: 14px; }
+
+/* ===== АККАУНТ ===== */
+.account-info {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid #2a3a5c;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 10px;
+  z-index: 50;
+}
+.acc-email { color: #7a8aa8; }
+.acc-logout {
+  background: transparent;
+  border: 1px solid #dc2626;
+  color: #dc2626;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+/* ===== ПЛАШКА ЗАГРУЗКИ ===== */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #10182e 0%, #0a1428 60%, #050a15 100%);
+}
+.loading-screen.hidden {
+  display: none !important;
+}
+.loading-box {
+  text-align: center;
+}
+.loading-icon {
+  font-size: 48px;
+  animation: loadingSpin 1.5s linear infinite;
+}
+@keyframes loadingSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.loading-text {
+  color: var(--gold, #d4af37);
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  margin-top: 8px;
+  text-shadow: 0 0 12px rgba(212, 175, 55, 0.5);
+}
+/* ===== ЗАГРУЗКА ===== */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #10182e 0%, #0a1428 60%, #050a15 100%);
+}
+.loading-screen.hidden { display: none !important; }
+.loading-box { text-align: center; }
+.loading-icon {
+  font-size: 48px;
+  animation: loadingSpin 1.5s linear infinite;
+}
+@keyframes loadingSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.loading-text {
+  color: #d4af37;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  margin-top: 8px;
+}
+
+/* ===== АККАУНТ ===== */
+.account-info {
+  position: fixed;
+  top: 4px;
+  right: 6px;
+  display: none;
+  gap: 4px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #2a3a5c;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 9px;
+  color: #c8d1e6;
+  z-index: 100000;
+  pointer-events: auto;
+  height: 28px;
+}
+.account-info.visible { display: flex; }
+.acc-email {
+  color: #7a8aa8;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-logout {
+  background: transparent;
+  border: 1px solid #dc2626;
+  color: #dc2626;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 9px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.acc-logout:active { background: #dc2626; color: #fff; }

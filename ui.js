@@ -2172,6 +2172,7 @@ export function renderCityScreen() {
   const gradeEl = document.getElementById('city-grade');
   gradeEl.textContent = gradeName(city.grade);
   gradeEl.style.color = gradeColor(city.grade);
+
   const lsEl = document.getElementById('last-session');
   if (lsEl) {
     if (state.lastSession && (state.lastSession.kills > 0 || state.lastSession.gold > 0)) {
@@ -2183,22 +2184,51 @@ export function renderCityScreen() {
       document.getElementById('ls-items').textContent = state.lastSession.items;
       document.getElementById('ls-scrolls').textContent = state.lastSession.scrolls;
       document.getElementById('ls-blessed').textContent = state.lastSession.blessed;
-    } else lsEl.classList.add('hidden');
+    } else {
+      lsEl.classList.add('hidden');
+    }
   }
+
   const zonesEl = document.getElementById('city-zones');
   zonesEl.innerHTML = '';
+
+  const hero = state.hero;
+  const offlineZoneId = (hero && hero.offlineActive) ? hero.offlineZoneId : null;
+
   for (const zone of city.zones) {
+    const isOfflineZone = offlineZoneId === zone.id;
     const card = document.createElement('div');
     card.className = 'zone-card zone-' + zone.diff;
-    card.innerHTML = `
+
+    let html = `
       <div class="zone-name">${zone.name}</div>
       <div class="zone-diff">${zoneDifficultyLabel(zone.diff)}</div>
       <div class="zone-cost">Телепорт: ${zone.teleportCost}💰</div>
     `;
-    card.addEventListener('click', () => {
+
+    if (isOfflineZone) {
+      html += `<button class="zone-offline-check" data-zone="${zone.id}" style="margin-top:6px;width:100%;background:linear-gradient(180deg,#312e81,#1e1b4b);border:1px solid #6366f1;color:#a5b4fc;padding:6px;border-radius:4px;font-family:inherit;font-size:11px;font-weight:bold;cursor:pointer;">💤 Проверить героя</button>`;
+    }
+
+    card.innerHTML = html;
+
+    card.addEventListener('click', (e) => {
+      if (e.target.classList.contains('zone-offline-check')) return;
       if (state.gold < zone.teleportCost) { toast('Недостаточно золота', 'epic'); return; }
       callbacks.onEnterZone && callbacks.onEnterZone(zone.id);
     });
+
+    if (isOfflineZone) {
+      const btn = card.querySelector('.zone-offline-check');
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (state.gold < zone.teleportCost) { toast('Недостаточно золота', 'epic'); return; }
+          callbacks.onEnterZone && callbacks.onEnterZone(zone.id);
+        });
+      }
+    }
+
     zonesEl.appendChild(card);
   }
 }
@@ -2210,6 +2240,11 @@ export function showCityScreen() {
   document.getElementById('hud-zone').classList.add('hidden');
   document.getElementById('hud-actions').classList.add('hidden');
   document.getElementById('combat-log').classList.add('hidden');
+
+  // Скрываем кнопку офлайн-фарма в городе
+  const offBtn = document.getElementById('hud-offline');
+  if (offBtn) offBtn.style.display = 'none';
+
   renderCityScreen();
 }
 
@@ -2220,6 +2255,15 @@ export function hideCityScreen() {
   document.getElementById('hud-zone').classList.remove('hidden');
   document.getElementById('hud-actions').classList.remove('hidden');
   document.getElementById('combat-log').classList.remove('hidden');
+
+  // Показываем кнопку офлайн-фарма в зоне
+  const offBtn = document.getElementById('hud-offline');
+  if (offBtn) offBtn.style.display = '';
+
+  // Офлайн в зоне — только если прожил 30 сек
+  if (offBtn && !state?.offlineAliveCheck) {
+    offBtn.classList.remove('ready');
+  }
 }
 
 function renderTeleport() {

@@ -9,7 +9,13 @@
 </head>
 <body>
   <canvas id="game"></canvas>
-
+<div id="account-info" class="account-info"></div>
+<div id="loading-screen" class="loading-screen">
+  <div class="loading-box">
+    <div class="loading-icon">⏳</div>
+    <div class="loading-text">Загрузка...</div>
+  </div>
+</div>
   <div id="hud-top" class="hidden">
     <div class="hud-item"><span class="icon">❤️</span><span id="hp">200/200</span></div>
     <div class="hud-item"><span class="icon">💰</span><span id="gold">0</span></div>
@@ -44,14 +50,38 @@
     <div class="hud-stat hud-buff" data-buff="crit" style="display:none"><span class="hud-icon">💥</span><span class="hud-count">0</span></div>
     <div class="hud-stat hud-buff" data-buff="attack" style="display:none"><span class="hud-icon">🗡</span><span class="hud-count">0</span></div>
     <div class="hud-stat" id="hud-soulshot"><span class="hud-icon">⚡</span><span class="hud-count" id="soulshot-count">0</span></div>
+    <div class="hud-stat" id="hud-offline" style="display:none">
+  <span class="hud-icon">💤</span>
+  <span class="hud-count">Офлайн</span>
+</div>
   </div>
 
-  <div id="city-screen" class="hidden">
-    <div class="city-header">
-      <div id="city-name">Talking Island</div>
-      <div id="city-sub">Стартовый остров</div>
-      <div id="city-grade">No-Grade</div>
+<div id="city-screen" class="hidden">
+  <div class="city-header">
+    <div id="city-name">Talking Island</div>
+    <div id="city-sub">Стартовый остров</div>
+    <div id="city-grade">No-Grade</div>
+  </div>
+  <div id="last-session" class="last-session hidden">
+    <div class="ls-title">📦 Последняя сессия · <span id="ls-zone">—</span></div>
+    <div class="ls-grid">
+      <div class="ls-cell"><div class="ls-ico">💰</div><div class="ls-val" id="ls-gold">0</div></div>
+      <div class="ls-cell"><div class="ls-ico">⭐</div><div class="ls-val" id="ls-xp">0</div></div>
+      <div class="ls-cell"><div class="ls-ico">👹</div><div class="ls-val" id="ls-kills">0</div></div>
+      <div class="ls-cell"><div class="ls-ico">⚔</div><div class="ls-val" id="ls-items">0</div></div>
+      <div class="ls-cell"><div class="ls-ico">📜</div><div class="ls-val" id="ls-scrolls">0</div></div>
+      <div class="ls-cell"><div class="ls-ico">✨</div><div class="ls-val" id="ls-blessed">0</div></div>
     </div>
+  </div>
+  <div id="city-zones"></div>
+  <button id="btn-open-teleport" class="city-btn">🌍 Телепорт в другой город</button>
+
+  <div id="dev-codes">
+    <input id="dev-code-input" type="text" placeholder="dev-код" autocomplete="off">
+    <button id="dev-code-apply">Активировать</button>
+  </div>
+</div>>
+
     <div id="last-session" class="last-session hidden">
       <div class="ls-title">📦 Последняя сессия · <span id="ls-zone">—</span></div>
       <div class="ls-grid">
@@ -230,7 +260,9 @@
 
   <div id="toast-container"></div>
 
-  <div id="class-select" class="overlay">
+<div id="auth-screen" class="overlay hidden"></div>
+
+  <div id="class-select" class="overlay hidden">
     <h1>Auto L2</h1>
     <p>Выбери класс</p>
     <div class="class-buttons">
@@ -268,7 +300,73 @@
     <div class="tp-ring"></div>
     <div class="tp-icon">🌍</div>
   </div>
+<!-- ===== ОФЛАЙН-ФАРМ ПЛАШКА ===== -->
+<div id="offline-overlay" class="offline-overlay hidden">
+  <div class="offline-panel">
+    <div class="offline-header">
+      <span class="offline-icon">💤</span>
+      <span class="offline-title">Офлайн-фарм</span>
+    </div>
 
+    <div class="offline-zone" id="offline-zone">Зона: —</div>
+
+    <div class="offline-timer" id="offline-timer">0:00:00</div>
+
+    <div class="offline-progress">
+      <div class="offline-progress-fill" id="offline-progress" style="width:0%"></div>
+    </div>
+
+    <div class="offline-stats">
+      <div class="offline-stat">
+        <span class="os-label">💰 Золото</span>
+        <span class="os-val" id="offline-gold">0</span>
+      </div>
+      <div class="offline-stat">
+        <span class="os-label">⭐ Опыт</span>
+        <span class="os-val" id="offline-xp">0</span>
+      </div>
+      <div class="offline-stat">
+        <span class="os-label">⚔ Убито</span>
+        <span class="os-val" id="offline-kills">0</span>
+      </div>
+      <div class="offline-stat">
+        <span class="os-label">📦 Дроп</span>
+        <span class="os-val" id="offline-drops">0</span>
+      </div>
+    </div>
+
+    <div class="offline-res">
+      <div class="or-row">
+        <span>⚡ Соски:</span>
+        <span id="offline-soulshots">0</span>
+      </div>
+      <div class="or-row">
+        <span>🧪 Зелья:</span>
+        <span id="offline-potions">0</span>
+      </div>
+    </div>
+
+    <div class="offline-forecast" id="offline-forecast">
+      Сосок хватит на: —
+    </div>
+
+    <div class="offline-log" id="offline-log"></div>
+
+    <button class="offline-btn" id="offline-return">🏃 Вернуться в игру</button>
+  </div>
+</div>
+
+<!-- ===== ОТЧЁТ ОФЛАЙН-ФАРМА ===== -->
+<div id="offline-report" class="offline-overlay hidden">
+  <div class="offline-panel">
+    <div class="offline-header">
+      <span class="offline-icon" id="report-icon">✅</span>
+      <span class="offline-title" id="report-title">Отчёт офлайн-фарма</span>
+    </div>
+    <div id="report-body"></div>
+    <button class="offline-btn" id="report-close">Закрыть</button>
+  </div>
+</div>
   <script type="module" src="main.js"></script>
 </body>
 </html>

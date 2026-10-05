@@ -14,7 +14,9 @@ import { createBots, tickBots } from './bots.js';
 import {
   initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie
 } from './audio.js';
-
+import { startOfflineFarm, stopOffline, getOfflineStatus, OFFLINE_MAX_HOURS } from './offline.js';
+import { initAuth, getAuthUser } from './auth-ui.js';
+import { saveProgress } from './save.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -24,6 +26,7 @@ const layout = { COLS, ROWS, cellPx: 36, offsetX: 0, offsetY: 0 };
 const camera = { x: 0, y: 0, w: 0, h: 0 };
 
 const state = {
+    
   hero: null, mobs: [], projectiles: [], effects: [],
   gold: 3000,
   currentCity: 'talking_island',
@@ -39,6 +42,9 @@ const state = {
   portal: null,
   dungeon: null,
   aoeList: [],
+  offlineAliveCheck: false,
+  offlineInterval: null,
+  aliveTime: 0,
 };
 
 const auction = createAuction();
@@ -83,7 +89,6 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
 });
 
-// Джойстик
 const joyEl = document.getElementById('joystick');
 const joyBase = document.getElementById('joystick-base');
 const joyStick = document.getElementById('joystick-stick');
@@ -150,7 +155,6 @@ document.querySelectorAll('.class-btn').forEach(btn => {
   btn.addEventListener('click', () => startGame(btn.dataset.class));
 });
 
-// HUD-кнопки
 function bindHudActions() {
   document.querySelectorAll('.hud-potion').forEach(el => {
     el.addEventListener('click', () => {
@@ -202,6 +206,27 @@ function bindHudActions() {
       updateHudActions();
     });
   });
+
+  // Кнопка офлайн-фарма
+  const offlineBtn = document.getElementById('hud-offline');
+  if (offlineBtn) {
+    offlineBtn.addEventListener('click', () => {
+      const hero = state.hero;
+      if (!hero) return;
+      if (hero.offlineActive) {
+        openOfflinePanel();
+        return;
+      }
+      if (!state.currentZone) { toast('Офлайн-фарм только в зоне', 'epic'); return; }
+      if (state.dungeon) { toast('Нельзя в данже', 'epic'); return; }
+
+      const result = startOfflineFarm(state);
+      if (!result.ok) { toast('Нельзя', 'epic'); return; }
+
+      toast('💤 Офлайн-фарм запущен. Бой продолжается.', 'legendary');
+      setTimeout(() => openOfflinePanel(), 100);
+    });
+  }
 }
 bindHudActions();
 
@@ -224,7 +249,6 @@ function startGame(classType) {
   state.currentZone = null;
   state.inBattle = false;
 
-  // Арена: создаём ботов
   arena.bots = createBots(100);
 
   document.getElementById('class-select').classList.add('hidden');
@@ -232,16 +256,13 @@ function startGame(classType) {
 
   rebuildShopStock();
 
- initUI(state, auction, shop, arena, {
-  onEquipChange: () => { updateHUD(); refreshUI(); },
-  onEnterZone: (zoneId) => enterZone(zoneId),
-  onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
-  onReturnToCity: () => returnToCity(),
-  makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
-});
 
-  updateHUD();
-  showCityScreen();
+
+updateHUD();
+showCityScreen();
+
+// Сохранить нового героя
+setTimeout(() => saveProgress(state), 500);
 }
 
 function rebuildShopStock() {
@@ -252,6 +273,14 @@ function rebuildShopStock() {
 function enterZone(zoneId) {
   const city = CITIES[state.currentCity];
   const zone = findZone(state.currentCity, zoneId);
+   if (state.hero && state.hero.offlineActive) {
+    // Разрешаем только в ту же зону, где идёт офлайн
+    if (state.hero.offlineZoneId !== zoneId) {
+      toast('Персонаж занят офлайн-фармом в другой зоне', 'epic');
+      return;
+    }
+    // В свою зону — можно, плашка откроется автоматически через loop
+  }
   if (!zone) return;
   if (state.gold < zone.teleportCost) { toast('Недостаточно золота', 'epic'); return; }
 
@@ -269,6 +298,8 @@ function enterZone(zoneId) {
   state.portal = spawnPortalInZone(zone);
   state.dungeon = null;
   state.aoeList = [];
+  state.offlineAliveCheck = false;
+  state.aliveTime = 0;
 
   document.getElementById('zone-name').textContent = zone.name;
   document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
@@ -320,6 +351,8 @@ function exitDungeon(won) {
 }
 
 function returnToCity() {
+  const hero = state.hero;
+  
   if (state.sessionStats.kills > 0 || state.sessionStats.gold > 0) {
     state.lastSession = { zone: state.currentZone?.name || '—', ...state.sessionStats };
   }
@@ -329,12 +362,12 @@ function returnToCity() {
   state.dungeon = null;
   state.portal = null;
   state.aoeList = [];
+  document.getElementById('offline-overlay').classList.add('hidden');
   playTeleportAnim(() => {
     showCityScreen();
     updateHUD();
   });
 }
-
 function travelToCity(cityId, cost) {
   if (state.gold < cost) return;
   state.gold -= cost;
@@ -525,12 +558,53 @@ function playTeleportAnim(callback) {
 }
 
 let lastTime = performance.now();
+
 function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
-  if (state.hero && state.inBattle && !state.hero.dead) update(dt);
-  if (state.hero && !state.inBattle) tickBots(arena.bots, dt);
+
+  const hero = state.hero;
+
+  // Обычный бой — идёт всегда, если герой в зоне и жив.
+  // Офлайн — это просто флаг: игрок не управляет, но бой идёт.
+  if (hero && state.inBattle && !hero.dead) {
+    update(dt);
+  } else if (hero && !state.inBattle && !hero.offlineActive) {
+    tickBots(arena.bots, dt);
+  }
+
   if (state.inBattle) render(ctx, canvas, state, layout, camera);
+
+  // Обновляем плашку офлайна, если она открыта
+  if (hero && hero.offlineActive) {
+    // Лог раз в 5 секунд
+    hero.offlineLogTimer = (hero.offlineLogTimer || 0) + dt;
+    if (hero.offlineLogTimer >= 5) {
+      hero.offlineLogTimer = 0;
+      const st = getOfflineStatus(state);
+      if (st) {
+        if (!hero.offlineLog) hero.offlineLog = [];
+        hero.offlineLog.push({
+          time: st.seconds,
+          text: `⚔ ${Math.floor(st.kills)} убийств, +${Math.floor(st.gold)}💰, HP ${st.hp}/${st.maxHp}`,
+          type: 'progress',
+        });
+        if (hero.offlineLog.length > 30) hero.offlineLog.shift();
+      }
+    }
+
+     const overlay = document.getElementById('offline-overlay');
+    if (overlay) {
+      const inOfflineZone = state.currentZone && state.currentZone.id === hero.offlineZoneId;
+      if (inOfflineZone) {
+        if (overlay.classList.contains('hidden')) overlay.classList.remove('hidden');
+        updateOfflinePanel();
+      } else {
+        if (!overlay.classList.contains('hidden')) overlay.classList.add('hidden');
+      }
+    }
+  }
+
   requestAnimationFrame(loop);
 }
 
@@ -775,7 +849,6 @@ function update(dt) {
         state.sessionStats.gold += drops.gold;
         toast(`💰 +${drops.gold} с босса`, 'legendary');
 
-        // Пропуск на арену с босса — 100% 1 шт.
         addToBackpack(hero, createArenaPass(1));
         toast('🎫 Пропуск на арену!', 'legendary');
 
@@ -847,7 +920,18 @@ function update(dt) {
 
   updateCamera(hero);
   updateHUD();
+
+  // Трекинг "жив 30 секунд" для офлайн-фарма
+  if (state.inBattle && !hero.dead && !hero.offlineActive) {
+    state.aliveTime = (state.aliveTime || 0) + dt;
+    if (state.aliveTime >= 30 && !state.offlineAliveCheck) {
+      state.offlineAliveCheck = true;
+      const btn = document.getElementById('hud-offline');
+      if (btn) btn.classList.add('ready');
+    }
+  }
 }
+
 
 // ===== DEV-КОДЫ =====
 function applyDevCode(code) {
@@ -908,5 +992,222 @@ document.getElementById('dev-code-apply').addEventListener('click', () => {
 document.getElementById('dev-code-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { applyDevCode(e.target.value); e.target.value = ''; }
 });
+
+// ===== АВТОСЕЙВ =====
+setInterval(() => {
+  if (state.hero && getAuthUser()) {
+    saveProgress(state);
+  }
+}, 5000);
+
+window.addEventListener('beforeunload', () => {
+  if (state.hero && getAuthUser()) {
+    saveProgress(state);
+  }
+});
+// ===== ИНИЦИАЛИЗАЦИЯ UI (один раз) =====
+initUI(state, auction, shop, arena, {
+  onEquipChange: () => { updateHUD(); refreshUI(); },
+  onEnterZone: (zoneId) => enterZone(zoneId),
+  onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
+  onReturnToCity: () => returnToCity(),
+  makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
+});
+// ===== АВТОРИЗАЦИЯ =====
+// ===== АВТОРИЗАЦИЯ =====
+let _progressLoaded = false;
+// ===== ОФЛАЙН-ПАНЕЛЬ =====
+function openOfflinePanel() {
+  const hero = state.hero;
+  if (!hero || !hero.offlineActive) return;
+  if (!state.currentZone || state.currentZone.id !== hero.offlineZoneId) return;
+  const overlay = document.getElementById('offline-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  updateOfflinePanel();
+}
+
+function updateOfflinePanel() {
+  const hero = state.hero;
+  if (!hero || !hero.offlineActive) return;
+  const st = getOfflineStatus(state);
+  if (!st) return;
+
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  const setWidth = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.style.width = val + '%';
+  };
+
+  const hours = Math.floor(st.seconds / 3600);
+  const mins = Math.floor((st.seconds % 3600) / 60);
+
+  setText('offline-zone', `Зона: ${st.zoneName}`);
+  setText('offline-timer', `${hours}ч ${mins}мин`);
+  setText('offline-gold', Math.floor(st.gold).toLocaleString());
+  setText('offline-xp', Math.floor(st.xp).toLocaleString());
+  setText('offline-kills', Math.floor(st.kills));
+  setText('offline-drops', Math.floor(st.items));
+  setText('offline-soulshots', st.soulshotsLeft);
+  setText('offline-potions', st.potionsLeft);
+
+  const progress = Math.min(100, (st.seconds / st.maxSeconds) * 100);
+  setWidth('offline-progress', progress);
+
+  const forecast = document.getElementById('offline-forecast');
+  if (forecast) {
+    if (st.dead) {
+      forecast.textContent = `💀 Умер. HP 0/${st.maxHp}`;
+      forecast.style.color = '#ef4444';
+    } else {
+      forecast.textContent = `❤ HP ${st.hp}/${st.maxHp}`;
+      forecast.style.color = st.hp / st.maxHp > 0.5 ? '#4ade80' : '#ef4444';
+    }
+  }
+
+  const logEl = document.getElementById('offline-log');
+  if (logEl) {
+    logEl.innerHTML = '';
+    for (const entry of st.log) {
+      const div = document.createElement('div');
+      div.className = entry.type === 'death' ? 'log-death' : 'log-progress';
+      const m = Math.floor(entry.time / 60);
+      const s = Math.floor(entry.time % 60);
+      div.textContent = `[${m}:${s < 10 ? '0' : ''}${s}] ${entry.text}`;
+      logEl.appendChild(div);
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const btn = document.getElementById('offline-return');
+  if (btn) {
+    btn.textContent = st.dead ? '🏙 В город' : '🏃 Вернуться в игру';
+  }
+}
+
+function returnFromOffline() {
+  const hero = state.hero;
+  if (!hero || !hero.offlineActive) return;
+
+  const wasDead = hero.dead;
+
+  stopOffline(state);
+
+  document.getElementById('offline-overlay').classList.add('hidden');
+
+  if (wasDead) {
+    // Возврат в город с респавном
+    hero.hp = hero.maxHp;
+    hero.dead = false;
+    state.inBattle = false;
+    state.mobs = [];
+    state.projectiles = [];
+    state.effects = [];
+    state.currentZone = null;
+    state.dungeon = null;
+    state.portal = null;
+    state.aoeList = [];
+    showCityScreen();
+    updateHUD();
+  } else {
+    // Продолжаем в зоне
+    toast('💤 Офлайн завершён. Управление возвращено.', 'legendary');
+    updateHUD();
+  }
+
+  setTimeout(() => saveProgress(state), 300);
+}
+
+initAuth({
+  onLoadProgress: (save) => {
+    if (_progressLoaded) return;
+    _progressLoaded = true;
+
+    try {
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('class-select').classList.add('hidden');
+
+      if (!save || !save.hero) {
+        document.getElementById('class-select').classList.remove('hidden');
+        return;
+      }
+
+      state.hero = save.hero;
+      state.gold = save.gold || 3000;
+      state.currentCity = save.currentCity || 'talking_island';
+      recalcStats(state.hero);
+
+      document.getElementById('bottom-panel').classList.remove('hidden');
+      rebuildShopStock();
+
+      // === ОФЛАЙН — приоритет ===
+            if (state.hero.offlineActive && state.hero.offline) {
+        // Всегда в город, если офлайн. Панель НЕ открываем автоматически.
+        showCityScreen();
+        updateHUD();
+        return;
+      }
+      // === Обычная загрузка ===
+      if (save.currentZoneId && save.inBattle) {
+        const zone = findZone(state.currentCity, save.currentZoneId);
+        if (zone) {
+          state.currentZone = zone;
+          state.inBattle = true;
+          state.mobs = [];
+          state.projectiles = [];
+          state.effects = [];
+          state.spawnTimer = 0.5;
+          state.hero.x = COLS / 2;
+          state.hero.y = ROWS / 2;
+          state.hero.dead = false;
+          state.hero.hp = state.hero.maxHp;
+          state.portal = spawnPortalInZone(zone);
+          state.dungeon = null;
+          state.aoeList = [];
+          document.getElementById('zone-name').textContent = zone.name;
+          document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
+          hideCityScreen();
+        } else {
+          showCityScreen();
+        }
+      } else {
+        showCityScreen();
+      }
+
+      updateHUD();
+      toast(`👋 С возвращением!`, 'legendary');
+    } catch (e) {
+      console.error('onLoadProgress error:', e);
+    }
+  },
+  onNewPlayer: (user) => {
+    if (_progressLoaded) return;
+    _progressLoaded = true;
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('class-select').classList.remove('hidden');
+  },
+});
+
+// Привязка кнопок офлайна
+setTimeout(() => {
+  const returnBtn = document.getElementById('offline-return');
+  if (returnBtn) returnBtn.addEventListener('click', returnFromOffline);
+  const minimizeBtn = document.getElementById('offline-minimize');
+  if (minimizeBtn) minimizeBtn.addEventListener('click', () => {
+    document.getElementById('offline-overlay').classList.add('hidden');
+  });
+  const closeBtn = document.getElementById('report-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => {
+    document.getElementById('offline-report').classList.add('hidden');
+  });
+  setInterval(() => {
+    if (state.hero?.offlineActive) updateOfflinePanel();
+  }, 1000);
+}, 200);
+
+window.openOfflinePanel = openOfflinePanel;
 
 requestAnimationFrame(loop);
