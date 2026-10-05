@@ -905,7 +905,7 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 .arena-tab-content { min-height: 100px; }
 .arena-list { display: flex; flex-direction: column; gap: 2px; }
 .arena-row {
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; gap: 3px;
   padding: 4px 6px;
   background: linear-gradient(180deg, var(--bg-slot) 0%, var(--bg-slot-dark) 100%);
   border: 1px solid var(--border-base);
@@ -917,9 +917,12 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   border-color: var(--gold);
   box-shadow: 0 0 8px rgba(212, 175, 55, 0.4);
 }
-.ar-place { color: var(--text-dim); min-width: 32px; font-weight: bold; font-size: 10px; }
-.ar-name { flex: 1; color: var(--text); font-weight: bold; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ar-rating { color: var(--gold-bright); font-weight: bold; min-width: 40px; text-align: right; }
+.ar-place { color: var(--text-dim); min-width: 28px; font-weight: bold; font-size: 9px; }
+.ar-class { font-size: 12px; min-width: 14px; text-align: center; }
+.ar-name { flex: 1; color: var(--text); font-weight: bold; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.ar-level { color: #94a3b8; font-size: 9px; min-width: 38px; font-weight: bold; text-align: center; }
+.ar-dur { font-size: 9px; min-width: 40px; text-align: center; font-weight: bold; }
+.ar-rating { color: var(--gold-bright); font-weight: bold; min-width: 36px; text-align: right; font-size: 10px; }
 .ar-chance { min-width: 50px; text-align: center; font-weight: bold; font-size: 10px; }
 .chance-high { color: #4ade80; }
 .chance-mid { color: #fbbf24; }
@@ -1871,3 +1874,155 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 .bl-soulshot { color: #fbbf24; }
 
 .bl-crit { background: rgba(239, 68, 68, 0.1); }
+/* ===== НОВАЯ СТРОКА АРЕНЫ ===== */
+.ar-class { font-size: 12px; min-width: 14px; text-align: center; }
+.ar-level { color: #94a3b8; font-size: 9px; min-width: 38px; font-weight: bold; text-align: center; }
+.ar-dur { min-width: 42px; text-align: center; }
+
+/* Обновим существующие */
+.arena-row {
+  display: flex; align-items: center; gap: 3px;
+  padding: 4px 6px;
+  background: linear-gradient(180deg, var(--bg-slot) 0%, var(--bg-slot-dark) 100%);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  font-size: 10px;
+}
+.ar-place { color: var(--text-dim); min-width: 28px; font-weight: bold; font-size: 9px; }
+.ar-name { flex: 1; color: var(--text); font-weight: bold; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.ar-rating { color: var(--gold-bright); font-weight: bold; min-width: 36px; text-align: right; font-size: 10px; }
+.ar-change { color: var(--text-dim); font-size: 9px; min-width: 56px; text-align: center; }
+
+/* ===== МОДАЛКА СРАВНЕНИЯ ===== */
+.compare-window { max-width: 560px !important; }
+
+.cmp-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 6px;
+  background: linear-gradient(180deg, #1a0f2a 0%, #0a0510 100%);
+  border: 1px solid var(--purple-dark);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.cmp-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.cmp-avatar {
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 2px solid var(--purple);
+  background: linear-gradient(180deg, #2a1a3a 0%, #150a1f 100%);
+  font-size: 26px;
+}
+.cmp-avatar.battle-archer { border-color: #4ade80; box-shadow: 0 0 12px rgba(74, 222, 128, 0.5); }
+.cmp-avatar.battle-mage { border-color: #c084fc; box-shadow: 0 0 12px rgba(192, 132, 252, 0.5); }
+.cmp-name {
+  font-size: 11px; font-weight: bold;
+  color: var(--gold-bright);
+  text-align: center;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmp-level { font-size: 9px; color: var(--text-dim); }
+.cmp-dur { font-size: 11px; margin-top: 2px; }
+.cmp-vs {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--gold-bright);
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.8);
+  letter-spacing: 2px;
+  align-self: center;
+  padding: 0 4px;
+}
+
+.cmp-section {
+  background: var(--bg-slot-dark);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  margin-bottom: 6px;
+}
+.cmp-title {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 0.3px;
+}
+.cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 10px;
+  border-bottom: 1px solid rgba(42, 58, 92, 0.2);
+}
+.cmp-row:last-child { border-bottom: none; }
+.cmp-val {
+  flex: 1;
+  font-weight: bold;
+  font-size: 11px;
+  text-align: center;
+}
+.cmp-val.cmp-good { color: #4ade80; text-shadow: 0 0 4px rgba(74, 222, 128, 0.4); }
+.cmp-val.cmp-bad { color: #ef4444; text-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
+.cmp-label {
+  flex: 1;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.cmp-reward {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-slot-dark);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+.cmp-reward-win, .cmp-reward-lose {
+  flex: 1;
+  text-align: center;
+  font-size: 10px;
+}
+.cmp-reward-win { color: #4ade80; }
+.cmp-reward-lose { color: #ef4444; }
+.cmp-reward-win b, .cmp-reward-lose b { font-size: 12px; }
+
+.cmp-buttons { display: flex; gap: 6px; }
+.cmp-btn {
+  flex: 1;
+  padding: 8px;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  border: 1px solid;
+}
+.cmp-btn-fight {
+  background: linear-gradient(180deg, #2a4a2a 0%, #1a2a1a 100%);
+  border-color: var(--green);
+  color: var(--green);
+}
+.cmp-btn-fight:disabled { opacity: 0.4; cursor: not-allowed; }
+.cmp-btn-fight:active:not(:disabled) { background: var(--green); color: #000; }
+.cmp-btn-back {
+  background: var(--bg-slot);
+  border-color: var(--border-base);
+  color: var(--text);
+}
+.cmp-btn-back:active { background: var(--bg-slot-dark); }

@@ -4,7 +4,7 @@ import { equipItem, unequipItem, canEquip, tryEnhance, getShadowStats, getShadow
 import { buyListing, listItem, sellToBot } from './auction.js';
 import { buyEquipment, buyScroll, buyPotion, buySoulshot } from './shop.js';
 import { CITIES, CITY_ORDER, cityTeleportCost, zoneDifficultyLabel } from './cities.js';
-import { getAvailableChests, claimChest, rollCardRewards, applyRouletteToHero, estimateWinChance, fightBot, expectedScore } from './arena.js';
+import { getAvailableChests, claimChest, rollCardRewards, estimateWinChance, fightBot, expectedScore } from './arena.js';
 import { getBotStats } from './bots.js';
 
 let state = null;
@@ -19,6 +19,7 @@ let heroScreen = 'hero';
 let enhanceSelectedItem = null;
 let arenaScreen = 'list';
 let lastArenaResult = null;
+let compareBotId = null;
 
 const STAT_ORDER = [
   'attack','defense','hp','critChance','critDamage','dodge',
@@ -439,6 +440,35 @@ function statsTwoMain(item) {
   return rows.join('');
 }
 
+// Прочность квадратиками
+function durabilityBar(dur) {
+  const filled = Math.max(0, Math.min(5, Math.ceil(dur / 20)));
+  const color = dur >= 80 ? '#4ade80' : dur >= 60 ? '#fbbf24' : dur >= 40 ? '#fb923c' : dur >= 20 ? '#ef4444' : '#7f1d1d';
+  let s = '';
+  for (let i = 0; i < 5; i++) s += i < filled ? '█' : '░';
+  return `<span style="color:${color};letter-spacing:-1px;font-size:11px;font-weight:bold">${s}</span>`;
+}
+
+// Средняя прочность бота
+function avgDurability(bot) {
+  let sum = 0, count = 0;
+  for (const slot of SLOTS) {
+    const item = bot.equipment[slot];
+    if (item && item.durability !== undefined) { sum += item.durability; count++; }
+  }
+  return count > 0 ? Math.round(sum / count) : 100;
+}
+
+// Средняя прочность тени
+function avgShadowDurability(hero) {
+  let sum = 0, count = 0;
+  for (const slot of SLOTS) {
+    const item = hero.shadow.equipment[slot];
+    if (item && item.durability !== undefined) { sum += item.durability; count++; }
+  }
+  return count > 0 ? Math.round(sum / count) : 100;
+}
+
 export function openModal(name) {
   document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
   const modal = document.getElementById('modal-' + name);
@@ -747,7 +777,6 @@ function renderShadowContent() {
   renderShadowBackpack();
 }
 
-// Слоты расходников тени
 function renderShadowSlots() {
   const hero = state.hero;
   const sh = hero.shadow;
@@ -1518,6 +1547,8 @@ function renderArenaProfile() {
   if (!el) return;
   const rating = hero.arena.rating;
   const tier = getTier(rating);
+  const myDur = avgShadowDurability(hero);
+  const passes = hero.backpack.filter(x => x.kind === 'pass').reduce((s,x) => s + (x.count||1), 0);
   el.innerHTML = `
     <div class="ap-rating">Рейтинг: <b>${rating}</b></div>
     <div class="ap-tier" style="color:${tier.color}">${tier.icon} ${tier.name}</div>
@@ -1550,119 +1581,165 @@ function renderArenaList() {
   all.push({ type: 'me', rating: hero.arena.rating });
   all.sort((a, b) => b.rating - a.rating);
 
-  const myStats = getShadowStats(hero);
   const passes = hero.backpack.filter(x => x.kind === 'pass').reduce((s,x) => s + (x.count||1), 0);
+  const myAvgDur = avgShadowDurability(hero);
+  const myDurColor = myAvgDur >= 80 ? '#4ade80' : myAvgDur >= 50 ? '#fbbf24' : '#ef4444';
+  const myClassIcon = hero.classType === 'mage' ? '🔮' : '🏹';
 
   el.innerHTML = all.map((entry, i) => {
     const place = i + 1;
     if (entry.type === 'me') {
       return `<div class="arena-row arena-row-me">
         <span class="ar-place">#${place}</span>
+        <span class="ar-class">${myClassIcon}</span>
         <span class="ar-name">⭐ ${hero.name} (ты)</span>
+        <span class="ar-level">Lv.${hero.level}</span>
+        <span class="ar-dur">${durabilityBar(myAvgDur)}</span>
         <span class="ar-rating">${entry.rating}</span>
         <span class="ar-rest">🎫 ${passes}</span>
       </div>`;
     }
     const bot = entry.bot;
-    const oppStats = getBotStats(bot);
-    const chance = myStats ? estimateWinChance(myStats, oppStats) : 50;
+    const avgDur = avgDurability(bot);
+    const classIcon = bot.classType === 'mage' ? '🔮' : '🏹';
+    const level = bot.level || (1 + Math.floor(bot.rating / 30));
     const expected = expectedScore(hero.arena.rating, bot.rating);
     const winChange = Math.round(32 * (1 - expected));
     const loseChange = Math.round(32 * (0 - (1 - expected)));
 
-    let chanceClass = 'chance-low';
-    let chanceIcon = '🟥';
-    if (chance >= 60) { chanceClass = 'chance-high'; chanceIcon = '🟩'; }
-    else if (chance >= 35) { chanceClass = 'chance-mid'; chanceIcon = '🟨'; }
-
-    const ssCount = Object.values(bot.soulshots).reduce((a,b) => a+b, 0);
-    const potCount = Object.values(bot.potions).reduce((a,b) => a+b, 0);
-    const scrollCount = Object.values(bot.activeBuffs).filter(x => x).length;
-
     return `<div class="arena-row arena-row-bot">
       <span class="ar-place">#${place}</span>
+      <span class="ar-class">${classIcon}</span>
       <span class="ar-name">${bot.name}</span>
+      <span class="ar-level">Lv.${level}</span>
+      <span class="ar-dur">${durabilityBar(avgDur)}</span>
       <span class="ar-rating">${bot.rating}</span>
-      <span class="ar-chance ${chanceClass}">${chanceIcon} ${chance}%</span>
-      <span class="ar-change">+${winChange} / ${loseChange}</span>
-      <span class="ar-res">⚡${ssCount} 🧪${potCount}${scrollCount > 0 ? ' 🗡' + scrollCount : ''}</span>
-      <button class="ar-btn" data-fight="${bot.id}" ${passes <= 0 ? 'disabled' : ''}>Атака</button>
+      <span class="ar-change">${winChange >= 0 ? '+' : ''}${winChange}/${loseChange}</span>
+      <button class="ar-btn" data-fight="${bot.id}" ${passes <= 0 ? 'disabled' : ''}>Сравнить</button>
     </div>`;
   }).join('');
 
   el.querySelectorAll('[data-fight]').forEach(btn => {
     btn.addEventListener('click', () => {
       const botId = parseInt(btn.dataset.fight);
-      startArenaFight(botId);
+      openCompareModal(botId);
     });
   });
 }
 
-function renderArenaHistory() {
+// ===== СРАВНЕНИЕ =====
+function openCompareModal(botId) {
   const hero = state.hero;
-  const el = document.getElementById('arena-history');
-  if (!el) return;
-  if (hero.arena.history.length === 0) { el.innerHTML = '<div class="empty-state">История боёв пуста</div>'; return; }
-  el.innerHTML = hero.arena.history.map(h => {
-    const resultText = h.result === 'win' ? '🏆 Победа' : h.result === 'loss' ? '💀 Поражение' : '🤝 Ничья';
-    const color = h.result === 'win' ? '#4ade80' : h.result === 'loss' ? '#ef4444' : '#94a3b8';
-    const sign = h.change > 0 ? '+' : '';
-    return `<div class="ah-row">
-      <span style="color:${color}">${resultText}</span>
-      <span>vs ${h.botName} (${h.botRating})</span>
-      <span style="color:${h.change > 0 ? '#4ade80' : '#ef4444'}">${sign}${h.change}</span>
-    </div>`;
-  }).join('');
-}
+  const bot = arena.bots.find(b => b.id === botId);
+  if (!bot) { toast('Бот не найден', 'epic'); return; }
 
-function renderArenaChests() {
-  const hero = state.hero;
-  const el = document.getElementById('arena-chests');
-  if (!el) return;
-  el.innerHTML = RATING_CHESTS.map(chest => {
-    const claimed = hero.arena.claimedChests.includes(chest.id);
-    const canClaim = hero.arena.rating >= chest.rating && !claimed;
-    let status = '';
-    if (claimed) status = '<span class="ac-claimed">✓ Получено</span>';
-    else if (canClaim) status = `<button class="ac-btn" data-claim="${chest.id}">Забрать</button>`;
-    else status = `<span class="ac-locked">🔒 ${chest.rating}</span>`;
-    return `<div class="ac-row ${canClaim ? 'ac-ready' : ''}">
-      <span class="ac-icon">${chest.icon}</span>
-      <span class="ac-name">${chest.name}</span>
-      <span class="ac-info">${chest.gold}💰 · ${chest.scrolls}📜 · ${chest.blessed}✨ · ${chest.passes}🎫</span>
-      ${status}
-    </div>`;
-  }).join('');
+  compareBotId = botId;
 
-  el.querySelectorAll('[data-claim]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const chestId = btn.dataset.claim;
-      const r = claimChest(hero, chestId);
-      if (r.ok) {
-        state.gold += r.rewards.gold;
-        if (r.rewards.scrolls) {
-          const g = CITIES[state.currentCity].grade;
-          if (!hero.scrolls[g]) hero.scrolls[g] = { weapon: 0, armor: 0 };
-          hero.scrolls[g].weapon += r.rewards.scrolls;
-        }
-        if (r.rewards.blessed) {
-          const existing = hero.backpack.find(x => x.kind === 'blessed');
-          if (existing) existing.count = (existing.count || 1) + r.rewards.blessed;
-          else hero.backpack.push({ id: Date.now(), kind: 'blessed', name: 'Blessed Scroll', icon: '✨', slot: 'blessed', grade: 'any', count: r.rewards.blessed });
-        }
-        if (r.rewards.passes) {
-          const existing = hero.backpack.find(x => x.kind === 'pass');
-          if (existing) existing.count = (existing.count || 1) + r.rewards.passes;
-          else hero.backpack.push({ id: Date.now(), kind: 'pass', name: 'Пропуск на арену', icon: '🎫', slot: 'pass', grade: 'any', count: r.rewards.passes });
-        }
-        toast(`🎁 ${r.chest.name} сундук открыт!`, 'legendary');
-        renderArenaChests();
-        callbacks.onEquipChange && callbacks.onEquipChange();
-      }
-    });
+  const myStats = getShadowStats(hero);
+  const oppStats = getBotStats(bot);
+  const expected = expectedScore(hero.arena.rating, bot.rating);
+  const winChange = Math.round(32 * (1 - expected));
+  const loseChange = Math.round(32 * (0 - (1 - expected)));
+  const passes = hero.backpack.filter(x => x.kind === 'pass').reduce((s,x) => s + (x.count||1), 0);
+
+  const modal = document.getElementById('modal-compare');
+  const body = document.getElementById('compare-body');
+  if (!modal || !body) return;
+
+  // Твои расходники
+  const mySS = Object.values(hero.shadow.soulshots || {}).reduce((a,b) => a+b, 0);
+  const myPot = Object.values(hero.shadow.potions || {}).reduce((a,b) => a+b, 0);
+  const myScr = Object.values(hero.shadow.scrolls || {}).reduce((a,b) => a+b, 0);
+
+  // Расходники бота
+  const oppSS = Object.values(bot.soulshots || {}).reduce((a,b) => a+b, 0);
+  const oppPot = Object.values(bot.potions || {}).reduce((a,b) => a+b, 0);
+  const oppScr = Object.values(bot.activeBuffs || {}).filter(x => x).length;
+
+  const myDur = avgShadowDurability(hero);
+  const oppDur = avgDurability(bot);
+
+  // Функция сравнения статов
+  const compare = (label, icon, my, opp, suffix = '') => {
+    const myN = Math.round(my * 10) / 10;
+    const oppN = Math.round(opp * 10) / 10;
+    let myClass = '', oppClass = '';
+    if (myN > oppN) { myClass = 'cmp-good'; oppClass = 'cmp-bad'; }
+    else if (myN < oppN) { myClass = 'cmp-bad'; oppClass = 'cmp-good'; }
+    return `<div class="cmp-row">
+      <span class="cmp-val ${myClass}">${myN}${suffix}</span>
+      <span class="cmp-label">${icon} ${label}</span>
+      <span class="cmp-val ${oppClass}">${oppN}${suffix}</span>
+    </div>`;
+  };
+
+  body.innerHTML = `
+    <div class="cmp-header">
+      <div class="cmp-side">
+        <div class="cmp-avatar battle-archer">${hero.emoji}</div>
+        <div class="cmp-name">${hero.name}</div>
+        <div class="cmp-level">Lv.${hero.level} · ${hero.classType === 'mage' ? '🔮' : '🏹'}</div>
+        <div class="cmp-dur">${durabilityBar(myDur)}</div>
+      </div>
+      <div class="cmp-vs">VS</div>
+      <div class="cmp-side">
+        <div class="cmp-avatar ${bot.classType === 'mage' ? 'battle-mage' : 'battle-archer'}">${bot.classType === 'mage' ? '🔮' : '🏹'}</div>
+        <div class="cmp-name">${bot.name}</div>
+        <div class="cmp-level">Lv.${bot.level || (1 + Math.floor(bot.rating / 30))} · ${bot.classType === 'mage' ? '🔮' : '🏹'}</div>
+        <div class="cmp-dur">${durabilityBar(oppDur)}</div>
+      </div>
+    </div>
+
+    <div class="cmp-section">
+      <div class="cmp-title">📊 Статы</div>
+      ${compare('Атака', '⚔', myStats.attack, oppStats.attack)}
+      ${compare('Защита', '🛡', myStats.defense, oppStats.defense)}
+      ${compare('HP', '❤', myStats.maxHp, oppStats.maxHp)}
+      ${compare('Крит шанс', '💥', myStats.critChance, oppStats.critChance, '%')}
+      ${compare('Крит урон', '💢', myStats.critDamage, oppStats.critDamage, '%')}
+      ${compare('Скор. атаки', '⚡', myStats.attackSpeed, oppStats.attackSpeed)}
+      ${compare('Уворот', '💨', myStats.dodge, oppStats.dodge, '%')}
+      ${compare('Вампиризм', '🩸', myStats.lifesteal, oppStats.lifesteal, '%')}
+      ${compare('Точность', '🎯', myStats.accuracy, oppStats.accuracy, '%')}
+      ${compare('Пробитие', '🔨', myStats.armorPen, oppStats.armorPen, '%')}
+      ${compare('Сопр. криту', '🛡️', myStats.critResist, oppStats.critResist, '%')}
+    </div>
+
+    <div class="cmp-section">
+      <div class="cmp-title">🎒 Ресурсы</div>
+      <div class="cmp-row">
+        <span class="cmp-val">⚡${mySS} 🧪${myPot} 🗡${myScr}</span>
+        <span class="cmp-label">Расходники</span>
+        <span class="cmp-val">⚡${oppSS} 🧪${oppPot} 🗡${oppScr}</span>
+      </div>
+    </div>
+
+    <div class="cmp-reward">
+      <div class="cmp-reward-win">🏆 Победа: <b>+${winChange}</b> рейтинга</div>
+      <div class="cmp-reward-lose">💀 Поражение: <b>${loseChange}</b> рейтинга</div>
+    </div>
+
+    <div class="cmp-buttons">
+      <button class="cmp-btn cmp-btn-fight" id="cmp-fight" ${passes <= 0 ? 'disabled' : ''}>
+        ${passes > 0 ? `🎫 Атаковать (${passes})` : '🎫 Нет пропуска'}
+      </button>
+      <button class="cmp-btn cmp-btn-back" id="cmp-back">← Назад</button>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+
+  document.getElementById('cmp-back').addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+
+  document.getElementById('cmp-fight').addEventListener('click', () => {
+    modal.classList.add('hidden');
+    startArenaFight(botId);
   });
 }
 
+// ===== БОЙ =====
 function startArenaFight(botId) {
   const hero = state.hero;
   const passIdx = hero.backpack.findIndex(x => x.kind === 'pass');
@@ -1778,7 +1855,6 @@ function playBattleAnimation(battle) {
   let currentIdx = 0;
   let skipped = false;
 
-  // Имена для лога
   const myName = battle.myName;
   const oppName = battle.oppName;
 
@@ -1806,7 +1882,6 @@ function playBattleAnimation(battle) {
       heroOpp.classList.add('battle-win');
     }
 
-    // Показать карточки поверх лога
     setTimeout(() => showCardRewards(), 500);
   }
 
@@ -1898,20 +1973,19 @@ function playBattleAnimation(battle) {
 
   step();
 }
-// Показать 3 карточки наград
+
+// ===== КАРТОЧКИ НАГРАД =====
 function showCardRewards() {
   const hero = state.hero;
   const r = lastArenaResult;
   if (!r) return;
 
-  // Убираем старый оверлей, если есть
   const oldOverlay = document.getElementById('reward-overlay');
   if (oldOverlay) oldOverlay.remove();
 
   const won = r.battle.result === 'win';
   const rewards = rollCardRewards(won, CITIES[state.currentCity].grade);
 
-  // Создаём оверлей — фиксированный, поверх всего
   const overlay = document.createElement('div');
   overlay.id = 'reward-overlay';
   overlay.className = 'reward-overlay';
@@ -1933,7 +2007,6 @@ function showCardRewards() {
   `;
   document.body.appendChild(overlay);
 
-  // Клик по карточке
   overlay.querySelectorAll('.reward-card').forEach(card => {
     card.addEventListener('click', () => {
       if (card.classList.contains('card-picked')) return;
@@ -1947,12 +2020,9 @@ function showCardRewards() {
 
       applyCardReward(hero, reward);
 
-      // Через 1.2 сек — убрать оверлей
       setTimeout(() => {
         overlay.classList.add('reward-closing');
-        setTimeout(() => {
-          overlay.remove();
-        }, 300);
+        setTimeout(() => overlay.remove(), 300);
       }, 1200);
     });
   });
@@ -1966,7 +2036,6 @@ function getRarityLabel(rarity) {
   return '';
 }
 
-// Применить награду карточки
 function applyCardReward(hero, reward) {
   const cityGrade = CITIES[state.currentCity].grade;
   let msg = '';
@@ -2016,21 +2085,83 @@ function applyCardReward(hero, reward) {
 
   toast(`🎁 ${msg}`, 'legendary');
   callbacks.onEquipChange && callbacks.onEquipChange();
-
-  // Кнопка «К списку» внизу — активируем
-  // (она уже есть)
 }
 
-// Получить следующий грейд
 function getHigherGrade(grade) {
   const order = ['ng','d','c','b','a','s'];
   const idx = order.indexOf(grade);
   return order[Math.min(idx + 1, order.length - 1)] || grade;
 }
+
 function renderArenaTab(tab) {
   if (tab === 'list') renderArenaList();
   if (tab === 'history') renderArenaHistory();
   if (tab === 'chests') renderArenaChests();
+}
+
+function renderArenaHistory() {
+  const hero = state.hero;
+  const el = document.getElementById('arena-history');
+  if (!el) return;
+  if (hero.arena.history.length === 0) { el.innerHTML = '<div class="empty-state">История боёв пуста</div>'; return; }
+  el.innerHTML = hero.arena.history.map(h => {
+    const resultText = h.result === 'win' ? '🏆 Победа' : h.result === 'loss' ? '💀 Поражение' : '🤝 Ничья';
+    const color = h.result === 'win' ? '#4ade80' : h.result === 'loss' ? '#ef4444' : '#94a3b8';
+    const sign = h.change > 0 ? '+' : '';
+    return `<div class="ah-row">
+      <span style="color:${color}">${resultText}</span>
+      <span>vs ${h.botName} (${h.botRating})</span>
+      <span style="color:${h.change > 0 ? '#4ade80' : '#ef4444'}">${sign}${h.change}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderArenaChests() {
+  const hero = state.hero;
+  const el = document.getElementById('arena-chests');
+  if (!el) return;
+  el.innerHTML = RATING_CHESTS.map(chest => {
+    const claimed = hero.arena.claimedChests.includes(chest.id);
+    const canClaim = hero.arena.rating >= chest.rating && !claimed;
+    let status = '';
+    if (claimed) status = '<span class="ac-claimed">✓ Получено</span>';
+    else if (canClaim) status = `<button class="ac-btn" data-claim="${chest.id}">Забрать</button>`;
+    else status = `<span class="ac-locked">🔒 ${chest.rating}</span>`;
+    return `<div class="ac-row ${canClaim ? 'ac-ready' : ''}">
+      <span class="ac-icon">${chest.icon}</span>
+      <span class="ac-name">${chest.name}</span>
+      <span class="ac-info">${chest.gold}💰 · ${chest.scrolls}📜 · ${chest.blessed}✨ · ${chest.passes}🎫</span>
+      ${status}
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-claim]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const chestId = btn.dataset.claim;
+      const r = claimChest(hero, chestId);
+      if (r.ok) {
+        state.gold += r.rewards.gold;
+        if (r.rewards.scrolls) {
+          const g = CITIES[state.currentCity].grade;
+          if (!hero.scrolls[g]) hero.scrolls[g] = { weapon: 0, armor: 0 };
+          hero.scrolls[g].weapon += r.rewards.scrolls;
+        }
+        if (r.rewards.blessed) {
+          const existing = hero.backpack.find(x => x.kind === 'blessed');
+          if (existing) existing.count = (existing.count || 1) + r.rewards.blessed;
+          else hero.backpack.push({ id: Date.now(), kind: 'blessed', name: 'Blessed Scroll', icon: '✨', slot: 'blessed', grade: 'any', count: r.rewards.blessed });
+        }
+        if (r.rewards.passes) {
+          const existing = hero.backpack.find(x => x.kind === 'pass');
+          if (existing) existing.count = (existing.count || 1) + r.rewards.passes;
+          else hero.backpack.push({ id: Date.now(), kind: 'pass', name: 'Пропуск на арену', icon: '🎫', slot: 'pass', grade: 'any', count: r.rewards.passes });
+        }
+        toast(`🎁 ${r.chest.name} сундук открыт!`, 'legendary');
+        renderArenaChests();
+        callbacks.onEquipChange && callbacks.onEquipChange();
+      }
+    });
+  });
 }
 
 // ===== ГОРОД =====

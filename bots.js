@@ -75,6 +75,7 @@ function createBot(classType = null) {
   const grade = gradeForRating(rating);
   const enhance = enhanceForRating(rating);
   const durability = durabilityForRating(rating);
+  const level = 1 + Math.floor(rating / 30);   // <-- ДОБАВИТЬ ЭТУ СТРОКУ
 
   const ct = classType || (Math.random() < 0.5 ? 'archer' : 'mage');
   const base = CONFIG.hero[ct];
@@ -125,6 +126,7 @@ function createBot(classType = null) {
     name: randomName(),
     classType: ct,
     rating,
+    level,                                    // <-- ДОБАВИТЬ
     wins: randInt(0, rating * 2),
     losses: randInt(0, rating * 2),
     equipment,
@@ -191,6 +193,7 @@ export function getBotStats(bot) {
     antiHeal: Math.min(60, bAntiHeal),
     berserk: bBerserk,
     thorns: bThorns,
+     level: bot.level, 
   };
 }
 
