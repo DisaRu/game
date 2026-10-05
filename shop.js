@@ -1,23 +1,48 @@
-import { GRADE_ITEMS, SLOTS, EQUIP_PRICES, SCROLL_PRICES, SOULSHOT_PRICES, POTIONS } from './config.js';
-import { createItem } from './items.js';
+import { GRADE_ITEMS, SLOTS, EQUIP_PRICES, SCROLL_PRICES, SOULSHOT_PRICES, POTIONS, ENHANCE_STATS } from './config.js';
+import { createItem, getVariantsForSlot } from './items.js';
 
 export function createShop() { return { stock: null }; }
 
 export function buildStock(cityGrade, heroWeaponType) {
   const equipment = [];
-  for (const slot of SLOTS) {
-    let key = slot;
-    if (slot === 'weapon') key = 'weapon_' + (heroWeaponType === 'staff' ? 'mage' : 'archer');
-    const def = GRADE_ITEMS[cityGrade][key];
+
+  // Оружие — 3 варианта под класс героя
+  const wt = heroWeaponType === 'staff' ? 'mage' : 'archer';
+  const weaponPrefix = `weapon_${wt}`;
+  const weaponVariants = getVariantsForSlot('weapon', heroWeaponType);
+  for (const variant of weaponVariants) {
+    const key = `${weaponPrefix}_${variant}`;
+    const def = GRADE_ITEMS[cityGrade]?.[key];
     if (!def) continue;
     equipment.push({
-      slot,
-      weaponType: slot === 'weapon' ? heroWeaponType : null,
+      slot: 'weapon',
+      weaponType: heroWeaponType,
+      variant,
       name: def.name,
       icon: def.icon,
-      price: Math.floor(EQUIP_PRICES[cityGrade] * (slot === 'weapon' ? 1.5 : 1)),
+      price: Math.floor(EQUIP_PRICES[cityGrade] * 1.5),
     });
   }
+
+  // Остальные 7 слотов — по 3 варианта
+  const armorSlots = ['helmet','armor','gloves','boots','cloak','ring','amulet'];
+  for (const slot of armorSlots) {
+    const variants = getVariantsForSlot(slot);
+    for (const variant of variants) {
+      const key = `${slot}_${variant}`;
+      const def = GRADE_ITEMS[cityGrade]?.[key];
+      if (!def) continue;
+      equipment.push({
+        slot,
+        weaponType: null,
+        variant,
+        name: def.name,
+        icon: def.icon,
+        price: EQUIP_PRICES[cityGrade],
+      });
+    }
+  }
+
   const scrolls = {
     weapon: { grade: cityGrade, type:'weapon', price: Math.floor(SCROLL_PRICES[cityGrade] * 1.3) },
     armor:  { grade: cityGrade, type:'armor',  price: SCROLL_PRICES[cityGrade] },
@@ -26,12 +51,17 @@ export function buildStock(cityGrade, heroWeaponType) {
   return { equipment, scrolls, soulshots, potions: { ...POTIONS }, grade: cityGrade };
 }
 
-export function buyEquipment(shop, hero, state, slot, weaponType) {
-  const entry = shop.stock.equipment.find(e => e.slot === slot);
-  if (!entry) return { ok:false };
+export function buyEquipment(shop, hero, state, slot, weaponType, variant) {
+  const entry = shop.stock.equipment.find(e =>
+    e.slot === slot &&
+    e.weaponType === weaponType &&
+    e.variant === variant
+  );
+  if (!entry) return { ok:false, reason:'not_found' };
   if (state.gold < entry.price) return { ok:false, reason:'no_gold' };
   state.gold -= entry.price;
-  const item = createItem(shop.stock.grade, slot, weaponType);
+  const item = createItem(shop.stock.grade, slot, weaponType, variant);
+  if (!item) return { ok:false, reason:'create_failed' };
   hero.backpack.push(item);
   return { ok:true, item };
 }

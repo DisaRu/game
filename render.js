@@ -10,7 +10,6 @@ export function render(ctx, canvas, state, layout, camera) {
   ctx.fillStyle = state.zoneBg || '#1a2a10';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // === Тряска экрана ===
   let shakeX = 0, shakeY = 0;
   if (state.shake && state.shake.t > 0) {
     shakeX = (Math.random() - 0.5) * state.shake.power;
@@ -25,7 +24,6 @@ export function render(ctx, canvas, state, layout, camera) {
   const startRow = Math.max(0, Math.floor(camera.y) - 1);
   const endRow = Math.min(layout.ROWS, Math.ceil(camera.y + camera.h) + 1);
 
-  // Сетка
   ctx.strokeStyle = 'rgba(100, 200, 120, 0.06)';
   ctx.lineWidth = 1;
   for (let x = startCol; x <= endCol; x++) {
@@ -48,7 +46,7 @@ export function render(ctx, canvas, state, layout, camera) {
     }
   }
 
-  // === Портал в данж ===
+  // === Портал ===
   if (state.portal && state.portal.active) {
     const px = state.portal.x * cellPx;
     const py = state.portal.y * cellPx;
@@ -82,7 +80,6 @@ export function render(ctx, canvas, state, layout, camera) {
     const scale = m.spawnAnim > 0 ? (1 - m.spawnAnim / 0.3) : 1;
     const shake = m.hitFlash > 0 ? (Math.random() - 0.5) * 4 : 0;
 
-    // Свечение босса перед кастом
     if (m.boss && m.castGlow > 0) {
       const glow = ctx.createRadialGradient(px, py, 0, px, py, size * 1.5);
       glow.addColorStop(0, 'rgba(255, 200, 50, ' + (0.6 * m.castGlow) + ')');
@@ -124,7 +121,6 @@ export function render(ctx, canvas, state, layout, camera) {
     }
   }
 
-  // === Герой ===
   drawHero(ctx, state.hero, cellPx);
 
   // === Снаряды ===
@@ -166,29 +162,43 @@ export function render(ctx, canvas, state, layout, camera) {
     ctx.shadowBlur = 0;
   }
 
-  // === Цепные молнии ===
+  // === Эффекты ===
+  // Сначала chain и flash (под текстом), потом текст
   for (const fx of state.effects) {
-    if (fx.kind !== 'chain') continue;
-    const a = fx.life / fx.maxLife;
-    ctx.globalAlpha = a;
-    ctx.strokeStyle = fx.color;
-    ctx.lineWidth = 3;
-    ctx.shadowColor = fx.color;
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.moveTo(fx.x1 * cellPx, fx.y1 * cellPx);
-    const midX = ((fx.x1 + fx.x2) / 2) * cellPx;
-    const midY = ((fx.y1 + fx.y2) / 2) * cellPx + (Math.random() - 0.5) * 20;
-    ctx.lineTo(midX, midY);
-    ctx.lineTo(fx.x2 * cellPx, fx.y2 * cellPx);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
+    if (fx.kind === 'chain') {
+      const a = fx.life / fx.maxLife;
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = fx.color;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(fx.x1 * cellPx, fx.y1 * cellPx);
+      const midX = ((fx.x1 + fx.x2) / 2) * cellPx;
+      const midY = ((fx.y1 + fx.y2) / 2) * cellPx + (Math.random() - 0.5) * 20;
+      ctx.lineTo(midX, midY);
+      ctx.lineTo(fx.x2 * cellPx, fx.y2 * cellPx);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    } else if (fx.kind === 'flash') {
+      const a = fx.life / fx.maxLife;
+      const r = (fx.radius || 0.8) * cellPx;
+      ctx.globalAlpha = a * 0.7;
+      const grad = ctx.createRadialGradient(fx.x * cellPx, fx.y * cellPx, 0, fx.x * cellPx, fx.y * cellPx, r);
+      grad.addColorStop(0, fx.color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(fx.x * cellPx, fx.y * cellPx, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   }
 
-  // === Эффекты ===
+  // Текст
   for (const fx of state.effects) {
-    if (fx.kind === 'chain') continue;
+    if (fx.kind === 'chain' || fx.kind === 'flash') continue;
     if (fx.x < startCol - 2 || fx.x > endCol + 2) continue;
     if (fx.y < startRow - 2 || fx.y > endRow + 2) continue;
 
@@ -242,23 +252,19 @@ function drawAoe(ctx, aoe, cellPx) {
     const shrink = 1 - progress;
     ctx.fillRect(px - w/2, py - h/2 * shrink, w, h * shrink);
   } else if (aoe.type === 'ring') {
-    // Расширяющееся кольцо
     let rIn = aoe.innerRadius * cellPx;
     const rOut = aoe.outerRadius * cellPx;
     if (rIn <= 0.1) rIn = 0.1;
 
-    // Безопасная зона внутри
     ctx.fillStyle = 'rgba(74, 222, 128, 0.18)';
     ctx.beginPath(); ctx.arc(px, py, rIn, 0, Math.PI * 2); ctx.fill();
 
-    // Опасная зона (кольцо)
     ctx.fillStyle = aoe.color + '40';
     ctx.beginPath();
     ctx.arc(px, py, rOut, 0, Math.PI * 2);
     ctx.arc(px, py, rIn, 0, Math.PI * 2, true);
     ctx.fill();
 
-    // Контуры
     ctx.strokeStyle = 'rgba(74, 222, 128, 0.9)';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(px, py, rIn, 0, Math.PI * 2); ctx.stroke();

@@ -1,19 +1,50 @@
-import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION, BUFF_SCROLLS } from './config.js';
+import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION, BUFF_SCROLLS, getEnhanceBonus } from './config.js';
+
 let nextItemId = 1;
 
-export function createItem(grade, slot, weaponType = null) {
-  let key = slot;
-  if (slot === 'weapon') key = 'weapon_' + (weaponType === 'staff' ? 'mage' : 'archer');
-  const def = GRADE_ITEMS[grade][key];
-  if (!def) return null;
+// Создать предмет.
+// slot: 'weapon' | 'helmet' | ...
+// weaponType: 'bow' | 'staff' | null
+// variant: 'speed' | 'range' | 'crit' | 'aoe' | 'hp' | 'def' | ...
+export function createItem(grade, slot, weaponType = null, variant = null) {
+  let key;
+  if (slot === 'weapon') {
+    const wt = weaponType === 'staff' ? 'mage' : 'archer';
+    key = `weapon_${wt}`;
+    if (variant) key += `_${variant}`;
+  } else {
+    key = slot;
+    if (variant) key += `_${variant}`;
+  }
+
+  // Пробуем найти вариант
+  let def = GRADE_ITEMS[grade]?.[key];
+  let baseStats = BASE_STATS[key];
+
+  // Fallback: если варианта нет — берём первый доступный для слота
+  if (!def || !baseStats) {
+    const prefix = slot === 'weapon'
+      ? `weapon_${weaponType === 'staff' ? 'mage' : 'archer'}`
+      : slot;
+    const found = Object.keys(GRADE_ITEMS[grade] || {}).find(k => k.startsWith(prefix));
+    if (found) {
+      def = GRADE_ITEMS[grade][found];
+      baseStats = BASE_STATS[found];
+      variant = found.replace(prefix + '_', '');
+    }
+  }
+
+  if (!def || !baseStats) return null;
+
   return {
     id: nextItemId++,
     kind: 'equip',
     slot, grade, enhance: 0,
+    variant: variant || 'default',
     weaponType: slot === 'weapon' ? (weaponType || 'bow') : null,
     name: def.name,
     icon: def.icon,
-    baseStats: { ...BASE_STATS[slot] },
+    baseStats: { ...baseStats },
   };
 }
 
@@ -44,16 +75,29 @@ export function createBuffScroll(type, count = 1) {
   };
 }
 
+// Получить список статов, которые качаются у предмета
+function getEnhanceKeys(item) {
+  const slotMap = ENHANCE_STATS[item.slot];
+  if (!slotMap) return [];
+  if (item.variant && slotMap[item.variant]) return slotMap[item.variant];
+  // Fallback: первый вариант
+  const firstKey = Object.keys(slotMap)[0];
+  return slotMap[firstKey] || [];
+}
+
+// Пересчитать статы предмета с учётом грейда и заточки
 export function itemStats(item) {
+  if (!item || !item.baseStats) return {};
   const g = GRADES[item.grade] || { mult: 1 };
-  const enhanceKeys = ENHANCE_STATS[item.slot] || [];
+  const enhanceKeys = getEnhanceKeys(item);
   const mainKey = enhanceKeys[0];
   const secondKey = enhanceKeys[1];
   const res = {};
 
-  for (const [k, v] of Object.entries(item.baseStats || {})) {
-    // Скорость атаки и вампиризм — БЕЗ множителя грейда, только от заточки
-    if (k === 'attackSpeed' || k === 'lifesteal') {
+  for (const [k, v] of Object.entries(item.baseStats)) {
+    // Скорость атаки, вампиризм, движение, шипы и т.д. — проценты, множитель грейда НЕ применяем
+    const noGradeMult = ['attackSpeed','lifesteal','moveSpeed','thorns','berserk','critResist','armorPen','antiHeal','accuracy'];
+    if (noGradeMult.includes(k)) {
       let val = v;
       if (k === mainKey) val *= (1 + item.enhance * 0.15);
       else if (k === secondKey) val *= (1 + item.enhance * 0.10);
@@ -76,6 +120,7 @@ export function itemStats(item) {
   }
   return res;
 }
+
 export function estimateItemValue(item) {
   if (!item) return 0;
   if (item.kind === 'blessed') return 5000;
@@ -99,7 +144,10 @@ export function rollDrops(zoneGrade, isChampion) {
   if (Math.random() < itemChance) {
     const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
     const weaponType = slot === 'weapon' ? (Math.random() < 0.5 ? 'bow' : 'staff') : null;
-    const item = createItem(zoneGrade, slot, weaponType);
+    // Случайный вариант из доступных
+    const variants = getVariantsForSlot(slot, weaponType);
+    const variant = variants[Math.floor(Math.random() * variants.length)];
+    const item = createItem(zoneGrade, slot, weaponType, variant);
     if (item) drops.items.push(item);
   }
   if (Math.random() < scrollChance) {
@@ -110,4 +158,18 @@ export function rollDrops(zoneGrade, isChampion) {
     drops.blessed = 1;
   }
   return drops;
+}
+
+// Получить список вариантов для слота
+export function getVariantsForSlot(slot, weaponType = null) {
+  if (slot === 'weapon') {
+    const wt = weaponType === 'staff' ? 'mage' : 'archer';
+    return Object.keys(ENHANCE_STATS.weapon).filter(v => {
+      // У лука нет 'aoe', у посоха нет 'range'
+      if (wt === 'archer' && v === 'aoe') return false;
+      if (wt === 'mage' && v === 'range') return false;
+      return true;
+    });
+  }
+  return Object.keys(ENHANCE_STATS[slot] || {});
 }

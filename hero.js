@@ -1,4 +1,4 @@
-import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT } from './config.js';
+import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus } from './config.js';
 import { itemStats } from './items.js';
 export { ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt };
 
@@ -12,9 +12,20 @@ export function createHero(classType) {
     baseAttack: base.attack, attack: base.attack, defense: 0,
     baseAttackSpeed: base.attackSpeed, attackSpeed: base.attackSpeed,
     baseRange: base.range, range: base.range,
-    moveSpeed: base.moveSpeed,
+    baseMoveSpeed: base.moveSpeed, moveSpeed: base.moveSpeed,
     critChance: 5, critDamage: 50, dodge: 0, lifesteal: 0,
+    accuracy: 0, critResist: 0, armorPen: 0, antiHeal: 0,
+    berserk: 0, thorns: 0,
     attackSpeedBonus: 0,
+
+    chainTargets: 0,
+    hpBonus: 0,
+    thornsPercent: 0,
+    doubleStrikeChance: 0,
+    speedBonus: 0,
+    cloakDodge: 0,
+    executeBonus: 0,
+    shieldPercent: 0,
 
     cooldown: 0, hitAnim: 0, attackAnim: 0, dead: false,
     x: 0, y: 0, facing: 1,
@@ -36,8 +47,28 @@ export function createHero(classType) {
   return hero;
 }
 
+export function applyEnhanceBonuses(hero) {
+  hero.chainTargets = 0;
+  hero.hpBonus = 0;
+  hero.thornsPercent = 0;
+  hero.doubleStrikeChance = 0;
+  hero.speedBonus = 0;
+  hero.cloakDodge = 0;
+  hero.executeBonus = 0;
+  hero.shieldPercent = 0;
+
+  for (const slot of SLOTS) {
+    const item = hero.equipment[slot];
+    if (!item) continue;
+    const bonus = getEnhanceBonus(item);
+    if (bonus && bonus.apply) bonus.apply(hero, bonus.value);
+  }
+}
+
 export function recalcStats(hero) {
   let bHp=0,bAtk=0,bDef=0,bCrit=0,bCritDmg=0,bDodge=0,bLs=0,bAtkSpd=0,bRange=0;
+  let bAcc=0,bCritRes=0,bArmorPen=0,bAntiHeal=0,bBerserk=0,bThorns=0,bMoveSpd=0;
+
   for (const slot of SLOTS) {
     const item = hero.equipment[slot];
     if (!item) continue;
@@ -46,18 +77,35 @@ export function recalcStats(hero) {
     bCrit += s.critChance||0; bCritDmg += s.critDamage||0;
     bDodge += s.dodge||0; bLs += s.lifesteal||0; bAtkSpd += s.attackSpeed||0;
     bRange += s.range||0;
+    bAcc += s.accuracy||0; bCritRes += s.critResist||0;
+    bArmorPen += s.armorPen||0; bAntiHeal += s.antiHeal||0;
+    bBerserk += s.berserk||0; bThorns += s.thorns||0; bMoveSpd += s.moveSpeed||0;
   }
+
   const oldMax = hero.maxHp;
+
+  applyEnhanceBonuses(hero);
+
   hero.maxHp = hero.baseMaxHp + bHp;
+  if (hero.hpBonus > 0) hero.maxHp = Math.floor(hero.maxHp * (1 + hero.hpBonus));
+
   hero.attack = hero.baseAttack + bAtk;
   hero.defense = bDef;
   hero.critChance = Math.min(75, 5 + bCrit);
   hero.critDamage = 50 + bCritDmg;
-  hero.dodge = Math.min(60, bDodge);
-  hero.lifesteal = Math.min(15, bLs);   // максимум 15%
+  hero.dodge = Math.min(60, bDodge + hero.cloakDodge);
+  hero.lifesteal = Math.min(30, bLs);
   hero.attackSpeedBonus = bAtkSpd;
   hero.attackSpeed = hero.baseAttackSpeed * (1 + bAtkSpd / 100);
   hero.range = hero.baseRange + bRange;
+  hero.moveSpeed = hero.baseMoveSpeed * (1 + hero.speedBonus);
+
+  hero.accuracy = bAcc;
+  hero.critResist = Math.min(60, bCritRes);
+  hero.armorPen = Math.min(80, bArmorPen);
+  hero.antiHeal = Math.min(60, bAntiHeal);
+  hero.berserk = bBerserk;
+  hero.thorns = bThorns;
 
   if (hero.activeBuffs) {
     const now = Date.now();
@@ -135,7 +183,6 @@ export function tryEnhance(hero, item, useBlessed = false) {
   const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
   if (scrollsHave <= 0) return { ok:false, reason:'no_scroll' };
 
-  // Blessed — в рюкзаке как стак
   const blessedIdx = hero.backpack.findIndex(x => x.kind === 'blessed');
   const blessedUsed = useBlessed && blessedIdx >= 0;
   if (useBlessed && blessedIdx < 0) return { ok:false, reason:'no_blessed' };
@@ -205,6 +252,24 @@ export function consumeSoulshot(hero) {
   return true;
 }
 
+export function calcHitChance(attacker, defender) {
+  const dodge = defender.dodge || 0;
+  const acc = attacker.accuracy || 0;
+  return Math.max(5, Math.min(100, 100 - dodge + acc));
+}
+
+export function calcCritChance(attacker, defender) {
+  const crit = attacker.critChance || 0;
+  const resist = defender.critResist || 0;
+  return Math.max(0, crit - resist);
+}
+
+export function calcEffectiveDefense(defender, attacker) {
+  const def = defender.defense || 0;
+  const pen = (attacker.armorPen || 0) / 100;
+  return Math.max(0, def * (1 - pen));
+}
+
 export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) {
   if (hero.dead) return;
   if (hero.hitAnim > 0) hero.hitAnim -= dt;
@@ -241,20 +306,32 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) 
 
   let damage = hero.attack;
   let isCrit = false;
+  let isExecute = false;
 
   if (canUseSoulshot(hero) && consumeSoulshot(hero)) {
     damage *= 2;
     effects.push({ x: hero.x, y: hero.y - 0.9, life: 0.45, maxLife: 0.45, color: '#fbbf24', text: '⚡', big: true });
   }
-  if (Math.random() * 100 < hero.critChance) {
+
+  const effCrit = calcCritChance(hero, target);
+  if (Math.random() * 100 < effCrit) {
     isCrit = true;
     damage *= (1 + hero.critDamage / 100);
   }
-    if (hero.lifesteal > 0) {
-    const heal = Math.min(
-      damage * hero.lifesteal / 100,
-      hero.maxHp * 0.02
-    );
+
+  // Казнь
+  if (hero.executeBonus > 0 && target.hp / target.maxHp < 0.3) {
+    damage *= (1 + hero.executeBonus);
+    isExecute = true;
+  }
+
+  // Берсерк
+  if (hero.berserk > 0 && hero.hp / hero.maxHp < 0.5) {
+    damage *= (1 + hero.berserk / 100);
+  }
+
+  if (hero.lifesteal > 0) {
+    const heal = Math.min(damage * hero.lifesteal / 100, hero.maxHp * 0.02);
     hero.hp = Math.min(hero.maxHp, hero.hp + heal);
   }
 
@@ -268,10 +345,11 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) 
     weaponType: hero.weaponType,
     life: 2, trail: [],
     isCrit,
+    isExecute,
+    doubleStrike: hero.doubleStrikeChance > 0 && Math.random() < hero.doubleStrikeChance,
   });
 }
 
-// Добавляет предмет в рюкзак. Свитки стакаются.
 export function addToBackpack(hero, item) {
   if (item.kind === 'buff' || item.kind === 'blessed') {
     const existing = hero.backpack.find(
@@ -287,7 +365,7 @@ export function addToBackpack(hero, item) {
   hero.backpack.push(item);
   return item;
 }
-// ===== Урон мобов и боссов от maxHp героя =====
+
 export function mobDamageFor(hero, zoneDiff) {
   const pct = MOB_DAMAGE_PERCENT[zoneDiff] || 0.015;
   return Math.floor(hero.maxHp * pct);
@@ -299,13 +377,6 @@ export function bossAoeDamageFor(hero) {
   return Math.floor(hero.maxHp * BOSS_AOE_PERCENT);
 }
 
-// ===== Массовая атака от заточки =====
-// 1 предмет +15 = 1 цепь, максимум 8
 export function getChainTargets(hero) {
-  let count = 0;
-  for (const slot of SLOTS) {
-    const item = hero.equipment[slot];
-    if (item && item.enhance >= 15) count++;
-  }
-  return Math.min(8, count);
+  return hero.chainTargets || 0;
 }

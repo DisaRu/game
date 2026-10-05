@@ -547,15 +547,140 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   color: var(--gold-bright); font-weight: bold;
   text-shadow: 0 0 3px #000, 0 0 3px #000;
 }
+
+/* ===== ГЕРОЙ: компактные статы ===== */
 .hero-stats {
-  flex: 1; color: var(--text); font-size: 10px; line-height: 1.5;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
 }
-.hero-stats .stat-row {
-  display: flex; justify-content: space-between;
-  padding: 1px 0; border-bottom: 1px solid rgba(42, 58, 92, 0.3);
+
+.hs-group {
+  background: var(--bg-slot-dark);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  padding: 3px 5px;
 }
-.hero-stats .stat-val { color: var(--gold-bright); font-weight: bold; }
-.hero-tab-content { min-height: 90px; }
+
+.hs-title {
+  font-size: 8px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+  font-weight: bold;
+}
+
+.hs-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hs-cell {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.hs-ico { font-size: 10px; line-height: 1; width: 12px; text-align: center; }
+.hs-label { color: var(--text-dim); font-size: 9px; min-width: 38px; }
+
+.hs-base { color: #94a3b8; font-size: 9px; }
+.hs-add { color: var(--green); font-size: 9px; font-weight: bold; }
+.hs-total { color: var(--gold-bright); font-weight: bold; margin-left: auto; font-size: 10px; }
+
+.hs-legend {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  font-size: 8px;
+  margin-top: 2px;
+  opacity: 0.7;
+}
+.hs-base-legend { color: #94a3b8; }
+.hs-add-legend { color: var(--green); }
+.hs-total-legend { color: var(--gold-bright); font-weight: bold; }
+.hs-star-legend { color: var(--gold); }
+
+/* ===== МАНЕКЕН: грейд ===== */
+.eq-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 2px;
+}
+
+.eq-icon { font-size: 20px; line-height: 1; }
+.eq-grade {
+  font-size: 8px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  margin-top: 1px;
+  text-transform: uppercase;
+}
+
+/* ===== БОНУСЫ ГЕРОЯ ===== */
+.hero-bonuses, .hero-buffs {
+  margin-top: 4px;
+  background: var(--bg-slot-dark);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+}
+
+.hb-title {
+  color: var(--gold);
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+
+.hb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hb-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 1px 0;
+}
+
+.hb-icon { font-size: 11px; }
+.hb-name { color: var(--gold); font-weight: bold; flex: 1; }
+.hb-desc { color: var(--text-dim); font-size: 9px; }
+.hb-val { color: var(--gold-bright); font-weight: bold; }
+.hb-time { color: var(--green); font-weight: bold; font-size: 10px; }
+
+.hb-empty {
+  color: var(--text-dim);
+  font-size: 9px;
+  font-style: italic;
+  text-align: center;
+  padding: 4px;
+}
+
+/* ===== БОНУС В МАГАЗИНЕ ===== */
+.auction-bonus {
+  font-size: 9px;
+  color: var(--gold);
+  margin-top: 2px;
+  font-weight: bold;
+  opacity: 0.85;
+}
 
 .backpack-grid {
   display: grid;
@@ -1229,3 +1354,136 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 /* ===== ЗАЩИТА ОТ ПЕРЕПОЛНЕНИЯ ===== */
 .modal-window > * { min-width: 0; }
 .modal-body > * { max-width: 100%; }
+/* ===== ГЕРОЙ: компактные статы ===== */
+.hero-stats {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hs-group {
+  background: var(--bg-slot-dark);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+}
+
+.hs-title {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+  font-weight: bold;
+}
+
+.hs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px 8px;
+}
+
+.hs-cell {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.hs-ico { font-size: 11px; line-height: 1; }
+.hs-label { color: var(--text-dim); flex: 1; }
+.hs-val { color: var(--gold-bright); font-weight: bold; }
+
+/* ===== МАНЕКЕН: грейд ===== */
+.eq-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 2px;
+}
+
+.eq-icon { font-size: 20px; line-height: 1; }
+.eq-grade {
+  font-size: 8px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  margin-top: 1px;
+  text-transform: uppercase;
+}
+
+/* ===== БОНУСЫ ГЕРОЯ ===== */
+.hero-bonuses, .hero-buffs {
+  margin-top: 6px;
+  background: var(--bg-slot-dark);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius);
+  padding: 5px 7px;
+}
+
+.hb-title {
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.hb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hb-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(42, 58, 92, 0.3);
+}
+
+.hb-row:last-child { border-bottom: none; }
+
+.hb-icon { font-size: 12px; }
+.hb-slot { color: var(--text-dim); min-width: 60px; font-size: 9px; }
+.hb-name { color: var(--gold); font-weight: bold; flex: 1; }
+.hb-desc { color: var(--text-dim); font-size: 9px; }
+.hb-val { color: var(--gold-bright); font-weight: bold; }
+.hb-time { color: var(--green); font-weight: bold; font-size: 10px; }
+
+.hb-empty {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-style: italic;
+  text-align: center;
+  padding: 6px;
+}
+
+/* ===== БОНУС В МАГАЗИНЕ ===== */
+.auction-bonus {
+  font-size: 9px;
+  color: var(--gold);
+  margin-top: 2px;
+  font-weight: bold;
+  opacity: 0.85;
+}
+/* Бонусы +15 в статах */
+.hs-bonus-group {
+  border-color: var(--gold) !important;
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.08), rgba(0, 0, 0, 0.2));
+}
+
+.hs-bonus-group .hs-title {
+  color: var(--gold-bright);
+}
+
+.hs-bonus-group .hs-total {
+  color: var(--gold-bright);
+  font-size: 11px;
+}

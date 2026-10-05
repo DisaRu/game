@@ -1,6 +1,6 @@
 import { CONFIG, GRADE_ORDER, BUFF_SCROLLS, BUFF_ORDER, BUFF_DROP_CHANCE, MOBS } from './config.js';
 import { createMob, createGroupId, pickMobDefFromZone, updateMob, aggroGroup } from './mobs.js';
-import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets } from './hero.js';
+import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets, calcHitChance, calcEffectiveDefense } from './hero.js';
 import { rollDrops, gradeName, createItem, createBlessedScroll, createBuffScroll } from './items.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
 import { createShop, buildStock } from './shop.js';
@@ -34,7 +34,6 @@ const state = {
   sessionStats: { gold: 0, xp: 0, kills: 0, items: 0, scrolls: 0, blessed: 0 },
   lastSession: null,
 
-  // Данж
   portal: null,
   dungeon: null,
   aoeList: [],
@@ -81,7 +80,6 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
 });
 
-// Джойстик
 const joyEl = document.getElementById('joystick');
 const joyBase = document.getElementById('joystick-base');
 const joyStick = document.getElementById('joystick-stick');
@@ -132,10 +130,8 @@ canvas.addEventListener('touchmove', handleJoyMove, { passive: true });
 canvas.addEventListener('touchend', handleJoyEnd, { passive: true });
 canvas.addEventListener('touchcancel', handleJoyEnd, { passive: true });
 
-// Тап по canvas — вход в портал / выход из данжа
 canvas.addEventListener('click', (e) => {
   if (!state.inBattle || !state.hero) return;
-  // Проверка попадания в портал
   if (state.portal && state.portal.active && !state.dungeon) {
     const px = (e.clientX) / layout.cellPx + camera.x;
     const py = (e.clientY) / layout.cellPx + camera.y;
@@ -150,7 +146,6 @@ document.querySelectorAll('.class-btn').forEach(btn => {
   btn.addEventListener('click', () => startGame(btn.dataset.class));
 });
 
-// HUD-кнопки
 function bindHudActions() {
   document.querySelectorAll('.hud-potion').forEach(el => {
     el.addEventListener('click', () => {
@@ -204,7 +199,7 @@ function bindHudActions() {
   });
 }
 bindHudActions();
-// DEBUG: нажми B — получишь 3 blessed
+
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyB' && state.hero) {
     for (let i = 0; i < 3; i++) {
@@ -214,6 +209,7 @@ window.addEventListener('keydown', (e) => {
     updateHudActions();
   }
 });
+
 function startGame(classType) {
   initAudio();
   state.hero = createHero(classType);
@@ -233,7 +229,7 @@ function startGame(classType) {
     onEnterZone: (zoneId) => enterZone(zoneId),
     onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
     onReturnToCity: () => returnToCity(),
-    makeItem: (grade, slot, wt) => createItem(grade, slot, wt),
+    makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
   });
 
   updateHUD();
@@ -262,7 +258,6 @@ function enterZone(zoneId) {
   state.hero.hp = state.hero.maxHp;
   state.inBattle = true;
 
-  // Портал
   state.portal = spawnPortalInZone(zone);
   state.dungeon = null;
   state.aoeList = [];
@@ -294,7 +289,6 @@ function enterDungeon() {
 
 function exitDungeon(won) {
   if (state.dungeon) {
-    // если вышли не убив босса — портал на кулдаун (данж закрыт)
     state.portal.active = false;
     state.portal.respawnAt = getPortalCooldown();
   }
@@ -305,13 +299,11 @@ function exitDungeon(won) {
   state.effects = [];
 
   if (won) {
-    // возврат в зону
     state.hero.x = COLS/2; state.hero.y = ROWS/2;
     toast('🏆 Данж зачищен!', 'legendary');
     document.getElementById('zone-name').textContent = state.currentZone.name;
     document.getElementById('zone-diff').textContent = state.currentZone.diff === 'easy' ? '🟢' : state.currentZone.diff === 'medium' ? '🟡' : '🔴';
   } else {
-    // умер — возврат в город
     state.inBattle = false;
     state.currentZone = null;
     state.portal = null;
@@ -450,7 +442,7 @@ function findSpawnPoint() {
 
 function trySpawnMob() {
   if (!state.currentZone) return;
-  if (state.dungeon) return; // в данже спавн мобов — своя логика
+  if (state.dungeon) return;
   const sp = state.currentZone.spawn;
   if (state.mobs.length >= sp.maxMobs) return;
 
@@ -556,12 +548,10 @@ function update(dt) {
     down: input.down || input.joyY > 0.2,
   };
 
-  // Портал обновляем только в обычной зоне
   if (state.portal && !state.dungeon) {
     updatePortal(state.portal, dt, !!state.dungeon);
   }
 
-  // Спавн обычных мобов (только вне данжа)
   if (!state.dungeon) {
     const sp = state.currentZone.spawn;
     state.spawnTimer -= dt;
@@ -571,19 +561,15 @@ function update(dt) {
     }
   }
 
-  // === Мобы ===
   for (const m of state.mobs) {
     if (m.dead) continue;
     const action = updateMob(m, dt, hero, hero.x, hero.y);
     m.x = Math.max(0.3, Math.min(COLS - 0.3, m.x));
     m.y = Math.max(0.3, Math.min(ROWS - 0.3, m.y));
 
-    // Босс кастует AoE
-       if (m.boss && !m.dead) {
-      // Свечение перед кастом
+    if (m.boss && !m.dead) {
       if (m.castGlow > 0) m.castGlow -= dt;
 
-      // AoE
       m.aoeTimer -= dt;
       if (m.aoeTimer <= 0) {
         const grade = m.grade || 'ng';
@@ -595,7 +581,6 @@ function update(dt) {
         if (aoe) state.aoeList.push(aoe);
       }
 
-      // Призыв охраны
       const call = GUARD_CALL[m.grade || 'ng'] || GUARD_CALL.ng;
       m.guardTimer -= dt;
       if (m.guardTimer <= 0) {
@@ -616,13 +601,35 @@ function update(dt) {
       }
     }
 
-     if (action === 'attack') {
-      // Урон моба = % от maxHp героя
+    if (action === 'attack') {
       const mobDmg = m.boss ? bossDamageFor(hero) : mobDamageFor(hero, state.currentZone.diff);
       const result = damageHero(hero, mobDmg);
       if (result === 'dodge') {
         state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a5f3fc', text: 'DODGE' });
       } else {
+        // === ШИПЫ ===
+        if (hero.thornsPercent > 0) {
+          const thorns = Math.floor(mobDmg * hero.thornsPercent);
+          m.hp -= thorns;
+          m.hitFlash = 0.15;
+
+          state.effects.push({
+            x: m.x, y: m.y - 0.5,
+            life: 0.7, maxLife: 0.7,
+            color: '#a855f7',
+            text: '🌵' + thorns,
+            big: true,
+          });
+
+          state.effects.push({
+            kind: 'flash',
+            x: m.x, y: m.y,
+            life: 0.4, maxLife: 0.4,
+            color: '#a855f7',
+            radius: 0.9,
+          });
+        }
+
         sfxHeroHit();
         state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + mobDmg });
         if (result === 'dead') { heroDie(); return; }
@@ -638,17 +645,12 @@ function update(dt) {
     state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: potResult.color, text: '+' + potResult.healed, big: true });
   }
 
-  // === AoE ===
-   // === AoE ===
   for (let i = state.aoeList.length - 1; i >= 0; i--) {
     const aoe = state.aoeList[i];
     aoe.life -= dt;
 
-    // Горящая земля — тики каждую секунду
     if (aoe.type === 'fire') {
-      // Пока delay не прошёл — ничего
       if (aoe.life > aoe.life - 0.01 || aoe.life <= 5) {
-        // Прошёл delay, огонь горит
         for (const s of aoe.spots) {
           if (s.life <= 0) continue;
           s.life -= dt;
@@ -668,13 +670,11 @@ function update(dt) {
         }
       }
     } else if (aoe.life <= 0) {
-      // Обычный взрыв
       if (checkAoeHit(aoe, hero)) {
-        const dmg = bossAoeDamageFor(hero);   // 25% maxHp
-        const reduced = dmg;
-        hero.hp -= reduced;
+        const dmg = bossAoeDamageFor(hero);
+        hero.hp -= dmg;
         hero.hitAnim = 0.2;
-        state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: '#dc2626', text: '-' + Math.floor(reduced), big: true });
+        state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: '#dc2626', text: '-' + Math.floor(dmg), big: true });
         sfxHeroHit();
         if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; heroDie(); return; }
       }
@@ -685,7 +685,7 @@ function update(dt) {
     if (aoe.life <= -10) state.aoeList.splice(i, 1);
   }
 
-  // Снаряды
+  // === Снаряды ===
   for (let i = state.projectiles.length - 1; i >= 0; i--) {
     const p = state.projectiles[i];
     p.trail.push({ x: p.x, y: p.y });
@@ -697,24 +697,65 @@ function update(dt) {
       if (m.dead) continue;
       const dist = Math.hypot(m.x - p.x, m.y - p.y);
       if (dist < m.size * 0.5 + 0.2) {
-        m.hp -= p.damage; m.hitFlash = 0.12; m.aggro = true;
+        const hitChance = calcHitChance(hero, m);
+        if (Math.random() * 100 > hitChance) {
+          state.effects.push({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: '#a5f3fc', text: 'MISS' });
+          hit = true;
+          break;
+        }
+
+        const effDef = calcEffectiveDefense(m, hero);
+        let finalDamage = Math.max(1, p.damage - Math.floor(effDef * 0.5));
+
+        // === ДВОЙНОЙ УДАР ===
+        if (p.doubleStrike && !p.doubleStrikeDone) {
+          p.doubleStrikeDone = true;
+          finalDamage *= 2;
+          state.effects.push({
+            x: m.x, y: m.y - 1.2,
+            life: 0.8, maxLife: 0.8,
+            color: '#fbbf24',
+            text: '👊 x2',
+            big: true,
+          });
+          state.effects.push({
+            kind: 'flash',
+            x: m.x, y: m.y,
+            life: 0.4, maxLife: 0.4,
+            color: '#fbbf24',
+            radius: 1.0,
+          });
+        }
+
+        // === КАЗНЬ ===
+        if (p.isExecute) {
+          state.effects.push({
+            x: m.x, y: m.y - 1.6,
+            life: 0.9, maxLife: 0.9,
+            color: '#dc2626',
+            text: '💀 КАЗНЬ',
+            big: true,
+          });
+        }
+
+        m.hp -= finalDamage; m.hitFlash = 0.12; m.aggro = true;
         if (m.groupId) aggroGroup(state.mobs, m.groupId);
         sfxHit();
         const dmgColor = p.isCrit ? '#f97316' : '#facc15';
-        const dmgText = (p.isCrit ? '💥' : '-') + Math.floor(p.damage);
+        const dmgText = (p.isCrit ? '💥' : '-') + Math.floor(finalDamage);
         state.effects.push({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: dmgColor, text: dmgText, big: p.isCrit });
-             // Маг AoE
+
         if (p.aoe > 0) {
           for (const other of state.mobs) {
             if (other === m || other.dead) continue;
             if (Math.hypot(other.x - m.x, other.y - m.y) <= p.aoe) {
-              other.hp -= p.damage * 0.6; other.hitFlash = 0.12; other.aggro = true;
+              other.hp -= finalDamage * 0.6; other.hitFlash = 0.12; other.aggro = true;
               if (other.groupId) aggroGroup(state.mobs, other.groupId);
             }
           }
         }
 
-        // Цепная атака от заточки
+        // === МАСС-АТАКА (цепь) ===
         const chainCount = getChainTargets(hero);
         if (chainCount > 0) {
           const candidates = state.mobs
@@ -724,24 +765,47 @@ function update(dt) {
 
           let prev = m;
           for (const target of candidates) {
-            target.hp -= p.damage * 0.7;
+            target.hp -= finalDamage * 0.7;
             target.hitFlash = 0.12; target.aggro = true;
             if (target.groupId) aggroGroup(state.mobs, target.groupId);
+
             state.effects.push({
               x: target.x, y: target.y - 0.5,
-              life: 0.5, maxLife: 0.5,
+              life: 0.6, maxLife: 0.6,
               color: '#a855f7',
-              text: '-' + Math.floor(p.damage * 0.7),
+              text: '⚡' + Math.floor(finalDamage * 0.7),
+              big: true,
             });
-            // Визуал цепи
+
+            for (let k = 0; k < 2; k++) {
+              state.effects.push({
+                kind: 'chain',
+                x1: prev.x, y1: prev.y,
+                x2: target.x, y2: target.y,
+                life: 0.35, maxLife: 0.35,
+                color: k === 0 ? '#a855f7' : '#d4a5ff',
+              });
+            }
+
             state.effects.push({
-              kind: 'chain',
-              x1: prev.x, y1: prev.y,
-              x2: target.x, y2: target.y,
-              life: 0.25, maxLife: 0.25,
+              kind: 'flash',
+              x: target.x, y: target.y,
+              life: 0.3, maxLife: 0.3,
               color: '#a855f7',
+              radius: 0.8,
             });
+
             prev = target;
+          }
+
+          if (candidates.length > 0) {
+            state.effects.push({
+              x: m.x, y: m.y - 2.0,
+              life: 0.7, maxLife: 0.7,
+              color: '#d4a5ff',
+              text: '⚡⚡⚡ x' + candidates.length,
+              big: true,
+            });
           }
         }
 
@@ -765,7 +829,6 @@ function update(dt) {
       state.sessionStats.kills++;
       sfxDeath();
 
-      // Дроп с босса
       if (m.boss && state.dungeon) {
         const drops = rollBossDrops(hero, state.currentZone, state.dungeon.cityGrade);
         state.gold += drops.gold;
@@ -794,13 +857,11 @@ function update(dt) {
           }
         }
 
-        // Убил босса — выходим из данжа в зону
         state.mobs.splice(i, 1);
-        setTimeout(() => exitDungeon(true), 1500);
+        setTimeout(() => { if (state.dungeon) exitDungeon(true); }, 1500);
         continue;
       }
 
-      // Дроп с обычных/чемпионов
       const drops = rollDrops(CITIES[state.currentCity].grade, m.champion);
       for (const it of drops.items) {
         hero.backpack.push(it);
@@ -850,7 +911,7 @@ function update(dt) {
   updateCamera(hero);
   updateHUD();
 }
-// ===== DEV-КОДЫ =====
+
 function applyDevCode(code) {
   code = code.trim().toLowerCase();
   if (!code) return;
@@ -858,14 +919,11 @@ function applyDevCode(code) {
   const hero = state.hero;
   if (!hero) return;
 
-  // Формат: d12, c12, b12, a12, s12
-  // d = D-грейд, c = C, b = B, a = A, s = S
   const match = code.match(/^([dcbas])(\d+)$/);
   if (match) {
     const grade = match[1];
     const level = Math.min(20, Math.max(1, parseInt(match[2], 10)));
 
-    // Убираем старое снаряжение в рюкзак (чтобы не пропало)
     for (const slot of ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet']) {
       if (hero.equipment[slot]) {
         hero.backpack.push(hero.equipment[slot]);
@@ -873,27 +931,27 @@ function applyDevCode(code) {
       }
     }
 
-    // Создаём фулл-сет
     const slots = ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet'];
     for (const slot of slots) {
       const wt = slot === 'weapon' ? hero.weaponType : null;
-      const item = createItem(grade, slot, wt);
+      let variant = null;
+      if (slot === 'weapon') {
+        variant = hero.weaponType === 'staff' ? 'aoe' : 'speed';
+      }
+      const item = createItem(grade, slot, wt, variant);
       if (!item) continue;
       item.enhance = level;
       hero.equipment[slot] = item;
     }
 
-    // Дополнительно: +100 свитков нужного грейда
     if (!hero.scrolls[grade]) hero.scrolls[grade] = { weapon: 0, armor: 0 };
     hero.scrolls[grade].weapon += 100;
     hero.scrolls[grade].armor += 100;
 
-    // +20 blessed
     for (let i = 0; i < 20; i++) {
       addToBackpack(hero, createBlessedScroll());
     }
 
-    // +20 бафф-свитков каждого типа
     for (const t of ['attack','crit','speed','range']) {
       for (let i = 0; i < 5; i++) {
         const sc = createBuffScroll(t);
@@ -901,15 +959,12 @@ function applyDevCode(code) {
       }
     }
 
-    // +100 зелий каждого типа
     for (const t of ['small','medium','large','epic']) {
       hero.potions[t] = (hero.potions[t] || 0) + 100;
     }
 
-    // +1000 сосок нужного грейда
     hero.soulshots[grade] = (hero.soulshots[grade] || 0) + 1000;
 
-    // Голда
     state.gold += 100000;
 
     recalcStats(hero);
@@ -919,7 +974,6 @@ function applyDevCode(code) {
     return;
   }
 
-  // Отдельные коды
   if (code === 'gold') {
     state.gold += 1000000;
     updateHUD();
@@ -936,7 +990,6 @@ function applyDevCode(code) {
     return;
   }
   if (code === 'full') {
-    // Максимум всего: S+20, все свитки, зелья, соски, blessed
     applyDevCode('s20');
     return;
   }
@@ -944,7 +997,6 @@ function applyDevCode(code) {
   toast('❌ Неизвестный код', 'epic');
 }
 
-// Привязка к кнопке
 document.getElementById('dev-code-apply').addEventListener('click', () => {
   const input = document.getElementById('dev-code-input');
   applyDevCode(input.value);
@@ -956,4 +1008,5 @@ document.getElementById('dev-code-input').addEventListener('keydown', (e) => {
     e.target.value = '';
   }
 });
+
 requestAnimationFrame(loop);

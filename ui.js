@@ -1,10 +1,9 @@
-import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt } from './config.js';
-import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor } from './items.js';
+import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt, getEnhanceBonus, ENHANCE_BONUSES, BUFF_SCROLLS } from './config.js';
+import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor, getVariantsForSlot } from './items.js';
 import { equipItem, unequipItem, canEquip, tryEnhance } from './hero.js';
 import { buyListing, listItem, sellToBot } from './auction.js';
 import { buyEquipment, buyScroll, buyPotion, buySoulshot } from './shop.js';
 import { CITIES, CITY_ORDER, cityTeleportCost, zoneDifficultyLabel } from './cities.js';
-import { BUFF_SCROLLS } from './config.js';
 
 let state = null;
 let auction = null;
@@ -15,18 +14,17 @@ let shopCat = 'equipment';
 let heroTab = 'backpack';
 let enhanceSelectedItem = null;
 
-const STAT_ORDER = ['attack','defense','hp','critChance','critDamage','dodge','attackSpeed','lifesteal','range'];
-const STAT_ICON = { attack:'⚔', defense:'🛡', hp:'❤', critChance:'💥', critDamage:'💢', dodge:'💨', attackSpeed:'⚡', lifesteal:'🩸', range:'📏' };
+const STAT_ORDER = [
+  'attack','defense','hp','critChance','critDamage','dodge',
+  'attackSpeed','lifesteal','range',
+  'accuracy','critResist','armorPen','antiHeal','berserk','thorns','moveSpeed',
+];
 
-const ENHANCE_STATS_MAP = {
-  weapon: ['attack','critDamage'],
-  helmet: ['hp','defense'],
-  armor:  ['defense','hp'],
-  gloves: ['attackSpeed','critChance'],
-  boots:  ['dodge','hp'],
-  cloak:  ['range','dodge'],
-  ring:   ['critChance','attack'],
-  amulet: ['lifesteal','hp'],
+const STAT_ICON = {
+  attack:'⚔', defense:'🛡', hp:'❤', critChance:'💥', critDamage:'💢',
+  dodge:'💨', attackSpeed:'⚡', lifesteal:'🩸', range:'📏',
+  accuracy:'🎯', critResist:'🛡️', armorPen:'🔨', antiHeal:'🚫',
+  berserk:'😡', thorns:'🌵', moveSpeed:'👟',
 };
 
 // ===== LONG-PRESS (покупка) =====
@@ -87,7 +85,7 @@ function bindBuyButton(btn, buyFn) {
 }
 
 // ===== АВТО-ТОЧКА =====
-let _autoEnhance = null;      // { alive, interval, useBlessed, ticked }
+let _autoEnhance = null;
 let _lastAutoTime = 0;
 let _suppressNextEnhanceClick = false;
 
@@ -115,19 +113,34 @@ function _selectEnhanceCard(item) {
 function _switchToNextEnhanceTarget(currentItem, useBlessed) {
   const list = getBackpackEnhanceList(true);
   const idx = list.indexOf(currentItem);
-  let next = null;
-  if (idx >= 0 && idx + 1 < list.length) next = list[idx + 1];
-  else if (idx - 1 >= 0) next = list[idx - 1];
-  if (!next) return false;
+  if (idx < 0) {
+    if (list.length > 0) {
+      const first = list[0];
+      const stype = first.slot === 'weapon' ? 'weapon' : 'armor';
+      const scrolls = state.hero.scrolls[first.grade]?.[stype] || 0;
+      if (scrolls > 0) {
+        enhanceSelectedItem = first;
+        _selectEnhanceCard(first);
+        showEnhanceDetail(first);
+        return true;
+      }
+    }
+    return false;
+  }
 
-  const stype = next.slot === 'weapon' ? 'weapon' : 'armor';
-  const scrolls = state.hero.scrolls[next.grade]?.[stype] || 0;
-  if (scrolls <= 0) return false;
-
-  enhanceSelectedItem = next;
-  _selectEnhanceCard(next);
-  showEnhanceDetail(next);
-  return true;
+  for (let offset = 1; offset <= list.length; offset++) {
+    const candidate = list[(idx + offset) % list.length];
+    if (candidate === currentItem) break;
+    const stype = candidate.slot === 'weapon' ? 'weapon' : 'armor';
+    const scrolls = state.hero.scrolls[candidate.grade]?.[stype] || 0;
+    if (scrolls > 0) {
+      enhanceSelectedItem = candidate;
+      _selectEnhanceCard(candidate);
+      showEnhanceDetail(candidate);
+      return true;
+    }
+  }
+  return false;
 }
 
 function _doAutoTick(useBlessed) {
@@ -135,7 +148,6 @@ function _doAutoTick(useBlessed) {
   const item = enhanceSelectedItem;
   if (!item) { _stopAutoEnhance(); return false; }
 
-  // +12 — переключаемся
   if (item.enhance >= 12) {
     if (!_switchToNextEnhanceTarget(item, useBlessed)) {
       _stopAutoEnhance();
@@ -144,7 +156,6 @@ function _doAutoTick(useBlessed) {
     return true;
   }
 
-  // Свитков нет — переключаемся
   const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
   const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
   if (scrollsHave <= 0) {
@@ -155,7 +166,6 @@ function _doAutoTick(useBlessed) {
     return true;
   }
 
-  // ЗАПОМИНАЕМ позицию ДО заточки
   const listBefore = getBackpackEnhanceList(true);
   const idxBefore = listBefore.indexOf(item);
 
@@ -173,11 +183,9 @@ function _doAutoTick(useBlessed) {
   callbacks.onEquipChange && callbacks.onEquipChange();
 
   if (r.result === 'destroyed') {
-    // удаляем карточку
     const oldCard = document.querySelector(`.enhance-item[data-item-id="${item.id}"]`);
     if (oldCard) oldCard.remove();
 
-    // список ПОСЛЕ удаления
     const listAfter = getBackpackEnhanceList(true);
     let next = null;
     if (idxBefore >= 0 && listAfter.length > 0) {
@@ -304,6 +312,11 @@ function updateEnhanceItemCard(item) {
   }
   const statsEl = card.querySelector('.ei-stats');
   if (statsEl) statsEl.innerHTML = statsTwoMain(item);
+  const bonusEl = card.querySelector('.ei-bonus');
+  if (bonusEl) {
+    const bonus = getEnhanceBonus(item);
+    bonusEl.innerHTML = bonus ? `${bonus.icon} ${bonus.display}` : '';
+  }
 }
 
 function updateEnhanceLive() {
@@ -451,6 +464,10 @@ export function initUI(s, a, sh, cb = {}) {
 function statLabel(k) { return STAT_NAMES[k] || k; }
 function statSuffix(k) { return STAT_SUFFIX[k] || ''; }
 
+function statLine(k, val) {
+  return `<span class="stat-${k}">${STAT_ICON[k]} ${statLabel(k)} +${val}${statSuffix(k)}</span>`;
+}
+
 function statsCompact(item) {
   const s = itemStats(item);
   const parts = [];
@@ -466,17 +483,16 @@ function statsMultiline(item) {
   const rows = [];
   for (const k of STAT_ORDER) {
     if (!s[k]) continue;
-    rows.push(`<div class="stat-row"><span class="stat-name">${statLabel(k)}</span><span class="stat-val">+${s[k]}${statSuffix(k)}</span></div>`);
+    rows.push(`<div class="stat-row"><span class="stat-name">${STAT_ICON[k]} ${statLabel(k)}</span><span class="stat-val">+${s[k]}${statSuffix(k)}</span></div>`);
   }
   return rows.join('');
 }
 
 function statsTwoMain(item) {
   const s = itemStats(item);
-  const enhKeys = ENHANCE_STATS_MAP[item.slot] || [];
+  const keys = Object.keys(s).slice(0, 2);
   const rows = [];
-  for (const k of enhKeys) {
-    if (!s[k]) continue;
+  for (const k of keys) {
     rows.push(`<span class="stat-${k}">${STAT_ICON[k]}${s[k]}${statSuffix(k)}</span>`);
   }
   return rows.join('');
@@ -501,6 +517,30 @@ export function closeModal(name) {
 // ===== ГЕРОЙ =====
 function renderHero() {
   const hero = state.hero;
+
+  // === Считаем бонусы от экипировки ===
+  let eqHp=0, eqAtk=0, eqDef=0, eqCrit=0, eqCritDmg=0, eqDodge=0;
+  let eqAtkSpd=0, eqLs=0, eqRange=0, eqAcc=0, eqCritRes=0, eqArmorPen=0;
+  let eqAntiHeal=0, eqBerserk=0, eqThorns=0, eqMoveSpd=0;
+
+  for (const slot of SLOTS) {
+    const item = hero.equipment[slot];
+    if (!item) continue;
+    const s = itemStats(item);
+    eqHp += s.hp||0; eqAtk += s.attack||0; eqDef += s.defense||0;
+    eqCrit += s.critChance||0; eqCritDmg += s.critDamage||0;
+    eqDodge += s.dodge||0; eqAtkSpd += s.attackSpeed||0;
+    eqLs += s.lifesteal||0; eqRange += s.range||0;
+    eqAcc += s.accuracy||0; eqCritRes += s.critResist||0;
+    eqArmorPen += s.armorPen||0; eqAntiHeal += s.antiHeal||0;
+    eqBerserk += s.berserk||0; eqThorns += s.thorns||0; eqMoveSpd += s.moveSpeed||0;
+  }
+
+  // Бонусы от +15
+  const bonusHp = Math.round((hero.baseMaxHp + eqHp) * (hero.hpBonus || 0));
+  const bonusMove = hero.speedBonus ? `+${Math.round((hero.speedBonus||0)*100)}%` : '';
+
+  // === Манекен ===
   const man = document.getElementById('mannequin');
   man.innerHTML = '';
   for (const slot of SLOTS) {
@@ -509,53 +549,242 @@ function renderHero() {
     el.className = 'eq-slot' + (item ? '' : ' empty');
     el.dataset.slot = slot;
     if (item) {
-      el.innerHTML = `${item.icon}<span class="slot-label">${SLOT_NAMES[slot]}</span>${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}`;
-      el.style.borderColor = gradeColor(item.grade);
-      el.addEventListener('click', () => {
-        showItemPopup(item, 'equip');
-      });
-    } else el.textContent = SLOT_NAMES[slot];
+      const gc = gradeColor(item.grade);
+      el.innerHTML = `
+        <div class="eq-icon">${item.icon}</div>
+        <div class="eq-grade" style="color:${gc}">${gradeShort(item.grade)}</div>
+        ${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}
+        <span class="slot-label">${SLOT_NAMES[slot]}</span>
+      `;
+      el.style.borderColor = gc;
+      el.addEventListener('click', () => showItemPopup(item, 'equip'));
+    } else {
+      el.textContent = SLOT_NAMES[slot];
+    }
     man.appendChild(el);
   }
 
+  // === Статы: база + от экипировки = итог ===
   const stats = document.getElementById('hero-stats');
   stats.innerHTML = `
-    <div class="stat-row"><span>⭐ Уровень</span><span class="stat-val">${hero.level}</span></div>
-    <div class="stat-row"><span>❤ HP</span><span class="stat-val">${Math.ceil(hero.hp)} / ${hero.maxHp}</span></div>
-    <div class="stat-row"><span>⚔ Атака</span><span class="stat-val">${Math.round(hero.attack)}</span></div>
-    <div class="stat-row"><span>🛡 Защита</span><span class="stat-val">${Math.round(hero.defense)}</span></div>
-    <div class="stat-row"><span>📏 Дальность</span><span class="stat-val">${hero.range.toFixed(2)}</span></div>
-    <div class="stat-row"><span>💥 Крит шанс</span><span class="stat-val">${hero.critChance.toFixed(1)}%</span></div>
-    <div class="stat-row"><span>💢 Крит урон</span><span class="stat-val">+${hero.critDamage.toFixed(0)}%</span></div>
-    <div class="stat-row"><span>💨 Уворот</span><span class="stat-val">${hero.dodge.toFixed(1)}%</span></div>
-    <div class="stat-row"><span>🩸 Вампиризм</span><span class="stat-val">${hero.lifesteal.toFixed(1)}%</span></div>
-    <div class="stat-row"><span>⚡ Скор. атаки</span><span class="stat-val">${hero.attackSpeed.toFixed(2)}</span></div>
+    <div class="hs-group">
+      <div class="hs-title">Основные</div>
+      <div class="hs-grid">
+        <div class="hs-cell">
+          <span class="hs-ico">⭐</span><span class="hs-label">Ур.</span>
+          <span class="hs-base">${hero.level}</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">❤</span><span class="hs-label">HP</span>
+          <span class="hs-base">${hero.baseMaxHp}</span>
+          ${eqHp > 0 ? `<span class="hs-add">+${eqHp}</span>` : ''}
+          ${bonusHp > 0 ? `<span class="hs-add">+${bonusHp}🌟</span>` : ''}
+          <span class="hs-total">${hero.maxHp}</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">⚔</span><span class="hs-label">Атака</span>
+          <span class="hs-base">${hero.baseAttack}</span>
+          ${eqAtk > 0 ? `<span class="hs-add">+${eqAtk}</span>` : ''}
+          <span class="hs-total">${Math.round(hero.attack)}</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">🛡</span><span class="hs-label">Защита</span>
+          <span class="hs-base">0</span>
+          ${eqDef > 0 ? `<span class="hs-add">+${eqDef}</span>` : ''}
+          <span class="hs-total">${Math.round(hero.defense)}</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">📏</span><span class="hs-label">Даль.</span>
+          <span class="hs-base">${hero.baseRange.toFixed(1)}</span>
+          ${eqRange > 0 ? `<span class="hs-add">+${eqRange.toFixed(2)}</span>` : ''}
+          <span class="hs-total">${hero.range.toFixed(2)}</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">⚡</span><span class="hs-label">Скор.</span>
+          <span class="hs-base">${hero.baseAttackSpeed.toFixed(2)}</span>
+          ${eqAtkSpd > 0 ? `<span class="hs-add">+${eqAtkSpd.toFixed(0)}%</span>` : ''}
+          <span class="hs-total">${hero.attackSpeed.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hs-group">
+      <div class="hs-title">Крит и уворот</div>
+      <div class="hs-grid">
+        <div class="hs-cell">
+          <span class="hs-ico">💥</span><span class="hs-label">Крит</span>
+          <span class="hs-base">5%</span>
+          ${eqCrit > 0 ? `<span class="hs-add">+${eqCrit.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${hero.critChance.toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">💢</span><span class="hs-label">Кр.урон</span>
+          <span class="hs-base">50%</span>
+          ${eqCritDmg > 0 ? `<span class="hs-add">+${eqCritDmg.toFixed(0)}%</span>` : ''}
+          <span class="hs-total">+${hero.critDamage.toFixed(0)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">💨</span><span class="hs-label">Уворот</span>
+          <span class="hs-base">0%</span>
+          ${eqDodge > 0 ? `<span class="hs-add">+${eqDodge.toFixed(1)}%</span>` : ''}
+          ${hero.cloakDodge > 0 ? `<span class="hs-add">+${Math.round(hero.cloakDodge*100)}%👻</span>` : ''}
+          <span class="hs-total">${hero.dodge.toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">🎯</span><span class="hs-label">Точн.</span>
+          <span class="hs-base">0%</span>
+          ${eqAcc > 0 ? `<span class="hs-add">+${eqAcc.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${hero.accuracy.toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">🛡️</span><span class="hs-label">Сопр.кр</span>
+          <span class="hs-base">0%</span>
+          ${eqCritRes > 0 ? `<span class="hs-add">+${eqCritRes.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${hero.critResist.toFixed(1)}%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hs-group">
+      <div class="hs-title">Бой</div>
+      <div class="hs-grid">
+        <div class="hs-cell">
+          <span class="hs-ico">🩸</span><span class="hs-label">Вампир.</span>
+          <span class="hs-base">0%</span>
+          ${eqLs > 0 ? `<span class="hs-add">+${eqLs.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${hero.lifesteal.toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">🔨</span><span class="hs-label">Пробит.</span>
+          <span class="hs-base">0%</span>
+          ${eqArmorPen > 0 ? `<span class="hs-add">+${eqArmorPen.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${hero.armorPen.toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">🚫</span><span class="hs-label">Анти-хил</span>
+          <span class="hs-base">0%</span>
+          ${eqAntiHeal > 0 ? `<span class="hs-add">+${eqAntiHeal.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${hero.antiHeal.toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">😡</span><span class="hs-label">Берсерк</span>
+          <span class="hs-base">0%</span>
+          ${eqBerserk > 0 ? `<span class="hs-add">+${eqBerserk.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${(hero.berserk||0).toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">🌵</span><span class="hs-label">Шипы</span>
+          <span class="hs-base">0%</span>
+          ${eqThorns > 0 ? `<span class="hs-add">+${eqThorns.toFixed(1)}%</span>` : ''}
+          <span class="hs-total">${(hero.thorns||0).toFixed(1)}%</span>
+        </div>
+        <div class="hs-cell">
+          <span class="hs-ico">👟</span><span class="hs-label">Бег</span>
+          <span class="hs-base">${hero.baseMoveSpeed.toFixed(1)}</span>
+          ${eqMoveSpd > 0 ? `<span class="hs-add">+${eqMoveSpd.toFixed(1)}</span>` : ''}
+          ${hero.speedBonus > 0 ? `<span class="hs-add">+${Math.round(hero.speedBonus*100)}%💨</span>` : ''}
+          <span class="hs-total">${hero.moveSpeed.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hs-legend">
+      <span class="hs-base-legend">база</span>
+      <span class="hs-add-legend">+ экип</span>
+      <span class="hs-total-legend">= итог</span>
+      <span class="hs-star-legend">🌟 +15</span>
+    </div>
   `;
 
+  // === Бонусы +15 ===
+  const bonusBox = document.getElementById('hero-bonuses');
+  if (bonusBox) {
+    const itemBonuses = [];
+    for (const slot of SLOTS) {
+      const item = hero.equipment[slot];
+      if (!item) continue;
+      const b = getEnhanceBonus(item);
+      if (b) itemBonuses.push({ slot, item, bonus: b });
+    }
+
+    if (itemBonuses.length === 0) {
+      bonusBox.innerHTML = `
+        <div class="hb-title">✨ Бонусы +15</div>
+        <div class="hb-empty">Нет. Точи предметы до +15!</div>
+      `;
+    } else {
+      bonusBox.innerHTML = `
+        <div class="hb-title">✨ Бонусы +15 (${itemBonuses.length})</div>
+        <div class="hb-list">
+          ${itemBonuses.map(x => `
+            <div class="hb-row">
+              <span class="hb-icon">${x.item.icon}</span>
+              <span class="hb-name">${x.bonus.icon} ${x.bonus.name}</span>
+              <span class="hb-val">${x.bonus.display}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  // === Активные свитки ===
+  const buffBox = document.getElementById('hero-buffs');
+  if (buffBox) {
+    const now = Date.now();
+    const activeBuffs = [];
+    for (const type of ['attack','crit','speed','range']) {
+      const def = BUFF_SCROLLS[type];
+      if (!def) continue;
+      const until = hero.activeBuffs[type];
+      if (until && until > now) {
+        const left = Math.ceil((until - now) / 1000);
+        const m = Math.floor(left / 60);
+        const s = left % 60;
+        activeBuffs.push({
+          def,
+          timeLeft: `${m}:${s < 10 ? '0' : ''}${s}`,
+        });
+      }
+    }
+
+    if (activeBuffs.length === 0) {
+      buffBox.innerHTML = `
+        <div class="hb-title">🧪 Активные свитки</div>
+        <div class="hb-empty">Нет</div>
+      `;
+    } else {
+      buffBox.innerHTML = `
+        <div class="hb-title">🧪 Активные свитки (${activeBuffs.length})</div>
+        <div class="hb-list">
+          ${activeBuffs.map(x => `
+            <div class="hb-row">
+              <span class="hb-icon">${x.def.icon}</span>
+              <span class="hb-name" style="color:${x.def.color}">${x.def.name}</span>
+              <span class="hb-desc">${x.def.desc}</span>
+              <span class="hb-time">${x.timeLeft}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  // === Рюкзак ===
   const grid = document.getElementById('backpack-grid');
   grid.innerHTML = '';
-  if (hero.backpack.length === 0) grid.innerHTML = '<div class="bp-empty">Рюкзак пуст</div>';
+  const visibleItems = hero.backpack.filter(it => it.kind !== 'buff');
+  if (visibleItems.length === 0) grid.innerHTML = '<div class="bp-empty">Рюкзак пуст</div>';
   else {
-    for (const item of hero.backpack) {
+    for (const item of visibleItems) {
       const el = document.createElement('div');
       el.className = 'bp-item';
-      el.style.borderColor = item.kind === 'buff' ? BUFF_SCROLLS[item.buffType].color
-                            : item.kind === 'blessed' ? '#fbbf24'
-                            : gradeColor(item.grade);
+      el.style.borderColor = item.kind === 'blessed' ? '#fbbf24' : gradeColor(item.grade);
 
       const cnt = item.count || 1;
       const countBadge = cnt > 1 ? `<span class="bp-count">×${cnt}</span>` : '';
 
-      if (item.kind === 'buff') {
-        const def = BUFF_SCROLLS[item.buffType];
-        el.innerHTML = `
-          ${countBadge}
-          <div class="bp-icon">${item.icon}</div>
-          <div class="bp-grade" style="color:${def.color}">SCROLL</div>
-          <div class="bp-name">${item.name}</div>
-          <div class="bp-stats"><span style="color:${def.color};font-weight:bold">${def.desc}</span></div>
-        `;
-      } else if (item.kind === 'blessed') {
+      if (item.kind === 'blessed') {
         el.innerHTML = `
           ${countBadge}
           <div class="bp-icon">${item.icon}</div>
@@ -578,10 +807,12 @@ function renderHero() {
     }
   }
 
+  // === Свитки ===
   const sc = document.getElementById('scrolls-list');
   sc.innerHTML = '';
   const scrollIcons = { ng:'📜', d:'📗', c:'📘', b:'📙', a:'📕', s:'🌟' };
   let hasScrolls = false;
+
   for (const grade of GRADE_ORDER) {
     const w = hero.scrolls[grade]?.weapon || 0;
     const a = hero.scrolls[grade]?.armor || 0;
@@ -602,6 +833,20 @@ function renderHero() {
       sc.appendChild(el);
     }
   }
+
+  const buffItems = hero.backpack.filter(it => it.kind === 'buff');
+  for (const item of buffItems) {
+    const def = BUFF_SCROLLS[item.buffType];
+    if (!def) continue;
+    hasScrolls = true;
+    const el = document.createElement('div');
+    el.className = 'scroll-item';
+    el.style.borderColor = def.color;
+    const cnt = item.count || 1;
+    el.innerHTML = `<span class="scroll-icon">${item.icon}</span><span class="scroll-name" style="color:${def.color}">${item.name}</span><span class="scroll-count">×${cnt}</span>`;
+    sc.appendChild(el);
+  }
+
   if (!hasScrolls) sc.innerHTML = '<div class="bp-empty">Нет свитков</div>';
 
   const pot = document.getElementById('potions-list');
@@ -686,11 +931,13 @@ function makeEnhanceItemEl(item) {
   el.className = 'enhance-item' + (enhanceSelectedItem === item ? ' selected' : '');
   el.dataset.itemId = item.id;
   el.style.borderColor = gradeColor(item.grade);
+  const bonus = getEnhanceBonus(item);
   el.innerHTML = `
     <div class="ei-icon">${item.icon}</div>
     <div class="ei-enh" style="opacity:${item.enhance > 0 ? 1 : 0}">+${item.enhance}</div>
     <div class="ei-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div>
     <div class="ei-stats">${statsTwoMain(item)}</div>
+    <div class="ei-bonus" style="color:#fbbf24;font-size:8px;font-weight:bold">${bonus ? bonus.icon + ' ' + bonus.display : ''}</div>
   `;
   el.addEventListener('click', () => {
     enhanceSelectedItem = item;
@@ -741,6 +988,16 @@ function showEnhanceDetail(item) {
     .reduce((sum, x) => sum + (x.count || 1), 0);
   const blessedAvailable = blessedCount > 0;
 
+  const bonus = getEnhanceBonus(item);
+  const nextBonus = item.enhance < MAX_ENHANCE
+    ? getEnhanceBonus({ ...item, enhance: item.enhance + 1 })
+    : null;
+
+  const bonusRow = bonus
+    ? `<div class="row"><span>${bonus.icon} ${bonus.name}</span><span class="val good">${bonus.display}</span></div>
+       ${nextBonus && nextBonus.display !== bonus.display ? `<div class="row" style="opacity:0.6"><span>→ далее</span><span class="val">${nextBonus.display}</span></div>` : ''}`
+    : '';
+
   detail.innerHTML = `
     <div class="eh-head">
       <span class="eh-icon">${item.icon}</span>
@@ -749,6 +1006,7 @@ function showEnhanceDetail(item) {
     <div class="eh-body">
       <div class="row"><span>Грейд</span><span class="val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div>
       <div class="row"><span>Заточка</span><span class="val">+${item.enhance} / +${MAX_ENHANCE}</span></div>
+      ${bonusRow}
       ${isMax
         ? '<div class="row"><span>Максимум</span><span class="val good">✓</span></div>'
         : `<div class="row"><span>Шанс успеха</span><span class="val ${chance >= 0.5 ? 'good' : 'bad'}">${(chance*100).toFixed(0)}%</span></div>
@@ -844,10 +1102,21 @@ function renderShop() {
 
   if (shopCat === 'equipment') {
     for (const entry of shop.stock.equipment) {
-      const realItem = callbacks.makeItem(shop.stock.grade, entry.slot, entry.weaponType);
-      const s = realItem ? itemStats(realItem) : {};
+      const realItem = callbacks.makeItem(shop.stock.grade, entry.slot, entry.weaponType, entry.variant);
+      if (!realItem) continue;
+      const s = itemStats(realItem);
+
       const statParts = [];
-      for (const k of STAT_ORDER) if (s[k]) statParts.push(`<span>${statLabel(k)} ${s[k]}${statSuffix(k)}</span>`);
+      for (const k of STAT_ORDER) {
+        if (!s[k]) continue;
+        statParts.push(statLine(k, s[k]));
+      }
+
+      const bonus = ENHANCE_BONUSES[realItem.slot];
+      const bonusPreview = bonus
+        ? `+15: ${bonus.icon} ${bonus.name} — ${bonus.format(bonus.getValue(15))}`
+        : '';
+
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
@@ -855,12 +1124,13 @@ function renderShop() {
         <div class="auction-info">
           <div class="auction-name">${entry.name}</div>
           <div class="auction-stats">${statParts.join('')}</div>
+          ${bonusPreview ? `<div class="auction-bonus">${bonusPreview}</div>` : ''}
         </div>
         <div class="auction-price">${entry.price}💰</div>
         <button ${state.gold < entry.price ? 'disabled' : ''}>Купить</button>
       `;
       bindBuyButton(row.querySelector('button'), (silent) => {
-        const r = buyEquipment(shop, state.hero, state, entry.slot, entry.weaponType);
+        const r = buyEquipment(shop, state.hero, state, entry.slot, entry.weaponType, entry.variant);
         if (r.ok) {
           toast(`🛒 ${entry.name}`, shop.stock.grade);
           if (!silent) renderShop();
@@ -1120,6 +1390,25 @@ export function showItemPopup(item, context) {
   } else if (context === 'equip') {
     actionBtns = `<button class="popup-close" id="pp-unequip">Снять</button>`;
   }
+
+  const bonus = getEnhanceBonus(item);
+  const nextBonus = item.enhance < MAX_ENHANCE
+    ? getEnhanceBonus({ ...item, enhance: item.enhance + 1 })
+    : null;
+
+  let bonusHtml = '';
+  if (bonus) {
+    bonusHtml = `<div class="stat-row" style="color:#fbbf24"><span class="stat-name">${bonus.icon} ${bonus.name}</span><span class="stat-val">${bonus.display}</span></div>`;
+    if (nextBonus && nextBonus.display !== bonus.display) {
+      bonusHtml += `<div class="stat-row" style="opacity:0.6;color:#fbbf24"><span class="stat-name">→ на +${item.enhance + 1}</span><span class="stat-val">${nextBonus.display}</span></div>`;
+    }
+  } else {
+    const slotBonus = ENHANCE_BONUSES[item.slot];
+    if (slotBonus) {
+      bonusHtml = `<div class="stat-row" style="opacity:0.5"><span class="stat-name">🔒 ${slotBonus.icon} ${slotBonus.name} (на +15)</span><span class="stat-val">${slotBonus.format(slotBonus.getValue(15))}</span></div>`;
+    }
+  }
+
   body.innerHTML = `
     <div class="item-icon-big">${item.icon}</div>
     <h3>${item.name} ${item.enhance > 0 ? `+${item.enhance}` : ''}</h3>
@@ -1127,6 +1416,7 @@ export function showItemPopup(item, context) {
     <div class="stat-row"><span class="stat-name">Слот</span><span class="stat-val">${SLOT_NAMES[item.slot] || '—'}</span></div>
     <div class="stat-row"><span class="stat-name">Треб. уровень</span><span class="stat-val">${GRADES[item.grade]?.levelReq || 1}</span></div>
     ${statsMultiline(item)}
+    ${bonusHtml}
     ${actionBtns}
     <button class="popup-close" id="pp-close" style="border-color:#64748b;color:#64748b">Закрыть</button>
   `;
