@@ -1,6 +1,8 @@
-import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus } from './config.js';
-import { itemStats } from './items.js';
+import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus, BUFF_SCROLLS, EQUIP_PRICES } from './config.js';
+import { itemStats, durabilityMultiplier } from './items.js';
 export { ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt };
+
+// ===== СОЗДАНИЕ ГЕРОЯ =====
 
 export function createHero(classType) {
   const base = CONFIG.hero[classType];
@@ -29,6 +31,7 @@ export function createHero(classType) {
 
     cooldown: 0, hitAnim: 0, attackAnim: 0, dead: false,
     x: 0, y: 0, facing: 1,
+
     equipment: { weapon:null, helmet:null, armor:null, gloves:null, boots:null, cloak:null, ring:null, amulet:null },
     backpack: [],
     scrolls: {
@@ -42,10 +45,33 @@ export function createHero(classType) {
     activePotion: null,
     soulshotActive: false,
     activeBuffs: {},
+
+    // ===== ТЕНЬ =====
+    shadow: {
+      equipment: {
+        weapon: null, helmet: null, armor: null, gloves: null,
+        boots: null, cloak: null, ring: null, amulet: null,
+      },
+      potions: { small: 0, medium: 0, large: 0, epic: 0 },
+      soulshots: { ng: 0, d: 0, c: 0, b: 0, a: 0, s: 0 },
+      scrolls: { attack: 0, crit: 0, speed: 0, range: 0 },
+      durability: {},   // { itemId: 100 } — синхронизируется с предметами
+    },
+
+    // ===== АРЕНА =====
+    arena: {
+      rating: 1000,
+      wins: 0,
+      losses: 0,
+      history: [],       // последние 20 боёв
+      claimedChests: [], // id сундуков, которые уже забрал
+    },
   };
   recalcStats(hero);
   return hero;
 }
+
+// ===== БОНУСЫ +15 =====
 
 export function applyEnhanceBonuses(hero) {
   hero.chainTargets = 0;
@@ -65,6 +91,8 @@ export function applyEnhanceBonuses(hero) {
   }
 }
 
+// ===== ПЕРЕСЧЁТ СТАТОВ =====
+
 export function recalcStats(hero) {
   let bHp=0,bAtk=0,bDef=0,bCrit=0,bCritDmg=0,bDodge=0,bLs=0,bAtkSpd=0,bRange=0;
   let bAcc=0,bCritRes=0,bArmorPen=0,bAntiHeal=0,bBerserk=0,bThorns=0,bMoveSpd=0;
@@ -73,13 +101,23 @@ export function recalcStats(hero) {
     const item = hero.equipment[slot];
     if (!item) continue;
     const s = itemStats(item);
-    bHp += s.hp||0; bAtk += s.attack||0; bDef += s.defense||0;
-    bCrit += s.critChance||0; bCritDmg += s.critDamage||0;
-    bDodge += s.dodge||0; bLs += s.lifesteal||0; bAtkSpd += s.attackSpeed||0;
-    bRange += s.range||0;
-    bAcc += s.accuracy||0; bCritRes += s.critResist||0;
-    bArmorPen += s.armorPen||0; bAntiHeal += s.antiHeal||0;
-    bBerserk += s.berserk||0; bThorns += s.thorns||0; bMoveSpd += s.moveSpeed||0;
+    const durMult = durabilityMultiplier(item);
+    bHp += (s.hp||0) * durMult;
+    bAtk += (s.attack||0) * durMult;
+    bDef += (s.defense||0) * durMult;
+    bCrit += (s.critChance||0) * durMult;
+    bCritDmg += (s.critDamage||0) * durMult;
+    bDodge += (s.dodge||0) * durMult;
+    bLs += (s.lifesteal||0) * durMult;
+    bAtkSpd += (s.attackSpeed||0) * durMult;
+    bRange += (s.range||0) * durMult;
+    bAcc += (s.accuracy||0) * durMult;
+    bCritRes += (s.critResist||0) * durMult;
+    bArmorPen += (s.armorPen||0) * durMult;
+    bAntiHeal += (s.antiHeal||0) * durMult;
+    bBerserk += (s.berserk||0) * durMult;
+    bThorns += (s.thorns||0) * durMult;
+    bMoveSpd += (s.moveSpeed||0) * durMult;
   }
 
   const oldMax = hero.maxHp;
@@ -121,9 +159,177 @@ export function recalcStats(hero) {
   if (hero.hp > hero.maxHp) hero.hp = hero.maxHp;
 }
 
+// ===== ТЕНЬ: СТАТЫ =====
+
+// Статы тени — как у героя, но из shadow.equipment
+export function getShadowStats(hero) {
+  const shadow = hero.shadow;
+  if (!shadow) return null;
+
+  let bHp=0,bAtk=0,bDef=0,bCrit=0,bCritDmg=0,bDodge=0,bLs=0,bAtkSpd=0,bRange=0;
+  let bAcc=0,bCritRes=0,bArmorPen=0,bAntiHeal=0,bBerserk=0,bThorns=0,bMoveSpd=0;
+
+  for (const slot of SLOTS) {
+    const item = shadow.equipment[slot];
+    if (!item) continue;
+    const s = itemStats(item);
+    const durMult = durabilityMultiplier(item);
+    bHp += (s.hp||0) * durMult;
+    bAtk += (s.attack||0) * durMult;
+    bDef += (s.defense||0) * durMult;
+    bCrit += (s.critChance||0) * durMult;
+    bCritDmg += (s.critDamage||0) * durMult;
+    bDodge += (s.dodge||0) * durMult;
+    bLs += (s.lifesteal||0) * durMult;
+    bAtkSpd += (s.attackSpeed||0) * durMult;
+    bRange += (s.range||0) * durMult;
+    bAcc += (s.accuracy||0) * durMult;
+    bCritRes += (s.critResist||0) * durMult;
+    bArmorPen += (s.armorPen||0) * durMult;
+    bAntiHeal += (s.antiHeal||0) * durMult;
+    bBerserk += (s.berserk||0) * durMult;
+    bThorns += (s.thorns||0) * durMult;
+    bMoveSpd += (s.moveSpeed||0) * durMult;
+  }
+
+  const base = CONFIG.hero[hero.classType];
+
+  return {
+    maxHp: base.hp + bHp,
+    hp: base.hp + bHp,
+    attack: base.attack + bAtk,
+    defense: bDef,
+    critChance: Math.min(75, 5 + bCrit),
+    critDamage: 50 + bCritDmg,
+    dodge: Math.min(60, bDodge),
+    lifesteal: Math.min(30, bLs),
+    attackSpeed: base.attackSpeed * (1 + bAtkSpd / 100),
+    range: base.range + bRange,
+    moveSpeed: base.moveSpeed,
+    accuracy: bAcc,
+    critResist: Math.min(60, bCritRes),
+    armorPen: Math.min(80, bArmorPen),
+    antiHeal: Math.min(60, bAntiHeal),
+    berserk: bBerserk,
+    thorns: bThorns,
+  };
+}
+
+// ===== ТЕНЬ: РЕМОНТ =====
+
+// Стоимость ремонта одного предмета
+export function getShadowRepairCost(hero, slot) {
+  const item = hero.shadow?.equipment?.[slot];
+  if (!item) return 0;
+  if (item.durability === undefined) return 0;
+  if (item.durability >= 100) return 0;
+
+  const basePrice = EQUIP_PRICES[item.grade] || 100;
+  const missing = (100 - item.durability) / 100;
+  return Math.max(1, Math.floor(basePrice * missing * 0.5));
+}
+
+// Стоимость ремонта всех предметов
+export function getAllShadowRepairCost(hero) {
+  let total = 0;
+  for (const slot of SLOTS) {
+    total += getShadowRepairCost(hero, slot);
+  }
+  return total;
+}
+
+// Ремонт одного предмета
+export function repairShadowItem(hero, slot) {
+  const item = hero.shadow?.equipment?.[slot];
+  if (!item) return { ok: false, reason: 'no_item' };
+  if (item.durability === undefined) return { ok: false, reason: 'no_durability' };
+  if (item.durability >= 100) return { ok: false, reason: 'full' };
+
+  const cost = getShadowRepairCost(hero, slot);
+  if (hero.gold < cost) return { ok: false, reason: 'no_gold', cost };
+
+  hero.gold -= cost;
+  item.durability = 100;
+  return { ok: true, cost };
+}
+
+// Ремонт всех предметов
+export function repairAllShadow(hero) {
+  let totalCost = 0;
+  let repaired = 0;
+
+  for (const slot of SLOTS) {
+    const item = hero.shadow?.equipment?.[slot];
+    if (!item) continue;
+    if (item.durability === undefined) continue;
+    if (item.durability >= 100) continue;
+
+    const cost = getShadowRepairCost(hero, slot);
+    if (hero.gold < totalCost + cost) continue;
+
+    totalCost += cost;
+    item.durability = 100;
+    repaired++;
+  }
+
+  if (repaired === 0) return { ok: false, reason: 'nothing' };
+  if (totalCost === 0) return { ok: false, reason: 'nothing' };
+
+  hero.gold -= totalCost;
+  return { ok: true, cost: totalCost, repaired };
+}
+
+// ===== ТЕНЬ: ПОПОЛНЕНИЕ =====
+
+// Взять соски из основного запаса
+export function fillShadowSoulshots(hero, grade, amount) {
+  const have = hero.soulshots[grade] || 0;
+  const take = Math.min(amount, have);
+  if (take <= 0) return { ok: false, reason: 'no_soulshots' };
+
+  hero.soulshots[grade] -= take;
+  hero.shadow.soulshots[grade] = (hero.shadow.soulshots[grade] || 0) + take;
+  return { ok: true, amount: take };
+}
+
+// Взять зелья из основного запаса
+export function fillShadowPotions(hero, type, amount) {
+  const have = hero.potions[type] || 0;
+  const take = Math.min(amount, have);
+  if (take <= 0) return { ok: false, reason: 'no_potions' };
+
+  hero.potions[type] -= take;
+  hero.shadow.potions[type] = (hero.shadow.potions[type] || 0) + take;
+  return { ok: true, amount: take };
+}
+
+// Взять бафф-свитки из рюкзака
+export function fillShadowScrolls(hero, type, amount) {
+  let taken = 0;
+  for (let i = hero.backpack.length - 1; i >= 0 && taken < amount; i--) {
+    const item = hero.backpack[i];
+    if (item.kind === 'buff' && item.buffType === type) {
+      const cnt = item.count || 1;
+      const toTake = Math.min(cnt, amount - taken);
+      if (toTake >= cnt) {
+        hero.backpack.splice(i, 1);
+      } else {
+        item.count -= toTake;
+      }
+      taken += toTake;
+    }
+  }
+  if (taken <= 0) return { ok: false, reason: 'no_scrolls' };
+
+  hero.shadow.scrolls[type] = (hero.shadow.scrolls[type] || 0) + taken;
+  return { ok: true, amount: taken };
+}
+
+// ===== ЭКИПИРОВКА =====
+
 export function canEquip(hero, item) {
   if (!item) return false;
-  if (item.kind === 'buff' || item.kind === 'blessed') return false;
+  if (item.kind === 'buff' || item.kind === 'blessed' || item.kind === 'pass') return false;
   const g = GRADES[item.grade];
   if (!g) return false;
   if (item.slot === 'weapon' && item.weaponType && item.weaponType !== hero.weaponType) return false;
@@ -155,6 +361,34 @@ export function unequipItem(hero, slot) {
   return { ok:true };
 }
 
+// ===== ТЕНЬ: ЭКИПИРОВКА =====
+
+export function equipShadowItem(hero, item) {
+  if (!canEquip(hero, item)) return { ok:false, reason:'cannot_equip' };
+  const idx = hero.backpack.indexOf(item);
+  if (idx < 0) return { ok:false, reason:'not_in_backpack' };
+
+  hero.backpack.splice(idx, 1);
+  const prev = hero.shadow.equipment[item.slot];
+  if (prev) hero.backpack.push(prev);
+  hero.shadow.equipment[item.slot] = item;
+
+  // Если у предмета нет прочности — ставим 100
+  if (item.durability === undefined) item.durability = 100;
+
+  return { ok:true, replaced: prev };
+}
+
+export function unequipShadowItem(hero, slot) {
+  const item = hero.shadow.equipment[slot];
+  if (!item) return { ok:false };
+  hero.shadow.equipment[slot] = null;
+  hero.backpack.push(item);
+  return { ok:true };
+}
+
+// ===== УРОВЕНЬ =====
+
 export function applyLevelUp(hero) {
   while (hero.xp >= hero.xpToNext && hero.level < CONFIG.level.maxLevel) {
     hero.xp -= hero.xpToNext;
@@ -167,6 +401,8 @@ export function applyLevelUp(hero) {
 }
 export function addXp(hero, amount) { hero.xp += amount; applyLevelUp(hero); }
 
+// ===== УРОН =====
+
 export function damageHero(hero, amount) {
   if (Math.random() * 100 < hero.dodge) { hero.hitAnim = 0.15; return 'dodge'; }
   const reduced = Math.max(1, amount - Math.floor(hero.defense * 0.5));
@@ -175,6 +411,8 @@ export function damageHero(hero, amount) {
   if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; return 'dead'; }
   return 'hit';
 }
+
+// ===== ЗАТОЧКА =====
 
 export function tryEnhance(hero, item, useBlessed = false) {
   if (item.enhance >= MAX_ENHANCE) return { ok:false, reason:'max' };
@@ -216,6 +454,8 @@ export function tryEnhance(hero, item, useBlessed = false) {
   return { ok:true, result:'fail', blessedUsed };
 }
 
+// ===== ЗЕЛЬЯ =====
+
 export function autoUsePotion(hero, dt) {
   if (hero.potionCooldown > 0) hero.potionCooldown -= dt;
   if (hero.potionCooldown > 0) return null;
@@ -236,6 +476,8 @@ export function autoUsePotion(hero, dt) {
   return { type, healed, color: p.color };
 }
 
+// ===== СОСКИ =====
+
 export function canUseSoulshot(hero) {
   if (!hero.soulshotActive) return false;
   const w = hero.equipment.weapon;
@@ -251,6 +493,8 @@ export function consumeSoulshot(hero) {
   if (hero.soulshots[w.grade] === 0) hero.soulshotActive = false;
   return true;
 }
+
+// ===== КОНТР-СТАТЫ =====
 
 export function calcHitChance(attacker, defender) {
   const dodge = defender.dodge || 0;
@@ -269,6 +513,8 @@ export function calcEffectiveDefense(defender, attacker) {
   const pen = (attacker.armorPen || 0) / 100;
   return Math.max(0, def * (1 - pen));
 }
+
+// ===== БОЙ =====
 
 export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) {
   if (hero.dead) return;
@@ -319,13 +565,11 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) 
     damage *= (1 + hero.critDamage / 100);
   }
 
-  // Казнь
   if (hero.executeBonus > 0 && target.hp / target.maxHp < 0.3) {
     damage *= (1 + hero.executeBonus);
     isExecute = true;
   }
 
-  // Берсерк
   if (hero.berserk > 0 && hero.hp / hero.maxHp < 0.5) {
     damage *= (1 + hero.berserk / 100);
   }
@@ -350,11 +594,13 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) 
   });
 }
 
+// ===== РЮКЗАК =====
+
 export function addToBackpack(hero, item) {
-  if (item.kind === 'buff' || item.kind === 'blessed') {
+  if (item.kind === 'buff' || item.kind === 'blessed' || item.kind === 'pass') {
     const existing = hero.backpack.find(
       x => x.kind === item.kind &&
-           (item.kind === 'blessed' || x.buffType === item.buffType)
+           (item.kind !== 'buff' || x.buffType === item.buffType)
     );
     if (existing) {
       existing.count = (existing.count || 1) + (item.count || 1);
@@ -365,6 +611,8 @@ export function addToBackpack(hero, item) {
   hero.backpack.push(item);
   return item;
 }
+
+// ===== УРОН МОБОВ =====
 
 export function mobDamageFor(hero, zoneDiff) {
   const pct = MOB_DAMAGE_PERCENT[zoneDiff] || 0.015;

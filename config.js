@@ -43,9 +43,7 @@ export const PERCENT_STATS = [
   'accuracy','critResist','armorPen','antiHeal','berserk','thorns','moveSpeed',
 ];
 
-// ===== ВАРИАНТЫ И ЗАТОЧКА =====
-// Ключ = слот. Значение = объект с вариантами.
-// Каждый вариант: [главный стат, второй стат]
+// ===== ВАРИАНТЫ ЗАТОЧКИ =====
 export const ENHANCE_STATS = {
   weapon: {
     speed: ['attackSpeed','attack'],
@@ -90,8 +88,7 @@ export const ENHANCE_STATS = {
   },
 };
 
-// ===== БАЗОВЫЕ СТАТЫ ПРЕДМЕТОВ =====
-// weapon — варианты для лука (archer) и посоха (mage)
+// ===== БАЗОВЫЕ СТАТЫ =====
 export const BASE_STATS = {
   weapon_archer_speed:  { attack: 10, attackSpeed: 6 },
   weapon_archer_range:  { attack: 12, range: 0.4, critDamage: 8 },
@@ -140,8 +137,7 @@ export const GRADES = {
 };
 export const GRADE_ORDER = ['ng','d','c','b','a','s'];
 
-// ===== НАЗВАНИЯ И ИКОНКИ ПРЕДМЕТОВ =====
-// Ключ = grade_variant (без weapon-типа, он подставляется)
+// ===== НАЗВАНИЯ ПРЕДМЕТОВ =====
 export const GRADE_ITEMS = {
   ng: {
     weapon_archer_speed:  { name:'Лук новичка (скорость)', icon:'🏹' },
@@ -344,7 +340,6 @@ export function willBreakAt(level) {
 }
 
 // ===== БОНУСЫ +15 =====
-// Ключ = слот (потом будет слот+вариант)
 export const ENHANCE_BONUSES = {
   weapon: {
     name: 'Масс-атака', icon: '⚔',
@@ -396,10 +391,8 @@ export const ENHANCE_BONUSES = {
   },
 };
 
-// СЕЙЧАС: ключ = слот. ПОТОМ: ключ = слот_вариант.
 export function getBonusKey(item) {
   return item.slot;
-  // Потом: return `${item.slot}_${item.variant}`;
 }
 
 export function getEnhanceBonus(item) {
@@ -447,6 +440,37 @@ export const START_ITEMS = {
   potions: { small:5, medium:0, large:0, epic:0 },
   soulshots: { ng:20, d:0, c:0, b:0, a:0, s:0 },
 };
+
+// ===== ПРОПУСК НА АРЕНУ =====
+export const ARENA_PASS = {
+  id: 'arena_pass',
+  name: 'Пропуск на арену',
+  icon: '🎫',
+  kind: 'pass',
+  slot: 'pass',
+  grade: 'any',
+};
+
+// ===== РУЛЕТКА =====
+export const ROULETTE_REWARDS = [
+  { id: 'gold_500',    icon: '💰', name: '500 золота',       chanceWin: 30, chanceLose: 50 },
+  { id: 'gold_2000',   icon: '💰', name: '2 000 золота',     chanceWin: 25, chanceLose: 20 },
+  { id: 'scroll_3',    icon: '📜', name: '3 свитка заточки', chanceWin: 20, chanceLose: 10 },
+  { id: 'blessed',     icon: '✨', name: 'Blessed Scroll',   chanceWin: 12, chanceLose: 8  },
+  { id: 'item',        icon: '⚔', name: 'Предмет',           chanceWin: 8,  chanceLose: 6  },
+  { id: 'chest',       icon: '🎁', name: 'Сундук',            chanceWin: 3,  chanceLose: 3  },
+  { id: 'pass',        icon: '🎫', name: 'Пропуск на арену', chanceWin: 2,  chanceLose: 3  },
+];
+
+// ===== СУНДУКИ ЗА РЕЙТИНГ =====
+export const RATING_CHESTS = [
+  { rating: 1000, id: 'bronze',    name: 'Бронзовый',   icon: '🥉', gold: 5000,    scrolls: 3,  blessed: 1,  passes: 1,  itemGrade: null },
+  { rating: 1200, id: 'silver',    name: 'Серебряный',  icon: '🥈', gold: 20000,   scrolls: 5,  blessed: 2,  passes: 2,  itemGrade: null },
+  { rating: 1400, id: 'gold',      name: 'Золотой',     icon: '🥇', gold: 50000,   scrolls: 10, blessed: 5,  passes: 3,  itemGrade: null },
+  { rating: 1600, id: 'platinum',  name: 'Платиновый',  icon: '💎', gold: 150000,  scrolls: 20, blessed: 10, passes: 5,  itemGrade: 'a'  },
+  { rating: 1800, id: 'legendary', name: 'Легендарный', icon: '👑', gold: 500000,  scrolls: 50, blessed: 20, passes: 10, itemGrade: 's'  },
+  { rating: 2000, id: 'mythic',    name: 'Мифический',  icon: '🌟', gold: 1000000, scrolls: 100,blessed: 50, passes: 20, itemGrade: 's'  },
+];
 
 // ===== МОБЫ =====
 export const MOBS = {

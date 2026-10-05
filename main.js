@@ -1,14 +1,16 @@
 import { CONFIG, GRADE_ORDER, BUFF_SCROLLS, BUFF_ORDER, BUFF_DROP_CHANCE, MOBS } from './config.js';
 import { createMob, createGroupId, pickMobDefFromZone, updateMob, aggroGroup } from './mobs.js';
 import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets, calcHitChance, calcEffectiveDefense } from './hero.js';
-import { rollDrops, gradeName, createItem, createBlessedScroll, createBuffScroll } from './items.js';
+import { rollDrops, gradeName, createItem, createBlessedScroll, createBuffScroll, createArenaPass } from './items.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
 import { createShop, buildStock } from './shop.js';
 import { render } from './render.js';
-import { initUI, refreshUI, toast, showCityScreen, hideCityScreen } from './ui.js';
+import { initUI, refreshUI, toast, showCityScreen, hideCityScreen, openArena } from './ui.js';
 import { CITIES, CITY_ORDER, findZone, cityTeleportCost } from './cities.js';
 import { spawnPortalInZone, updatePortal, getPortalCooldown, createDungeon, rollBossDrops, spawnGuard } from './dungeon.js';
 import { castBossAoe, checkAoeHit, checkFireHit, GUARD_CALL, BOSS_AOE } from './bosses.js';
+import { createArena } from './arena.js';
+import { createBots, tickBots } from './bots.js';
 import {
   initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie
 } from './audio.js';
@@ -41,6 +43,7 @@ const state = {
 
 const auction = createAuction();
 const shop = createShop();
+const arena = createArena();
 
 const input = {
   left:false, right:false, up:false, down:false,
@@ -80,6 +83,7 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
 });
 
+// Джойстик
 const joyEl = document.getElementById('joystick');
 const joyBase = document.getElementById('joystick-base');
 const joyStick = document.getElementById('joystick-stick');
@@ -146,6 +150,7 @@ document.querySelectorAll('.class-btn').forEach(btn => {
   btn.addEventListener('click', () => startGame(btn.dataset.class));
 });
 
+// HUD-кнопки
 function bindHudActions() {
   document.querySelectorAll('.hud-potion').forEach(el => {
     el.addEventListener('click', () => {
@@ -200,12 +205,12 @@ function bindHudActions() {
 }
 bindHudActions();
 
+// DEBUG: B — 3 blessed + 3 пропуска
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyB' && state.hero) {
-    for (let i = 0; i < 3; i++) {
-      addToBackpack(state.hero, createBlessedScroll());
-    }
-    toast('✨ +3 Blessed (debug)', 'unique');
+    for (let i = 0; i < 3; i++) addToBackpack(state.hero, createBlessedScroll());
+    for (let i = 0; i < 3; i++) addToBackpack(state.hero, createArenaPass());
+    toast('✨ +3 Blessed, 🎫 +3 Pass (debug)', 'unique');
     updateHudActions();
   }
 });
@@ -219,18 +224,21 @@ function startGame(classType) {
   state.currentZone = null;
   state.inBattle = false;
 
+  // Арена: создаём ботов
+  arena.bots = createBots(100);
+
   document.getElementById('class-select').classList.add('hidden');
   document.getElementById('bottom-panel').classList.remove('hidden');
 
   rebuildShopStock();
 
-  initUI(state, auction, shop, {
-    onEquipChange: () => { updateHUD(); refreshUI(); },
-    onEnterZone: (zoneId) => enterZone(zoneId),
-    onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
-    onReturnToCity: () => returnToCity(),
-    makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
-  });
+ initUI(state, auction, shop, arena, {
+  onEquipChange: () => { updateHUD(); refreshUI(); },
+  onEnterZone: (zoneId) => enterZone(zoneId),
+  onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
+  onReturnToCity: () => returnToCity(),
+  makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
+});
 
   updateHUD();
   showCityScreen();
@@ -521,6 +529,7 @@ function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
   if (state.hero && state.inBattle && !state.hero.dead) update(dt);
+  if (state.hero && !state.inBattle) tickBots(arena.bots, dt);
   if (state.inBattle) render(ctx, canvas, state, layout, camera);
   requestAnimationFrame(loop);
 }
@@ -595,9 +604,7 @@ function update(dt) {
           const guard = spawnGuard(state.currentZone, gx, gy, null);
           state.mobs.push(guard);
         }
-        if (canSpawn > 0) {
-          toast(`⚠️ Босс призвал ${canSpawn} охраны`, 'epic');
-        }
+        if (canSpawn > 0) toast(`⚠️ Босс призвал ${canSpawn} охраны`, 'epic');
       }
     }
 
@@ -607,29 +614,13 @@ function update(dt) {
       if (result === 'dodge') {
         state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a5f3fc', text: 'DODGE' });
       } else {
-        // === ШИПЫ ===
         if (hero.thornsPercent > 0) {
           const thorns = Math.floor(mobDmg * hero.thornsPercent);
           m.hp -= thorns;
           m.hitFlash = 0.15;
-
-          state.effects.push({
-            x: m.x, y: m.y - 0.5,
-            life: 0.7, maxLife: 0.7,
-            color: '#a855f7',
-            text: '🌵' + thorns,
-            big: true,
-          });
-
-          state.effects.push({
-            kind: 'flash',
-            x: m.x, y: m.y,
-            life: 0.4, maxLife: 0.4,
-            color: '#a855f7',
-            radius: 0.9,
-          });
+          state.effects.push({ x: m.x, y: m.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a855f7', text: '🌵' + thorns, big: true });
+          state.effects.push({ kind: 'flash', x: m.x, y: m.y, life: 0.4, maxLife: 0.4, color: '#a855f7', radius: 0.9 });
         }
-
         sfxHeroHit();
         state.effects.push({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + mobDmg });
         if (result === 'dead') { heroDie(); return; }
@@ -685,7 +676,6 @@ function update(dt) {
     if (aoe.life <= -10) state.aoeList.splice(i, 1);
   }
 
-  // === Снаряды ===
   for (let i = state.projectiles.length - 1; i >= 0; i--) {
     const p = state.projectiles[i];
     p.trail.push({ x: p.x, y: p.y });
@@ -707,35 +697,15 @@ function update(dt) {
         const effDef = calcEffectiveDefense(m, hero);
         let finalDamage = Math.max(1, p.damage - Math.floor(effDef * 0.5));
 
-        // === ДВОЙНОЙ УДАР ===
         if (p.doubleStrike && !p.doubleStrikeDone) {
           p.doubleStrikeDone = true;
           finalDamage *= 2;
-          state.effects.push({
-            x: m.x, y: m.y - 1.2,
-            life: 0.8, maxLife: 0.8,
-            color: '#fbbf24',
-            text: '👊 x2',
-            big: true,
-          });
-          state.effects.push({
-            kind: 'flash',
-            x: m.x, y: m.y,
-            life: 0.4, maxLife: 0.4,
-            color: '#fbbf24',
-            radius: 1.0,
-          });
+          state.effects.push({ x: m.x, y: m.y - 1.2, life: 0.8, maxLife: 0.8, color: '#fbbf24', text: '👊 x2', big: true });
+          state.effects.push({ kind: 'flash', x: m.x, y: m.y, life: 0.4, maxLife: 0.4, color: '#fbbf24', radius: 1.0 });
         }
 
-        // === КАЗНЬ ===
         if (p.isExecute) {
-          state.effects.push({
-            x: m.x, y: m.y - 1.6,
-            life: 0.9, maxLife: 0.9,
-            color: '#dc2626',
-            text: '💀 КАЗНЬ',
-            big: true,
-          });
+          state.effects.push({ x: m.x, y: m.y - 1.6, life: 0.9, maxLife: 0.9, color: '#dc2626', text: '💀 КАЗНЬ', big: true });
         }
 
         m.hp -= finalDamage; m.hitFlash = 0.12; m.aggro = true;
@@ -755,7 +725,6 @@ function update(dt) {
           }
         }
 
-        // === МАСС-АТАКА (цепь) ===
         const chainCount = getChainTargets(hero);
         if (chainCount > 0) {
           const candidates = state.mobs
@@ -768,44 +737,15 @@ function update(dt) {
             target.hp -= finalDamage * 0.7;
             target.hitFlash = 0.12; target.aggro = true;
             if (target.groupId) aggroGroup(state.mobs, target.groupId);
-
-            state.effects.push({
-              x: target.x, y: target.y - 0.5,
-              life: 0.6, maxLife: 0.6,
-              color: '#a855f7',
-              text: '⚡' + Math.floor(finalDamage * 0.7),
-              big: true,
-            });
-
+            state.effects.push({ x: target.x, y: target.y - 0.5, life: 0.6, maxLife: 0.6, color: '#a855f7', text: '⚡' + Math.floor(finalDamage * 0.7), big: true });
             for (let k = 0; k < 2; k++) {
-              state.effects.push({
-                kind: 'chain',
-                x1: prev.x, y1: prev.y,
-                x2: target.x, y2: target.y,
-                life: 0.35, maxLife: 0.35,
-                color: k === 0 ? '#a855f7' : '#d4a5ff',
-              });
+              state.effects.push({ kind: 'chain', x1: prev.x, y1: prev.y, x2: target.x, y2: target.y, life: 0.35, maxLife: 0.35, color: k === 0 ? '#a855f7' : '#d4a5ff' });
             }
-
-            state.effects.push({
-              kind: 'flash',
-              x: target.x, y: target.y,
-              life: 0.3, maxLife: 0.3,
-              color: '#a855f7',
-              radius: 0.8,
-            });
-
+            state.effects.push({ kind: 'flash', x: target.x, y: target.y, life: 0.3, maxLife: 0.3, color: '#a855f7', radius: 0.8 });
             prev = target;
           }
-
           if (candidates.length > 0) {
-            state.effects.push({
-              x: m.x, y: m.y - 2.0,
-              life: 0.7, maxLife: 0.7,
-              color: '#d4a5ff',
-              text: '⚡⚡⚡ x' + candidates.length,
-              big: true,
-            });
+            state.effects.push({ x: m.x, y: m.y - 2.0, life: 0.7, maxLife: 0.7, color: '#d4a5ff', text: '⚡⚡⚡ x' + candidates.length, big: true });
           }
         }
 
@@ -835,13 +775,15 @@ function update(dt) {
         state.sessionStats.gold += drops.gold;
         toast(`💰 +${drops.gold} с босса`, 'legendary');
 
+        // Пропуск на арену с босса — 100% 1 шт.
+        addToBackpack(hero, createArenaPass(1));
+        toast('🎫 Пропуск на арену!', 'legendary');
+
         for (const t of drops.buffs) {
           const sc = createBuffScroll(t);
           if (sc) addToBackpack(hero, sc);
         }
-        if (drops.buffs.length > 0) {
-          toast(`📜 Свитки ×${drops.buffs.length}`, 'legendary');
-        }
+        if (drops.buffs.length > 0) toast(`📜 Свитки ×${drops.buffs.length}`, 'legendary');
 
         if (drops.blessed > 0) {
           addToBackpack(hero, createBlessedScroll());
@@ -849,12 +791,8 @@ function update(dt) {
         }
 
         if (drops.item) {
-          const item = createItem(drops.item, ['weapon','armor','helmet','boots','gloves','cloak','ring','amulet'][Math.floor(Math.random()*8)],
-            state.hero.weaponType);
-          if (item) {
-            addToBackpack(hero, item);
-            toast(`⚔ ${item.name}!`, drops.item);
-          }
+          const item = createItem(drops.item, ['weapon','armor','helmet','boots','gloves','cloak','ring','amulet'][Math.floor(Math.random()*8)], state.hero.weaponType);
+          if (item) { addToBackpack(hero, item); toast(`⚔ ${item.name}!`, drops.item); }
         }
 
         state.mobs.splice(i, 1);
@@ -875,11 +813,13 @@ function update(dt) {
         toast(`📜 Свиток: ${gradeName(sc.grade)}`, sc.grade);
       }
       if (drops.blessed > 0) {
-        for (let k = 0; k < drops.blessed; k++) {
-          addToBackpack(hero, createBlessedScroll());
-        }
+        for (let k = 0; k < drops.blessed; k++) addToBackpack(hero, createBlessedScroll());
         state.sessionStats.blessed += drops.blessed;
         toast(`✨ Blessed Scroll найден!`, 'unique');
+      }
+      if (drops.passes > 0) {
+        for (let k = 0; k < drops.passes; k++) addToBackpack(hero, createArenaPass());
+        toast(`🎫 Пропуск на арену!`, 'unique');
       }
 
       const buffChance = m.champion ? BUFF_DROP_CHANCE.champion : BUFF_DROP_CHANCE.normal;
@@ -887,10 +827,7 @@ function update(dt) {
         const types = ['attack','crit','speed','range'];
         const t = types[Math.floor(Math.random() * types.length)];
         const scroll = createBuffScroll(t);
-        if (scroll) {
-          addToBackpack(hero, scroll);
-          toast(`📜 ${scroll.name}`, 'legendary');
-        }
+        if (scroll) { addToBackpack(hero, scroll); toast(`📜 ${scroll.name}`, 'legendary'); }
       }
 
       state.mobs.splice(i, 1);
@@ -912,10 +849,10 @@ function update(dt) {
   updateHUD();
 }
 
+// ===== DEV-КОДЫ =====
 function applyDevCode(code) {
   code = code.trim().toLowerCase();
   if (!code) return;
-
   const hero = state.hero;
   if (!hero) return;
 
@@ -923,77 +860,43 @@ function applyDevCode(code) {
   if (match) {
     const grade = match[1];
     const level = Math.min(20, Math.max(1, parseInt(match[2], 10)));
-
     for (const slot of ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet']) {
-      if (hero.equipment[slot]) {
-        hero.backpack.push(hero.equipment[slot]);
-        hero.equipment[slot] = null;
-      }
+      if (hero.equipment[slot]) { hero.backpack.push(hero.equipment[slot]); hero.equipment[slot] = null; }
     }
-
     const slots = ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet'];
     for (const slot of slots) {
       const wt = slot === 'weapon' ? hero.weaponType : null;
       let variant = null;
-      if (slot === 'weapon') {
-        variant = hero.weaponType === 'staff' ? 'aoe' : 'speed';
-      }
+      if (slot === 'weapon') variant = hero.weaponType === 'staff' ? 'aoe' : 'speed';
       const item = createItem(grade, slot, wt, variant);
       if (!item) continue;
       item.enhance = level;
       hero.equipment[slot] = item;
     }
-
     if (!hero.scrolls[grade]) hero.scrolls[grade] = { weapon: 0, armor: 0 };
     hero.scrolls[grade].weapon += 100;
     hero.scrolls[grade].armor += 100;
-
-    for (let i = 0; i < 20; i++) {
-      addToBackpack(hero, createBlessedScroll());
-    }
-
+    for (let i = 0; i < 20; i++) addToBackpack(hero, createBlessedScroll());
+    for (let i = 0; i < 10; i++) addToBackpack(hero, createArenaPass());
     for (const t of ['attack','crit','speed','range']) {
       for (let i = 0; i < 5; i++) {
         const sc = createBuffScroll(t);
         if (sc) addToBackpack(hero, sc);
       }
     }
-
-    for (const t of ['small','medium','large','epic']) {
-      hero.potions[t] = (hero.potions[t] || 0) + 100;
-    }
-
+    for (const t of ['small','medium','large','epic']) hero.potions[t] = (hero.potions[t] || 0) + 100;
     hero.soulshots[grade] = (hero.soulshots[grade] || 0) + 1000;
-
     state.gold += 100000;
-
     recalcStats(hero);
     updateHUD();
     refreshUI();
     toast(`🎁 Dev: ${grade.toUpperCase()}-сет +${level}`, 'unique');
     return;
   }
-
-  if (code === 'gold') {
-    state.gold += 1000000;
-    updateHUD();
-    toast('💰 +1 000 000 золота', 'unique');
-    return;
-  }
-  if (code === 'level') {
-    hero.level += 50;
-    hero.baseMaxHp += 50 * 25;
-    hero.baseAttack += 50 * 3;
-    recalcStats(hero);
-    updateHUD();
-    toast(`⭐ +50 уровней`, 'unique');
-    return;
-  }
-  if (code === 'full') {
-    applyDevCode('s20');
-    return;
-  }
-
+  if (code === 'gold') { state.gold += 1000000; updateHUD(); toast('💰 +1 000 000 золота', 'unique'); return; }
+  if (code === 'level') { hero.level += 50; hero.baseMaxHp += 50 * 25; hero.baseAttack += 50 * 3; recalcStats(hero); updateHUD(); toast(`⭐ +50 уровней`, 'unique'); return; }
+  if (code === 'arena') { state.hero.arena.rating = 1500; toast('🏟️ Рейтинг = 1500', 'unique'); return; }
+  if (code === 'full') { applyDevCode('s20'); return; }
   toast('❌ Неизвестный код', 'epic');
 }
 
@@ -1003,10 +906,7 @@ document.getElementById('dev-code-apply').addEventListener('click', () => {
   input.value = '';
 });
 document.getElementById('dev-code-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    applyDevCode(e.target.value);
-    e.target.value = '';
-  }
+  if (e.key === 'Enter') { applyDevCode(e.target.value); e.target.value = ''; }
 });
 
 requestAnimationFrame(loop);

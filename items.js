@@ -1,11 +1,9 @@
-import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION, BUFF_SCROLLS, getEnhanceBonus } from './config.js';
+import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION, BUFF_SCROLLS, getEnhanceBonus, ARENA_PASS } from './config.js';
 
 let nextItemId = 1;
 
-// Создать предмет.
-// slot: 'weapon' | 'helmet' | ...
-// weaponType: 'bow' | 'staff' | null
-// variant: 'speed' | 'range' | 'crit' | 'aoe' | 'hp' | 'def' | ...
+// ===== СОЗДАНИЕ ПРЕДМЕТОВ =====
+
 export function createItem(grade, slot, weaponType = null, variant = null) {
   let key;
   if (slot === 'weapon') {
@@ -17,11 +15,9 @@ export function createItem(grade, slot, weaponType = null, variant = null) {
     if (variant) key += `_${variant}`;
   }
 
-  // Пробуем найти вариант
   let def = GRADE_ITEMS[grade]?.[key];
   let baseStats = BASE_STATS[key];
 
-  // Fallback: если варианта нет — берём первый доступный для слота
   if (!def || !baseStats) {
     const prefix = slot === 'weapon'
       ? `weapon_${weaponType === 'staff' ? 'mage' : 'archer'}`
@@ -45,6 +41,7 @@ export function createItem(grade, slot, weaponType = null, variant = null) {
     name: def.name,
     icon: def.icon,
     baseStats: { ...baseStats },
+    durability: 100,
   };
 }
 
@@ -75,17 +72,29 @@ export function createBuffScroll(type, count = 1) {
   };
 }
 
-// Получить список статов, которые качаются у предмета
+// НОВОЕ: Пропуск на арену
+export function createArenaPass(count = 1) {
+  return {
+    id: nextItemId++,
+    kind: 'pass',
+    name: ARENA_PASS.name,
+    icon: ARENA_PASS.icon,
+    slot: 'pass',
+    grade: 'any',
+    count: count,
+  };
+}
+
+// ===== СТАТЫ =====
+
 function getEnhanceKeys(item) {
   const slotMap = ENHANCE_STATS[item.slot];
   if (!slotMap) return [];
   if (item.variant && slotMap[item.variant]) return slotMap[item.variant];
-  // Fallback: первый вариант
   const firstKey = Object.keys(slotMap)[0];
   return slotMap[firstKey] || [];
 }
 
-// Пересчитать статы предмета с учётом грейда и заточки
 export function itemStats(item) {
   if (!item || !item.baseStats) return {};
   const g = GRADES[item.grade] || { mult: 1 };
@@ -95,7 +104,6 @@ export function itemStats(item) {
   const res = {};
 
   for (const [k, v] of Object.entries(item.baseStats)) {
-    // Скорость атаки, вампиризм, движение, шипы и т.д. — проценты, множитель грейда НЕ применяем
     const noGradeMult = ['attackSpeed','lifesteal','moveSpeed','thorns','berserk','critResist','armorPen','antiHeal','accuracy'];
     if (noGradeMult.includes(k)) {
       let val = v;
@@ -125,6 +133,7 @@ export function estimateItemValue(item) {
   if (!item) return 0;
   if (item.kind === 'blessed') return 5000;
   if (item.kind === 'buff') return 3000;
+  if (item.kind === 'pass') return 50000;
 
   const g = GRADES[item.grade];
   if (!g) return 100;
@@ -136,15 +145,28 @@ export function gradeName(g) { return GRADES[g]?.name || '—'; }
 export function gradeShort(g) { return GRADES[g]?.short || '?'; }
 export function gradeColor(g) { return GRADES[g]?.color || '#94a3b8'; }
 
+export function getVariantsForSlot(slot, weaponType = null) {
+  if (slot === 'weapon') {
+    const wt = weaponType === 'staff' ? 'mage' : 'archer';
+    return Object.keys(ENHANCE_STATS.weapon).filter(v => {
+      if (wt === 'archer' && v === 'aoe') return false;
+      if (wt === 'mage' && v === 'range') return false;
+      return true;
+    });
+  }
+  return Object.keys(ENHANCE_STATS[slot] || {});
+}
+
+// ===== ДРОП =====
+
 export function rollDrops(zoneGrade, isChampion) {
-  const drops = { items: [], scrolls: [], blessed: 0 };
+  const drops = { items: [], scrolls: [], blessed: 0, passes: 0 };
   const itemChance = isChampion ? 0.09 : 0.03;
   const scrollChance = isChampion ? 0.24 : 0.08;
 
   if (Math.random() < itemChance) {
     const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
     const weaponType = slot === 'weapon' ? (Math.random() < 0.5 ? 'bow' : 'staff') : null;
-    // Случайный вариант из доступных
     const variants = getVariantsForSlot(slot, weaponType);
     const variant = variants[Math.floor(Math.random() * variants.length)];
     const item = createItem(zoneGrade, slot, weaponType, variant);
@@ -157,19 +179,23 @@ export function rollDrops(zoneGrade, isChampion) {
   if (isChampion && Math.random() < CHAMPION.blessedDropChance) {
     drops.blessed = 1;
   }
+  // Пропуск с чемпионов — 2%
+  if (isChampion && Math.random() < 0.02) {
+    drops.passes = 1;
+  }
   return drops;
 }
 
-// Получить список вариантов для слота
-export function getVariantsForSlot(slot, weaponType = null) {
-  if (slot === 'weapon') {
-    const wt = weaponType === 'staff' ? 'mage' : 'archer';
-    return Object.keys(ENHANCE_STATS.weapon).filter(v => {
-      // У лука нет 'aoe', у посоха нет 'range'
-      if (wt === 'archer' && v === 'aoe') return false;
-      if (wt === 'mage' && v === 'range') return false;
-      return true;
-    });
-  }
-  return Object.keys(ENHANCE_STATS[slot] || {});
+// ===== ПРОЧНОСТЬ =====
+
+// Износ при атаке: победа -5%, поражение -15%
+export function applyDurabilityLoss(item, percent) {
+  if (!item || item.durability === undefined) return;
+  item.durability = Math.max(0, item.durability - percent);
+}
+
+// Эффективный множитель статов от прочности
+export function durabilityMultiplier(item) {
+  if (!item || item.durability === undefined) return 1;
+  return item.durability / 100;
 }
