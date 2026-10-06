@@ -8,6 +8,8 @@ function getCtx() {
 export function initAudio() { getCtx(); }
 
 function beep(freq, duration, type = 'square', volume = 0.04) {
+      if (window._sfxDisabled) return;
+
   try {
     const ac = getCtx();
     if (ac.state === 'suspended') ac.resume();
@@ -28,8 +30,13 @@ export function sfxShoot()    { beep(650, 0.03, 'square', 0.02); }
 export function sfxHit()      { beep(320, 0.04, 'sawtooth', 0.025); }
 export function sfxDeath()    { beep(160, 0.1, 'triangle', 0.05); }
 export function sfxHeroHit()  { beep(120, 0.1, 'sawtooth', 0.06); }
-export function sfxLevelUp()  { [400, 600, 900, 1200].forEach((f, i) => setTimeout(() => beep(f, 0.1, 'square', 0.05), i * 80)); }
+export function sfxLevelUp()  {
+  if (window._sfxDisabled) return;   // иначе бипы по setTimeout проигрываются после досчёта
+  // Планируем с проверкой гейта в момент срабатывания, а не в момент вызова
+  [400, 600, 900, 1200].forEach((f, i) => setTimeout(() => { if (!window._sfxDisabled) beep(f, 0.1, 'square', 0.05); }, i * 80));
+}
 export function sfxHeroDie()  {
+  if (window._sfxDisabled) return;
   const ac = getCtx();
   const osc = ac.createOscillator();
   const gain = ac.createGain();

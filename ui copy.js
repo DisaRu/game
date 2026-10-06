@@ -8,8 +8,7 @@ import { getAvailableChests, claimChest, rollCardRewards, estimateWinChance, fig
 import { getBotStats } from './bots.js';
 
 // Иконка: emoji ИЛИ путь к PNG
-// Универсальная иконка: путь к PNG → <img>, emoji → <span>
-function iconHtml(icon, size = 42) {
+function iconHtml(icon, size = 24) {
   if (!icon) return '';
   if (icon.includes('.') || icon.includes('/')) {
     return `<img src="${icon}" style="width:${size}px;height:${size}px;object-fit:contain;image-rendering:pixelated;vertical-align:middle;display:inline-block;" alt="">`;
@@ -523,7 +522,7 @@ function renderHeroContent() {
     if (item) {
       const gc = gradeColor(item.grade);
       el.innerHTML = `
-        <div class="eq-icon">${iconHtml(item.icon)}</div>
+        <div class="eq-icon">${item.icon}</div>
         <div class="eq-grade" style="color:${gc}">${gradeShort(item.grade)}</div>
         ${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}
         <span class="slot-label">${SLOT_NAMES[slot]}</span>
@@ -620,7 +619,7 @@ function renderHeroBonuses() {
   }
   let html = '';
   if (itemBonuses.length > 0) {
-    html += `<div class="hb-title">✨ Бонусы +15 (${itemBonuses.length})</div><div class="hb-list">${itemBonuses.map(x => `<div class="hb-row"><span class="hb-icon">${iconHtml(x.item.icon)}</span><span class="hb-name">${x.bonus.icon} ${x.bonus.name}</span><span class="hb-val">${x.bonus.display}</span></div>`).join('')}</div>`;
+    html += `<div class="hb-title">✨ Бонусы +15 (${itemBonuses.length})</div><div class="hb-list">${itemBonuses.map(x => `<div class="hb-row"><span class="hb-icon">${x.item.icon}</span><span class="hb-name">${x.bonus.icon} ${x.bonus.name}</span><span class="hb-val">${x.bonus.display}</span></div>`).join('')}</div>`;
   }
   if (activeBuffs.length > 0) {
     html += `<div class="hb-title" style="margin-top:6px">🧪 Активные свитки (${activeBuffs.length})</div><div class="hb-list">${activeBuffs.map(x => `<div class="hb-row"><span class="hb-icon">${x.def.icon}</span><span class="hb-name" style="color:${x.def.color}">${x.def.name}</span><span class="hb-time">${x.timeLeft}</span></div>`).join('')}</div>`;
@@ -651,11 +650,11 @@ function renderBackpack() {
     const cnt = item.count || 1;
     const countBadge = cnt > 1 ? `<span class="bp-count">×${cnt}</span>` : '';
     if (item.kind === 'blessed') {
-      el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#fbbf24">BLESSED</div><div class="bp-name">${item.name}</div>`;
+      el.innerHTML = `${countBadge}<div class="bp-icon">${item.icon}</div><div class="bp-grade" style="color:#fbbf24">BLESSED</div><div class="bp-name">${item.name}</div>`;
     } else if (item.kind === 'pass') {
-      el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#a855f7">PASS</div><div class="bp-name">${item.name}</div>`;
+      el.innerHTML = `${countBadge}<div class="bp-icon">${item.icon}</div><div class="bp-grade" style="color:#a855f7">PASS</div><div class="bp-name">${item.name}</div>`;
     } else {
-      el.innerHTML = `${countBadge}${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div><div class="bp-name">${item.name}</div><div class="bp-stats">${statsCompact(item)}</div>`;
+      el.innerHTML = `${countBadge}${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}<div class="bp-icon">${item.icon}</div><div class="bp-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div><div class="bp-name">${item.name}</div><div class="bp-stats">${statsCompact(item)}</div>`;
     }
     el.addEventListener('click', () => showItemPopup(item, 'backpack'));
     grid.appendChild(el);
@@ -683,7 +682,7 @@ function renderScrolls() {
     el.className = 'scroll-item';
     el.style.borderColor = def.color;
     const cnt = item.count || 1;
-    el.innerHTML = `<span class="scroll-icon">${iconHtml(item.icon)}</span><span class="scroll-name" style="color:${def.color}">${item.name}</span><span class="scroll-count">×${cnt}</span>`;
+    el.innerHTML = `<span class="scroll-icon">${item.icon}</span><span class="scroll-name" style="color:${def.color}">${item.name}</span><span class="scroll-count">×${cnt}</span>`;
     sc.appendChild(el);
   }
   if (!has) sc.innerHTML = '<div class="bp-empty">Нет свитков</div>';
@@ -743,7 +742,7 @@ function renderShadowContent() {
       const dur = item.durability !== undefined ? item.durability : 100;
       const durColor = dur >= 80 ? '#4ade80' : dur >= 50 ? '#fbbf24' : '#ef4444';
       el.innerHTML = `
-        <div class="eq-icon">${iconHtml(item.icon)}</div>
+        <div class="eq-icon">${item.icon}</div>
         <div class="eq-grade" style="color:${gc}">${gradeShort(item.grade)}</div>
         ${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}
         <div class="eq-dur" style="color:${durColor}">${dur}%</div>
@@ -1014,7 +1013,7 @@ function renderShadowDurability() {
     const color = dur >= 80 ? '#4ade80' : dur >= 50 ? '#fbbf24' : '#ef4444';
     if (dur < 100) hasBroken = true;
     rows.push(`<div class="sd-row">
-      <span class="sd-icon">${iconHtml(item.icon)}</span>
+      <span class="sd-icon">${item.icon}</span>
       <span class="sd-name">${SLOT_NAMES[slot]}</span>
       <div class="sd-bar"><div class="sd-fill" style="width:${dur}%;background:${color}"></div></div>
       <span class="sd-val" style="color:${color}">${dur}%</span>
@@ -1059,7 +1058,7 @@ function renderShadowBackpack() {
       ? item.weaponType === hero.weaponType
       : true;
     return `<div class="sb-item" data-item-id="${item.id}" ${canEquip ? '' : 'style="opacity:0.4"'}>
-      <div class="sb-icon">${iconHtml(item.icon)}</div>
+      <div class="sb-icon">${item.icon}</div>
       <div class="sb-grade" style="color:${gc}">${gradeShort(item.grade)}</div>
       ${item.enhance > 0 ? `<span class="sb-enh">+${item.enhance}</span>` : ''}
       <div class="sb-name">${item.name}</div>
@@ -1125,7 +1124,7 @@ function makeEnhanceItemEl(item) {
   el.style.borderColor = gradeColor(item.grade);
   const bonus = getEnhanceBonus(item);
   el.innerHTML = `
-    <div class="ei-icon">${iconHtml(item.icon)}</div>
+    <div class="ei-icon">${item.icon}</div>
     <div class="ei-enh" style="opacity:${item.enhance > 0 ? 1 : 0}">+${item.enhance}</div>
     <div class="ei-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div>
     <div class="ei-stats">${statsTwoMain(item)}</div>
@@ -1169,7 +1168,7 @@ function showEnhanceDetail(item) {
     ? `<div class="row"><span>${bonus.icon} ${bonus.name}</span><span class="val good">${bonus.display}</span></div>${nextBonus && nextBonus.display !== bonus.display ? `<div class="row" style="opacity:0.6"><span>→ далее</span><span class="val">${nextBonus.display}</span></div>` : ''}`
     : '';
   detail.innerHTML = `
-    <div class="eh-head"><span class="eh-icon">${iconHtml(item.icon)}</span><span class="eh-name">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}</span></div>
+    <div class="eh-head"><span class="eh-icon">${item.icon}</span><span class="eh-name">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}</span></div>
     <div class="eh-body">
       <div class="row"><span>Грейд</span><span class="val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div>
       <div class="row"><span>Заточка</span><span class="val">+${item.enhance} / +${MAX_ENHANCE}</span></div>
@@ -1210,7 +1209,7 @@ function showBigEnhanceAnim(item, useBlessed) {
   overlay.className = 'enhance-overlay';
   const card = document.createElement('div');
   card.className = 'enhance-big-card';
-  card.innerHTML = `<div class="ebc-inner"><div class="ebc-icon">${iconHtml(item.icon)}</div><div class="ebc-enh" id="ebc-enh">+${item.enhance}</div><div class="ebc-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div></div>`;
+  card.innerHTML = `<div class="ebc-inner"><div class="ebc-icon">${item.icon}</div><div class="ebc-enh" id="ebc-enh">+${item.enhance}</div><div class="ebc-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div></div>`;
   overlay.appendChild(card);
   document.body.appendChild(overlay);
   setTimeout(() => {
@@ -1244,7 +1243,7 @@ function renderShop() {
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
-        <div class="auction-icon">${iconHtml(entry.icon)}</div>
+        <div class="auction-icon">${entry.icon}</div>
         <div class="auction-info">
           <div class="auction-name">${entry.name}</div>
           <div class="auction-stats">${statParts.join('')}</div>
@@ -1350,7 +1349,7 @@ function renderAuctionBuy() {
     const row = document.createElement('div');
     row.className = 'auction-row';
     row.innerHTML = `
-      <div class="auction-icon">${iconHtml(item.icon)}</div>
+      <div class="auction-icon">${item.icon}</div>
       <div class="auction-info">
         <div class="auction-name" style="color:${gradeColor(item.grade)}">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
         <div class="auction-grade" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</div>
@@ -1387,7 +1386,7 @@ function renderAuctionSell() {
     const row = document.createElement('div');
     row.className = 'sell-item-row';
     row.innerHTML = `
-      <div class="auction-icon">${iconHtml(item.icon)}</div>
+      <div class="auction-icon">${item.icon}</div>
       <div class="sell-info">
         <div class="sell-name" style="color:${nameColor}">${item.name}${item.count > 1 ? ' ×' + item.count : ''}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
         <div class="auction-stats">${statsLine}</div>
@@ -1410,7 +1409,7 @@ function renderAuctionMy() {
     const row = document.createElement('div');
     row.className = 'my-listing';
     row.innerHTML = `
-      <div class="auction-icon">${iconHtml(item.icon)}</div>
+      <div class="auction-icon">${item.icon}</div>
       <div class="sell-info" style="flex:1">
         <div class="sell-name">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
         <div class="progress-bar" style="margin-top:4px"><div class="progress-fill" style="width:${pct}%"></div></div>
@@ -1432,7 +1431,7 @@ function showSellPopup(item) {
   else if (item.kind === 'pass') headInfo = '<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#a855f7">🎫 Пропуск на арену</span></div>';
   else headInfo = `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div>${statsMultiline(item)}`;
   body.innerHTML = `
-    <div class="item-icon-big">${iconHtml(item.icon)}</div>
+    <div class="item-icon-big">${item.icon}</div>
     <h3>${item.name} ${item.enhance > 0 ? `+${item.enhance}` : ''}</h3>
     ${headInfo}
     <div style="display:flex;gap:6px;margin-top:10px">
@@ -1486,7 +1485,7 @@ export function showItemPopup(item, context) {
   else bodyHtml = `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div><div class="stat-row"><span class="stat-name">Слот</span><span class="stat-val">${SLOT_NAMES[item.slot] || '—'}</span></div>${statsMultiline(item)}`;
 
   body.innerHTML = `
-    <div class="item-icon-big">${iconHtml(item.icon)}</div>
+    <div class="item-icon-big">${item.icon}</div>
     <h3>${item.name} ${item.enhance > 0 ? `+${item.enhance}` : ''}</h3>
     ${bodyHtml}${extra}${actionBtns}
     <button class="popup-close" id="pp-close" style="border-color:#64748b;color:#64748b">Закрыть</button>
@@ -2090,7 +2089,7 @@ function applyCardReward(hero, reward) {
     const item = createItem(grade, slot, weaponType, variant);
     if (item) {
       hero.backpack.push(item);
-      msg = `${iconHtml(item.icon)} ${item.name}`;
+      msg = `${item.icon} ${item.name}`;
     }
   }
 

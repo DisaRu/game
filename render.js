@@ -104,13 +104,34 @@ export function render(ctx, canvas, state, layout, camera) {
     ctx.fillStyle = rg;
     ctx.beginPath(); ctx.arc(px, py, auraRadius, 0, Math.PI * 2); ctx.fill();
 
-    ctx.font = `${Math.floor(size * scale)}px serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
-    if (m.boss) { ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 20; }
-    ctx.fillText(m.emoji, px + shake, py);
-    ctx.restore();
+      const sprite = getSprite(m.emoji);
+    if (sprite) {
+      const drawSize = size * scale * 1.4;
+      ctx.save();
+      ctx.shadowColor = m.boss ? '#dc2626' : 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = m.boss ? 20 : 8;
+
+      // Угол поворота спрайта
+      // ВАЖНО: зависит от того, куда "смотрит" спрайт по умолчанию
+      // Если спрайт нарисован "вправо" (нос смотрит вправо) — используем angle как есть.
+      // Если спрайт нарисован "вверх" (нос смотрит вверх) — angle + Math.PI / 2.
+
+       const angle = m.renderAngle !== undefined ? m.renderAngle : (m.facingAngle || 0);
+
+      ctx.translate(px + shake, py);
+      ctx.rotate(angle - Math.PI / 2);
+      ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+      ctx.restore();
+    } else {
+      // Emoji fallback
+      ctx.font = `${Math.floor(size * scale)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
+      if (m.boss) { ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 20; }
+      ctx.fillText(m.emoji, px + shake, py);
+      ctx.restore();
+    }
 
     if (m.hp < m.maxHp) {
       const w = size * 0.9, h = 3;
@@ -217,6 +238,20 @@ export function render(ctx, canvas, state, layout, camera) {
   }
 
   ctx.restore();
+}
+
+// === КЕШ КАРТИНОК ===
+const _imgCache = {};
+
+function getSprite(path) {
+  if (!path || !path.includes('.')) return null; // emoji
+  if (_imgCache[path] === undefined) {
+    const img = new Image();
+    img.src = path;
+    _imgCache[path] = img;
+  }
+  const img = _imgCache[path];
+  return img.complete && img.naturalWidth > 0 ? img : null;
 }
 
 function drawAoe(ctx, aoe, cellPx) {

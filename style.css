@@ -2034,27 +2034,28 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
 #hud-offline .hud-icon { color: #a5b4fc; }
 
 .offline-overlay {
+  /* Компактная плашка по центру зоны: НЕ перекрывает HUD и нижнюю панель,
+     клики проходят только по самой плашке */
   position: fixed;
-  bottom: 60px;
-  right: 8px;
-  z-index: 200;
-  padding: 0;
-  background: transparent;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  z-index: 190;
   pointer-events: none;
 }
 .offline-overlay.hidden { display: none !important; }
 .offline-panel {
   pointer-events: auto;
-  width: 300px;
+  width: min(360px, 92vw);
   background: linear-gradient(180deg, #0f172a 0%, #050810 100%);
   border: 2px solid #6366f1;
   border-radius: 10px;
   padding: 10px;
   box-shadow: 0 0 30px rgba(99, 102, 241, 0.6);
-  max-height: 60vh;
+  max-height: 62vh;
   overflow-y: auto;
 }
-.offline-panel {
+#offline-report .offline-panel {
   pointer-events: auto;
   width: 100%;
   max-width: 380px;
@@ -2067,15 +2068,18 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   overflow-y: auto;
 }
 
-.offline-panel {
-  width: 100%;
-  max-width: 420px;
-  background: linear-gradient(180deg, #0f172a 0%, #050810 100%);
-  border: 2px solid #6366f1;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 0 40px rgba(99, 102, 241, 0.5);
+#offline-report {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 4, 10, 0.72);
+  pointer-events: auto;
 }
+
+#offline-report.hidden { display: none !important; }
 
 .offline-header {
   display: flex;
@@ -2168,6 +2172,7 @@ canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
   border-radius: 4px;
   margin-bottom: 10px;
 }
+.of-rate { color: #fbbf24; font-size: 9px; }
 
 .offline-log {
   background: #050810;

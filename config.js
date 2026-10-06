@@ -13,7 +13,7 @@ export const CONFIG = {
   },
   level: { baseXp:50, xpGrowth:1.35, maxLevel:80, hpPerLevel:80, attackPerLevel:3 },
   death: { respawnTime:10, xpLossPercent:0.10 },
-  startGold: 30000,
+  startGold: 300,
 };
 
 export const SLOTS = ['weapon','helmet','armor','gloves','boots','cloak','ring','amulet'];
@@ -140,7 +140,7 @@ export const GRADE_ORDER = ['ng','d','c','b','a','s'];
 // ===== НАЗВАНИЯ ПРЕДМЕТОВ =====
 export const GRADE_ITEMS = {
   ng: {
-    weapon_archer_speed:  { name:'Лук новичка (скорость)', icon:'🏹' },
+    weapon_archer_speed:  { name:'Лук новичка (скорость)', icon:'sprites/ng-bow.png' },
     weapon_archer_range:  { name:'Лук новичка (дальность)', icon:'🏹' },
     weapon_archer_crit:   { name:'Лук новичка (крит)', icon:'🏹' },
     weapon_mage_aoe:      { name:'Посох новичка (AoE)', icon:'🪄' },
@@ -149,7 +149,7 @@ export const GRADE_ITEMS = {
     helmet_hp:    { name:'Шлем новичка (HP)', icon:'⛑️' },
     helmet_def:   { name:'Шлем новичка (защита)', icon:'⛑️' },
     helmet_dodge: { name:'Шлем новичка (уворот)', icon:'⛑️' },
-    armor_def:    { name:'Кожаная броня (защита)', icon:'🥋' },
+    armor_def:    { name:'Кожаная броня (защита)', icon:'sprites/ATT_armor_apprentices_tunic_i00.png' },
     armor_thorns: { name:'Кожаная броня (шипы)', icon:'🥋' },
     armor_hp:     { name:'Кожаная броня (HP)', icon:'🥋' },
     gloves_speed:    { name:'Перчатки новичка (скорость)', icon:'🧤' },
@@ -474,7 +474,7 @@ export const RATING_CHESTS = [
 
 // ===== МОБЫ =====
 export const MOBS = {
-  gremlin:   { id:'gremlin',   name:'Гремлин',        emoji:'👹', hp:40,   attack:3,  speed:1.2, reward:15,  xp:5,   size:0.55 },
+  gremlin:   { id:'gremlin',   name:'Гремлин',        emoji:'sprites/mobs/gremlin.png', hp:40,   attack:3,  speed:2.2, reward:15,  xp:150,   size:0.7 },
   keltir:    { id:'keltir',    name:'Кельтир',        emoji:'🐺', hp:60,   attack:5,  speed:1.4, reward:22,  xp:8,   size:0.6  },
   werewolf:  { id:'werewolf',  name:'Оборотень',      emoji:'🐺', hp:200,  attack:12, speed:1.5, reward:50,  xp:25,  size:0.7  },
   orc:       { id:'orc',       name:'Орк',            emoji:'👺', hp:120,  attack:8,  speed:1.0, reward:35,  xp:15,  size:0.65 },
