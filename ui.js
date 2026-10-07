@@ -1,14 +1,12 @@
-import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt, getEnhanceBonus, ENHANCE_BONUSES, BUFF_SCROLLS, RATING_CHESTS } from './config.js';
-import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor, getVariantsForSlot, durabilityMultiplier, createItem } from './items.js';
-import { equipItem, unequipItem, canEquip, tryEnhance, getShadowStats, getShadowRepairCost, getAllShadowRepairCost, repairShadowItem, repairAllShadow, equipShadowItem, unequipShadowItem } from './hero.js';
-import { buyListing, listItem, sellToBot } from './auction.js';
+import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt, getEnhanceBonus, ENHANCE_BONUSES, BUFF_SCROLLS, RATING_CHESTS, SKILLS, SKILL_ORDER, MAX_SKILL_LEVEL } from './config.js';
+import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor, getVariantsForSlot, createItem } from './items.js';
+import { equipItem, unequipItem, canEquip, tryEnhance, getSkillManaCost, isSkillReady, getSkillRemainingCooldown, learnSkill, setSkillSlot } from './hero.js';
+import { buyListing, listItem, sellToBot, cancelListing } from './auction.js';
 import { buyEquipment, buyScroll, buyPotion, buySoulshot } from './shop.js';
 import { CITIES, CITY_ORDER, cityTeleportCost, zoneDifficultyLabel } from './cities.js';
 import { getAvailableChests, claimChest, rollCardRewards, estimateWinChance, fightBot, expectedScore } from './arena.js';
 import { getBotStats } from './bots.js';
 
-// Иконка: emoji ИЛИ путь к PNG
-// Универсальная иконка: путь к PNG → <img>, emoji → <span>
 function iconHtml(icon, size = 42) {
   if (!icon) return '';
   if (icon.includes('.') || icon.includes('/')) {
@@ -24,20 +22,20 @@ let callbacks = {};
 let currentAuctionTab = 'buy';
 let shopCat = 'equipment';
 let heroTab = 'backpack';
-let heroScreen = 'hero';
 let enhanceSelectedItem = null;
 let arenaScreen = 'list';
 let lastArenaResult = null;
 let compareBotId = null;
 
 const STAT_ORDER = [
-  'attack','defense','hp','critChance','critDamage','dodge',
+  'attack','defense','hp','mana','manaRegen','critChance','critDamage','dodge',
   'attackSpeed','lifesteal','range',
   'accuracy','critResist','armorPen','antiHeal','berserk','thorns','moveSpeed',
 ];
 
 const STAT_ICON = {
-  attack:'⚔', defense:'🛡', hp:'❤', critChance:'💥', critDamage:'💢',
+  attack:'⚔', defense:'🛡', hp:'❤', mana:'🔷', manaRegen:'🔹',
+  critChance:'💥', critDamage:'💢',
   dodge:'💨', attackSpeed:'⚡', lifesteal:'🩸', range:'📏',
   accuracy:'🎯', critResist:'🛡️', armorPen:'🔨', antiHeal:'🚫',
   berserk:'😡', thorns:'🌵', moveSpeed:'👟',
@@ -375,13 +373,7 @@ export function initUI(s, a, sh, ar, cb = {}) {
   const tBtn = document.getElementById('btn-open-teleport');
   if (tBtn) tBtn.addEventListener('click', () => openModal('teleport'));
 
-  document.querySelectorAll('.hero-switch-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      heroScreen = btn.dataset.switch;
-      document.querySelectorAll('.hero-switch-btn').forEach(b => b.classList.toggle('active', b === btn));
-      renderHero();
-    });
-  });
+
 
   document.querySelectorAll('#arena-tabs .tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -418,6 +410,14 @@ export function initUI(s, a, sh, ar, cb = {}) {
       renderHeroTabs();
     });
   });
+
+  document.querySelectorAll('#skill-bar .skill-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const slot = parseInt(btn.dataset.skillSlot, 10);
+      if (!isNaN(slot) && callbacks.onSkillClick) callbacks.onSkillClick(slot);
+    });
+  });
 }
 
 function statLabel(k) { return STAT_NAMES[k] || k; }
@@ -449,34 +449,9 @@ function statsTwoMain(item) {
   return rows.join('');
 }
 
-// Прочность квадратиками
-function durabilityBar(dur) {
-  const filled = Math.max(0, Math.min(5, Math.ceil(dur / 20)));
-  const color = dur >= 80 ? '#4ade80' : dur >= 60 ? '#fbbf24' : dur >= 40 ? '#fb923c' : dur >= 20 ? '#ef4444' : '#7f1d1d';
-  let s = '';
-  for (let i = 0; i < 5; i++) s += i < filled ? '█' : '░';
-  return `<span style="color:${color};letter-spacing:-1px;font-size:11px;font-weight:bold">${s}</span>`;
-}
 
-// Средняя прочность бота
-function avgDurability(bot) {
-  let sum = 0, count = 0;
-  for (const slot of SLOTS) {
-    const item = bot.equipment[slot];
-    if (item && item.durability !== undefined) { sum += item.durability; count++; }
-  }
-  return count > 0 ? Math.round(sum / count) : 100;
-}
 
-// Средняя прочность тени
-function avgShadowDurability(hero) {
-  let sum = 0, count = 0;
-  for (const slot of SLOTS) {
-    const item = hero.shadow.equipment[slot];
-    if (item && item.durability !== undefined) { sum += item.durability; count++; }
-  }
-  return count > 0 ? Math.round(sum / count) : 100;
-}
+
 
 export function openModal(name) {
   document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
@@ -494,21 +469,9 @@ export function closeModal(name) {
   document.getElementById('modal-' + name).classList.add('hidden');
   hideItemPopup();
 }
-
 // ===== ЭКРАН ГЕРОЯ =====
 function renderHero() {
-  document.querySelectorAll('.hero-switch-btn').forEach(b => b.classList.toggle('active', b.dataset.switch === heroScreen));
-  const heroBlock = document.getElementById('hero-block');
-  const shadowBlock = document.getElementById('shadow-block');
-  if (heroScreen === 'hero') {
-    heroBlock.classList.remove('hidden');
-    shadowBlock.classList.add('hidden');
-    renderHeroContent();
-  } else {
-    heroBlock.classList.add('hidden');
-    shadowBlock.classList.remove('hidden');
-    renderShadowContent();
-  }
+  renderHeroContent();
 }
 
 function renderHeroContent() {
@@ -543,20 +506,24 @@ function renderHeroStats() {
   let eqHp=0, eqAtk=0, eqDef=0, eqCrit=0, eqCritDmg=0, eqDodge=0;
   let eqAtkSpd=0, eqLs=0, eqRange=0, eqAcc=0, eqCritRes=0, eqArmorPen=0;
   let eqAntiHeal=0, eqBerserk=0, eqThorns=0, eqMoveSpd=0;
+  let eqMana=0, eqManaRegen=0;
   for (const slot of SLOTS) {
     const item = hero.equipment[slot];
     if (!item) continue;
     const s = itemStats(item);
-    const dm = durabilityMultiplier(item);
-    eqHp += (s.hp||0)*dm; eqAtk += (s.attack||0)*dm; eqDef += (s.defense||0)*dm;
-    eqCrit += (s.critChance||0)*dm; eqCritDmg += (s.critDamage||0)*dm;
-    eqDodge += (s.dodge||0)*dm; eqAtkSpd += (s.attackSpeed||0)*dm;
-    eqLs += (s.lifesteal||0)*dm; eqRange += (s.range||0)*dm;
-    eqAcc += (s.accuracy||0)*dm; eqCritRes += (s.critResist||0)*dm;
-    eqArmorPen += (s.armorPen||0)*dm; eqAntiHeal += (s.antiHeal||0)*dm;
-    eqBerserk += (s.berserk||0)*dm; eqThorns += (s.thorns||0)*dm; eqMoveSpd += (s.moveSpeed||0)*dm;
+    eqHp += (s.hp||0); eqAtk += (s.attack||0); eqDef += (s.defense||0);
+    eqCrit += (s.critChance||0); eqCritDmg += (s.critDamage||0);
+    eqDodge += (s.dodge||0); eqAtkSpd += (s.attackSpeed||0);
+    eqLs += (s.lifesteal||0); eqRange += (s.range||0);
+    eqAcc += (s.accuracy||0); eqCritRes += (s.critResist||0);
+    eqArmorPen += (s.armorPen||0); eqAntiHeal += (s.antiHeal||0);
+    eqBerserk += (s.berserk||0); eqThorns += (s.thorns||0); eqMoveSpd += (s.moveSpeed||0);
+    eqMana += (s.mana||0); eqManaRegen += (s.manaRegen||0);
   }
   const bonusHp = Math.round((hero.baseMaxHp + eqHp) * (hero.hpBonus || 0));
+  const curMana = Math.floor(hero.mana || 0);
+  const maxMana = Math.round(hero.maxMana || 0);
+  const manaRegen = (hero.manaRegen || 0);
   const stats = document.getElementById('hero-stats');
   stats.innerHTML = `
     <div class="hs-group">
@@ -564,6 +531,8 @@ function renderHeroStats() {
       <div class="hs-grid">
         <div class="hs-cell"><span class="hs-ico">⭐</span><span class="hs-label">Ур.</span><span class="hs-total">${hero.level}</span></div>
         <div class="hs-cell"><span class="hs-ico">❤</span><span class="hs-label">HP</span>${eqHp>0?`<span class="hs-add">+${Math.round(eqHp)}</span>`:''}${bonusHp>0?`<span class="hs-add">+${bonusHp}🌟</span>`:''}<span class="hs-total">${hero.maxHp}</span></div>
+        <div class="hs-cell"><span class="hs-ico">🔷</span><span class="hs-label">Мана</span>${eqMana>0?`<span class="hs-add">+${Math.round(eqMana)}</span>`:''}<span class="hs-total mana-total">${curMana}/${maxMana}</span></div>
+        <div class="hs-cell"><span class="hs-ico">🔹</span><span class="hs-label">Реген</span>${eqManaRegen>0?`<span class="hs-add">+${eqManaRegen.toFixed(1)}</span>`:''}<span class="hs-total mana-total">${manaRegen.toFixed(1)}/с</span></div>
         <div class="hs-cell"><span class="hs-ico">⚔</span><span class="hs-label">Атака</span>${eqAtk>0?`<span class="hs-add">+${Math.round(eqAtk)}</span>`:''}<span class="hs-total">${Math.round(hero.attack)}</span></div>
         <div class="hs-cell"><span class="hs-ico">🛡</span><span class="hs-label">Защита</span>${eqDef>0?`<span class="hs-add">+${Math.round(eqDef)}</span>`:''}<span class="hs-total">${Math.round(hero.defense)}</span></div>
         <div class="hs-cell"><span class="hs-ico">📏</span><span class="hs-label">Даль.</span>${eqRange>0?`<span class="hs-add">+${eqRange.toFixed(2)}</span>`:''}<span class="hs-total">${hero.range.toFixed(2)}</span></div>
@@ -630,6 +599,7 @@ function renderHeroBonuses() {
 
 function renderHeroTabs() {
   if (heroTab === 'backpack') renderBackpack();
+  else if (heroTab === 'skills') renderSkillsTab();
   else if (heroTab === 'scrolls') renderScrolls();
   else if (heroTab === 'potions') renderPotions();
   else if (heroTab === 'soulshots') renderSoulshots();
@@ -650,15 +620,106 @@ function renderBackpack() {
     el.style.borderColor = borderColor;
     const cnt = item.count || 1;
     const countBadge = cnt > 1 ? `<span class="bp-count">×${cnt}</span>` : '';
-    if (item.kind === 'blessed') {
+     if (item.kind === 'blessed') {
       el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#fbbf24">BLESSED</div><div class="bp-name">${item.name}</div>`;
     } else if (item.kind === 'pass') {
       el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#a855f7">PASS</div><div class="bp-name">${item.name}</div>`;
+    } else if (item.kind === 'book') {
+      const known = state.hero.skills?.[item.skillId];
+      const lvl = known?.level || 0;
+      const tag = lvl >= MAX_SKILL_LEVEL ? 'MAX' : (lvl > 0 ? 'Lv.' + lvl : 'NEW');
+      el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#60a5fa">КНИГА</div><div class="bp-name">${item.name.replace('📖 ','')}</div><div class="bp-book-lvl">${tag}</div>`;
     } else {
       el.innerHTML = `${countBadge}${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div><div class="bp-name">${item.name}</div><div class="bp-stats">${statsCompact(item)}</div>`;
     }
     el.addEventListener('click', () => showItemPopup(item, 'backpack'));
     grid.appendChild(el);
+  }
+}
+// ===== ВКЛАДКА СКИЛЛОВ =====
+function renderSkillsTab() {
+  const hero = state.hero;
+  if (!hero.skillSlots || hero.skillSlots.length < 3) {
+    hero.skillSlots = [null, null, null];
+  }
+
+  // --- 5 боевых слотов ---
+  const slotsRow = document.getElementById('skill-slots-row');
+  if (slotsRow) {
+    slotsRow.innerHTML = '';
+    for (let i = 0; i < 5; i++) {
+      const skillId = hero.skillSlots[i];
+      const def = skillId ? SKILLS[skillId] : null;
+      const lvl = skillId ? (hero.skills[skillId]?.level || 1) : 0;
+      const el = document.createElement('div');
+      el.className = 'skill-slot ' + (def ? 'filled' : 'empty');
+      el.dataset.slot = String(i);
+      if (def) {
+        el.innerHTML = `
+          <span class="slot-num">${i + 1}</span>
+          <span class="slot-icon">${def.icon}</span>
+          <span class="slot-lvl">Lv.${lvl}</span>
+        `;
+      } else {
+        el.innerHTML = `
+          <span class="slot-num">${i + 1}</span>
+          <span class="slot-empty-label">Пусто</span>
+        `;
+      }
+      el.addEventListener('click', () => {
+        if (hero.skillSlots[i]) {
+          setSkillSlot(hero, i, null);
+          renderSkillsTab();
+          renderSkillBar();
+          toast('Слот очищен', 'epic');
+        } else {
+          toast('Выбери скилл из списка ниже', 'epic');
+        }
+      });
+      slotsRow.appendChild(el);
+    }
+  }
+
+  // --- Изученные скиллы ---
+  const learnedEl = document.getElementById('learned-skills');
+  if (learnedEl) {
+    learnedEl.innerHTML = '';
+    const learnedIds = SKILL_ORDER.filter(id => hero.skills?.[id]);
+    if (learnedIds.length === 0) {
+      learnedEl.innerHTML = '<div class="skills-empty">Пока ничего не изучено. Открой книжку скилла из рюкзака.</div>';
+    } else {
+      for (const skillId of learnedIds) {
+        const def = SKILLS[skillId];
+        const lvl = hero.skills[skillId].level;
+        const cost = getSkillManaCost(hero, skillId);
+        const slotIdx = hero.skillSlots.indexOf(skillId);
+        const inSlot = slotIdx >= 0;
+
+        const card = document.createElement('div');
+        card.className = 'skill-card' + (inSlot ? ' in-slot' : '');
+        card.innerHTML = `
+          ${inSlot ? `<span class="sc-in-slot">✓ слот ${slotIdx + 1}</span>` : ''}
+          <span class="sc-lvl">Lv.${lvl}</span>
+          <div class="sc-icon">${def.icon}</div>
+          <div class="sc-name">${def.name}</div>
+          <div class="sc-meta"><span>🔷 <b>${cost}</b></span><span>⏱ ${def.cooldown}с</span></div>
+        `;
+        card.addEventListener('click', () => {
+          if (inSlot) {
+            setSkillSlot(hero, slotIdx, null);
+            toast(`Снят из слота ${slotIdx + 1}`, 'epic');
+          } else {
+                        const empty = hero.skillSlots.indexOf(null);
+            if (empty < 0) { toast('Все 5 слотов заняты — освободи один', 'epic'); return; }
+            setSkillSlot(hero, empty, skillId);
+            toast(`${def.icon} ${def.name} → слот ${empty + 1}`, 'legendary');
+          }
+          renderSkillsTab();
+          renderSkillBar();
+        });
+        learnedEl.appendChild(card);
+      }
+    }
   }
 }
 
@@ -724,357 +785,6 @@ function renderSoulshots() {
     ss.appendChild(el);
   }
   if (!has) ss.innerHTML = '<div class="bp-empty">Нет сосок</div>';
-}
-
-// ===== ТЕНЬ =====
-function renderShadowContent() {
-  const hero = state.hero;
-  const shadow = hero.shadow;
-
-  const man = document.getElementById('shadow-mannequin');
-  man.innerHTML = '';
-  for (const slot of SLOTS) {
-    const item = shadow.equipment[slot];
-    const el = document.createElement('div');
-    el.className = 'eq-slot' + (item ? '' : ' empty');
-    el.dataset.slot = slot;
-    if (item) {
-      const gc = gradeColor(item.grade);
-      const dur = item.durability !== undefined ? item.durability : 100;
-      const durColor = dur >= 80 ? '#4ade80' : dur >= 50 ? '#fbbf24' : '#ef4444';
-      el.innerHTML = `
-        <div class="eq-icon">${iconHtml(item.icon)}</div>
-        <div class="eq-grade" style="color:${gc}">${gradeShort(item.grade)}</div>
-        ${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}
-        <div class="eq-dur" style="color:${durColor}">${dur}%</div>
-        <span class="slot-label">${SLOT_NAMES[slot]}</span>
-      `;
-      el.style.borderColor = gc;
-      el.addEventListener('click', () => showItemPopup(item, 'shadow'));
-    } else {
-      el.textContent = SLOT_NAMES[slot];
-    }
-    man.appendChild(el);
-  }
-
-  const stats = getShadowStats(hero);
-  const statsEl = document.getElementById('shadow-stats');
-  if (stats && statsEl) {
-    statsEl.innerHTML = `
-      <div class="hs-group">
-        <div class="hs-title">Тень</div>
-        <div class="hs-grid">
-          <div class="hs-cell"><span class="hs-ico">⚔</span><span class="hs-label">Атака</span><span class="hs-total">${Math.round(stats.attack)}</span></div>
-          <div class="hs-cell"><span class="hs-ico">🛡</span><span class="hs-label">Защита</span><span class="hs-total">${Math.round(stats.defense)}</span></div>
-          <div class="hs-cell"><span class="hs-ico">❤</span><span class="hs-label">HP</span><span class="hs-total">${stats.maxHp}</span></div>
-          <div class="hs-cell"><span class="hs-ico">📏</span><span class="hs-label">Даль.</span><span class="hs-total">${stats.range.toFixed(2)}</span></div>
-          <div class="hs-cell"><span class="hs-ico">⚡</span><span class="hs-label">Скор.</span><span class="hs-total">${stats.attackSpeed.toFixed(2)}</span></div>
-          <div class="hs-cell"><span class="hs-ico">💥</span><span class="hs-label">Крит</span><span class="hs-total">${stats.critChance.toFixed(1)}%</span></div>
-          <div class="hs-cell"><span class="hs-ico">💢</span><span class="hs-label">Кр.урон</span><span class="hs-total">+${stats.critDamage.toFixed(0)}%</span></div>
-          <div class="hs-cell"><span class="hs-ico">💨</span><span class="hs-label">Уворот</span><span class="hs-total">${stats.dodge.toFixed(1)}%</span></div>
-          <div class="hs-cell"><span class="hs-ico">🩸</span><span class="hs-label">Вампир.</span><span class="hs-total">${stats.lifesteal.toFixed(1)}%</span></div>
-          <div class="hs-cell"><span class="hs-ico">🎯</span><span class="hs-label">Точн.</span><span class="hs-total">${stats.accuracy.toFixed(1)}%</span></div>
-          <div class="hs-cell"><span class="hs-ico">🛡️</span><span class="hs-label">Сопр.кр</span><span class="hs-total">${stats.critResist.toFixed(1)}%</span></div>
-          <div class="hs-cell"><span class="hs-ico">🔨</span><span class="hs-label">Пробит.</span><span class="hs-total">${stats.armorPen.toFixed(1)}%</span></div>
-        </div>
-      </div>
-    `;
-  }
-
-  renderShadowSlots();
-  renderShadowDurability();
-  renderShadowBackpack();
-}
-
-function renderShadowSlots() {
-  const hero = state.hero;
-  const sh = hero.shadow;
-  const el = document.getElementById('shadow-consumables');
-  if (!el) return;
-
-  const weapon = sh.equipment.weapon;
-  const ssGrade = weapon ? weapon.grade : null;
-  const ssHave = ssGrade ? (sh.soulshots[ssGrade] || 0) : 0;
-
-  const potionSlots = POTION_ORDER.map(type => {
-    const p = POTIONS[type];
-    const have = sh.potions[type] || 0;
-    const hasAny = have > 0;
-    return `<div class="slot-item ${hasAny ? '' : 'slot-empty'}" data-add-potion="${type}">
-      <div class="slot-icon">${p.icon}</div>
-      <div class="slot-count">${have}</div>
-      <div class="slot-label">${p.name.replace(' зелье HP', '').replace(' зелье', '')}</div>
-    </div>`;
-  }).join('');
-
-  const scrollSlots = ['attack','crit','speed','range'].map(type => {
-    const def = BUFF_SCROLLS[type];
-    const have = sh.scrolls[type] || 0;
-    const hasAny = have > 0;
-    return `<div class="slot-item ${hasAny ? '' : 'slot-empty'}" data-add-scroll="${type}">
-      <div class="slot-icon">${def.icon}</div>
-      <div class="slot-count">${have}</div>
-      <div class="slot-label">${def.name.replace('Свиток ', '')}</div>
-    </div>`;
-  }).join('');
-
-  const ssSlot = `<div class="slot-item ${ssHave > 0 ? '' : 'slot-empty'}" data-add-soulshot="${ssGrade || ''}">
-    <div class="slot-icon">⚡</div>
-    <div class="slot-count">${ssHave}</div>
-    <div class="slot-label">${ssGrade ? 'Соски ' + gradeShort(ssGrade) : 'Соски'}</div>
-  </div>`;
-
-  el.innerHTML = `
-    <div class="sfs-title">🎒 Расходники</div>
-    <div class="sfs-row">
-      <div class="sfs-section">
-        <div class="sfs-subtitle">Боеприпасы</div>
-        <div class="sfs-slots">${ssSlot}</div>
-      </div>
-      <div class="sfs-section">
-        <div class="sfs-subtitle">Зелья</div>
-        <div class="sfs-slots">${potionSlots}</div>
-      </div>
-    </div>
-    <div class="sfs-section">
-      <div class="sfs-subtitle">Свитки</div>
-      <div class="sfs-slots">${scrollSlots}</div>
-    </div>
-  `;
-
-  el.querySelectorAll('[data-add-soulshot]').forEach(s => {
-    s.addEventListener('click', () => {
-      const grade = s.dataset.addSoulshot;
-      if (!grade) { toast('Сначала надень оружие на тень', 'epic'); return; }
-      openShadowAddDialog('soulshot', grade);
-    });
-  });
-  el.querySelectorAll('[data-add-potion]').forEach(s => {
-    s.addEventListener('click', () => openShadowAddDialog('potion', s.dataset.addPotion));
-  });
-  el.querySelectorAll('[data-add-scroll]').forEach(s => {
-    s.addEventListener('click', () => openShadowAddDialog('scroll', s.dataset.addScroll));
-  });
-}
-
-function openShadowAddDialog(kind, key) {
-  const hero = state.hero;
-  const sh = hero.shadow;
-
-  let title = '';
-  let haveInBag = 0;
-  let haveInShadow = 0;
-
-  if (kind === 'soulshot') {
-    title = `Соски ${gradeName(key)}`;
-    haveInBag = hero.soulshots[key] || 0;
-    haveInShadow = sh.soulshots[key] || 0;
-  } else if (kind === 'potion') {
-    const p = POTIONS[key];
-    title = p.name;
-    haveInBag = hero.potions[key] || 0;
-    haveInShadow = sh.potions[key] || 0;
-  } else if (kind === 'scroll') {
-    const def = BUFF_SCROLLS[key];
-    title = def.name;
-    haveInBag = hero.backpack.filter(x => x.kind === 'buff' && x.buffType === key).reduce((s,x) => s + (x.count||1), 0);
-    haveInShadow = sh.scrolls[key] || 0;
-  }
-
-  const popup = document.getElementById('item-popup');
-  const body = document.getElementById('item-popup-body');
-  body.innerHTML = `
-    <h3 style="color:#a855f7">👤 ${title}</h3>
-    <div class="stat-row"><span class="stat-name">В рюкзаке</span><span class="stat-val">${haveInBag}</span></div>
-    <div class="stat-row"><span class="stat-name">В тени</span><span class="stat-val" style="color:#d4a5ff">${haveInShadow}</span></div>
-    <div style="margin-top:8px">
-      <input type="number" id="shadow-add-input" value="${Math.min(10, haveInBag)}" min="0" max="${haveInBag}" style="width:100%;padding:8px;background:#0d0515;border:1px solid #4a2a6a;color:#d4a5ff;font-family:inherit;font-size:14px;border-radius:3px;text-align:center">
-    </div>
-    <div style="display:flex;gap:4px;margin-top:8px">
-      <button class="popup-close" id="sa-add" style="border-color:#a855f7;color:#a855f7;flex:1">📥 Положить</button>
-      <button class="popup-close" id="sa-take" style="border-color:#fbbf24;color:#fbbf24;flex:1">📤 Забрать</button>
-    </div>
-    <button class="popup-close" id="sa-all" style="border-color:#4ade80;color:#4ade80;margin-top:4px">📥 Положить всё (${haveInBag})</button>
-    <button class="popup-close" id="pp-close" style="border-color:#64748b;color:#64748b;margin-top:4px">Закрыть</button>
-  `;
-  popup.classList.remove('hidden');
-
-  const input = document.getElementById('shadow-add-input');
-
-  document.getElementById('pp-close').addEventListener('click', hideItemPopup);
-  document.getElementById('sa-add').addEventListener('click', () => {
-    const amount = Math.max(0, parseInt(input.value) || 0);
-    if (amount <= 0) { toast('Введи количество', 'epic'); return; }
-    const r = addToShadow(hero, kind, key, amount);
-    if (r.ok) { toast(`+${r.amount} в тень`, 'rare'); hideItemPopup(); renderShadowContent(); }
-    else toast(r.reason || 'Нельзя', 'epic');
-  });
-  document.getElementById('sa-take').addEventListener('click', () => {
-    const amount = Math.max(0, parseInt(input.value) || 0);
-    if (amount <= 0) { toast('Введи количество', 'epic'); return; }
-    const r = takeFromShadow(hero, kind, key, amount);
-    if (r.ok) { toast(`-${r.amount} из тени`, 'rare'); hideItemPopup(); renderShadowContent(); }
-    else toast(r.reason || 'Нельзя', 'epic');
-  });
-  document.getElementById('sa-all').addEventListener('click', () => {
-    const r = addToShadow(hero, kind, key, haveInBag);
-    if (r.ok) { toast(`+${r.amount} в тень`, 'rare'); hideItemPopup(); renderShadowContent(); }
-    else toast(r.reason || 'Нельзя', 'epic');
-  });
-}
-
-function addToShadow(hero, kind, key, amount) {
-  const sh = hero.shadow;
-  if (kind === 'soulshot') {
-    const have = hero.soulshots[key] || 0;
-    const take = Math.min(amount, have);
-    if (take <= 0) return { ok: false, reason: 'Нет сосок' };
-    hero.soulshots[key] -= take;
-    sh.soulshots[key] = (sh.soulshots[key] || 0) + take;
-    return { ok: true, amount: take };
-  }
-  if (kind === 'potion') {
-    const have = hero.potions[key] || 0;
-    const take = Math.min(amount, have);
-    if (take <= 0) return { ok: false, reason: 'Нет зелий' };
-    hero.potions[key] -= take;
-    sh.potions[key] = (sh.potions[key] || 0) + take;
-    return { ok: true, amount: take };
-  }
-  if (kind === 'scroll') {
-    let taken = 0;
-    for (let i = hero.backpack.length - 1; i >= 0 && taken < amount; i--) {
-      const it = hero.backpack[i];
-      if (it.kind === 'buff' && it.buffType === key) {
-        const cnt = it.count || 1;
-        const toTake = Math.min(cnt, amount - taken);
-        if (toTake >= cnt) hero.backpack.splice(i, 1);
-        else it.count -= toTake;
-        taken += toTake;
-      }
-    }
-    if (taken <= 0) return { ok: false, reason: 'Нет свитков' };
-    sh.scrolls[key] = (sh.scrolls[key] || 0) + taken;
-    return { ok: true, amount: taken };
-  }
-  return { ok: false, reason: 'Неизвестно' };
-}
-
-function takeFromShadow(hero, kind, key, amount) {
-  const sh = hero.shadow;
-  if (kind === 'soulshot') {
-    const have = sh.soulshots[key] || 0;
-    const take = Math.min(amount, have);
-    if (take <= 0) return { ok: false, reason: 'В тени нет' };
-    sh.soulshots[key] -= take;
-    hero.soulshots[key] = (hero.soulshots[key] || 0) + take;
-    return { ok: true, amount: take };
-  }
-  if (kind === 'potion') {
-    const have = sh.potions[key] || 0;
-    const take = Math.min(amount, have);
-    if (take <= 0) return { ok: false, reason: 'В тени нет' };
-    sh.potions[key] -= take;
-    hero.potions[key] = (hero.potions[key] || 0) + take;
-    return { ok: true, amount: take };
-  }
-  if (kind === 'scroll') {
-    const have = sh.scrolls[key] || 0;
-    const take = Math.min(amount, have);
-    if (take <= 0) return { ok: false, reason: 'В тени нет' };
-    sh.scrolls[key] -= take;
-    const existing = hero.backpack.find(x => x.kind === 'buff' && x.buffType === key);
-    if (existing) existing.count = (existing.count || 1) + take;
-    else {
-      const def = BUFF_SCROLLS[key];
-      hero.backpack.push({
-        id: Date.now() + Math.random(),
-        kind: 'buff', buffType: key,
-        name: def.name, icon: def.icon,
-        slot: 'buff', grade: 'buff',
-        count: take,
-      });
-    }
-    return { ok: true, amount: take };
-  }
-  return { ok: false, reason: 'Неизвестно' };
-}
-
-function renderShadowDurability() {
-  const hero = state.hero;
-  const el = document.getElementById('shadow-durability');
-  if (!el) return;
-  const rows = [];
-  let hasBroken = false;
-  for (const slot of SLOTS) {
-    const item = hero.shadow.equipment[slot];
-    if (!item) continue;
-    const dur = item.durability !== undefined ? item.durability : 100;
-    const cost = getShadowRepairCost(hero, slot);
-    const color = dur >= 80 ? '#4ade80' : dur >= 50 ? '#fbbf24' : '#ef4444';
-    if (dur < 100) hasBroken = true;
-    rows.push(`<div class="sd-row">
-      <span class="sd-icon">${iconHtml(item.icon)}</span>
-      <span class="sd-name">${SLOT_NAMES[slot]}</span>
-      <div class="sd-bar"><div class="sd-fill" style="width:${dur}%;background:${color}"></div></div>
-      <span class="sd-val" style="color:${color}">${dur}%</span>
-      <button class="sd-btn" data-repair="${slot}" ${dur >= 100 ? 'disabled' : ''}>🔧 ${cost}💰</button>
-    </div>`);
-  }
-  const totalCost = getAllShadowRepairCost(hero);
-  el.innerHTML = `
-    <div class="sd-title">🔧 Прочность</div>
-    ${rows.join('') || '<div class="hb-empty">Нет экипировки</div>'}
-    ${hasBroken ? `<button class="sd-repair-all" id="shadow-repair-all">🔧 Починить всё: ${totalCost}💰</button>` : ''}
-  `;
-  el.querySelectorAll('[data-repair]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const slot = btn.dataset.repair;
-      const r = repairShadowItem(hero, slot);
-      if (r.ok) { toast(`Починено за ${r.cost}💰`, 'rare'); renderShadowContent(); callbacks.onEquipChange && callbacks.onEquipChange(); }
-      else toast('Недостаточно золота', 'epic');
-    });
-  });
-  document.getElementById('shadow-repair-all')?.addEventListener('click', () => {
-    const r = repairAllShadow(hero);
-    if (r.ok) { toast(`Починено ${r.repaired} за ${r.cost}💰`, 'rare'); renderShadowContent(); callbacks.onEquipChange && callbacks.onEquipChange(); }
-    else toast('Нечего чинить', 'epic');
-  });
-}
-
-function renderShadowBackpack() {
-  const hero = state.hero;
-  const el = document.getElementById('shadow-backpack');
-  if (!el) return;
-
-  const equips = hero.backpack.filter(x => x.kind === 'equip');
-  if (equips.length === 0) {
-    el.innerHTML = '<div class="bp-empty">Рюкзак пуст (нет экипировки)</div>';
-    return;
-  }
-
-  el.innerHTML = equips.map(item => {
-    const gc = gradeColor(item.grade);
-    const canEquip = item.slot === 'weapon'
-      ? item.weaponType === hero.weaponType
-      : true;
-    return `<div class="sb-item" data-item-id="${item.id}" ${canEquip ? '' : 'style="opacity:0.4"'}>
-      <div class="sb-icon">${iconHtml(item.icon)}</div>
-      <div class="sb-grade" style="color:${gc}">${gradeShort(item.grade)}</div>
-      ${item.enhance > 0 ? `<span class="sb-enh">+${item.enhance}</span>` : ''}
-      <div class="sb-name">${item.name}</div>
-      <div class="sb-stats">${statsTwoMain(item)}</div>
-    </div>`;
-  }).join('');
-
-  el.querySelectorAll('.sb-item').forEach(card => {
-    card.addEventListener('click', () => {
-      const itemId = parseInt(card.dataset.itemId);
-      const item = hero.backpack.find(x => x.id === itemId);
-      if (!item) return;
-      showItemPopup(item, 'backpack');
-    });
-  });
 }
 
 // ===== ЗАТОЧКА =====
@@ -1405,6 +1115,7 @@ function renderAuctionMy() {
   if (auction.myListings.length === 0) { el.innerHTML = '<div class="empty-state">Пусто</div>'; return; }
   for (const l of auction.myListings) {
     const item = l.item;
+    const cnt = item.count || 1;
     const total = 90;
     const pct = Math.max(0, Math.min(100, ((total - l.timeLeft) / total) * 100));
     const row = document.createElement('div');
@@ -1412,45 +1123,101 @@ function renderAuctionMy() {
     row.innerHTML = `
       <div class="auction-icon">${iconHtml(item.icon)}</div>
       <div class="sell-info" style="flex:1">
-        <div class="sell-name">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}</div>
+        <div class="sell-name">${item.name}${item.enhance > 0 ? ' +' + item.enhance : ''}${cnt > 1 ? ' ×' + cnt : ''}</div>
         <div class="progress-bar" style="margin-top:4px"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <div class="sell-prices">${l.price}💰 / шт · Итого: ${l.price * cnt}💰</div>
       </div>
-      <div class="auction-price">${l.price} 💰</div>
+      <button class="ml-cancel" data-cancel-id="${l.id}" title="Вернуть в рюкзак">✕</button>
     `;
     el.appendChild(row);
   }
+
+  el.querySelectorAll('[data-cancel-id]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.cancelId, 10);
+      const r = cancelListing(auction, state.hero, id);
+      if (r.ok) {
+        toast(`↩ Возвращено: ${r.item.name}${r.quantity > 1 ? ' ×' + r.quantity : ''}`, 'rare');
+        renderAuctionMy();
+        renderHero();
+        callbacks.onEquipChange && callbacks.onEquipChange();
+      } else {
+        toast('Не удалось снять лот', 'epic');
+      }
+    });
+  });
 }
 
 function showSellPopup(item) {
   const estimate = estimateItemValue(item);
-  const botPrice = Math.floor(estimate * 0.5);
+  const cnt = item.count || 1;
   const popup = document.getElementById('item-popup');
   const body = document.getElementById('item-popup-body');
+
   let headInfo = '';
   if (item.kind === 'blessed') headInfo = '<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#fbbf24">✨ Blessed Scroll</span></div>';
   else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; headInfo = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:${def.color}">${def.desc}</span></div>`; }
   else if (item.kind === 'pass') headInfo = '<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#a855f7">🎫 Пропуск на арену</span></div>';
+  else if (item.kind === 'book') {
+    const def = SKILLS[item.skillId];
+    headInfo = `<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#60a5fa">📖 Книга: ${def?.name || item.skillId}</span></div>`;
+  }
   else headInfo = `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div>${statsMultiline(item)}`;
+
   body.innerHTML = `
     <div class="item-icon-big">${iconHtml(item.icon)}</div>
     <h3>${item.name} ${item.enhance > 0 ? `+${item.enhance}` : ''}</h3>
     ${headInfo}
-    <div style="display:flex;gap:6px;margin-top:10px">
-      <button class="popup-close" id="pp-auction" style="border-color:#4ade80;color:#4ade80;flex:1">Аукцион: ${estimate}💰</button>
-      <button class="popup-close" id="pp-bot" style="border-color:#fbbf24;color:#fbbf24;flex:1">Боту: ${botPrice}💰</button>
+    <div class="stat-row"><span class="stat-name">В рюкзаке</span><span class="stat-val">${cnt} шт.</span></div>
+    <div class="stat-row"><span class="stat-name">Оценка за 1 шт</span><span class="stat-val" style="color:#fbbf24">${estimate}💰</span></div>
+
+    <div class="sell-input-row">
+      <label class="sell-label">Кол-во</label>
+      <input type="number" id="sell-qty" min="1" max="${cnt}" value="1" class="sell-input">
     </div>
+    <div class="sell-input-row">
+      <label class="sell-label">Цена / шт</label>
+      <input type="number" id="sell-price" min="1" value="${estimate}" class="sell-input">
+    </div>
+    <div class="sell-input-row">
+      <label class="sell-label">Итого</label>
+      <span id="sell-total" class="sell-total">${estimate}💰</span>
+    </div>
+
+    <button class="popup-close" id="pp-auction-list" style="border-color:#4ade80;color:#4ade80">💰 Выставить на аукцион</button>
+    <button class="popup-close" id="pp-close" style="border-color:#64748b;color:#64748b">Закрыть</button>
   `;
   popup.classList.remove('hidden');
-  document.getElementById('pp-auction').addEventListener('click', () => {
-    const r = listItem(auction, state.hero, item, estimate);
-    if (r.ok) { toast(`Выставлено: ${item.name}`, 'rare'); hideItemPopup(); renderAuctionSell(); renderHero(); }
-  });
-  document.getElementById('pp-bot').addEventListener('click', () => {
-    const r = sellToBot(state.hero, item);
-    if (r.ok) { state.gold += r.price; toast(`Продано: +${r.price}💰`, 'rare'); hideItemPopup(); renderAuctionSell(); renderHero(); callbacks.onEquipChange && callbacks.onEquipChange(); }
+
+  const qtyEl = document.getElementById('sell-qty');
+  const priceEl = document.getElementById('sell-price');
+  const totalEl = document.getElementById('sell-total');
+
+  const updateTotal = () => {
+    const q = Math.max(1, Math.min(parseInt(qtyEl.value) || 1, cnt));
+    const p = Math.max(1, parseInt(priceEl.value) || 1);
+    totalEl.textContent = `${(q * p).toLocaleString()}💰`;
+  };
+  qtyEl.addEventListener('input', updateTotal);
+  priceEl.addEventListener('input', updateTotal);
+
+  document.getElementById('pp-close').addEventListener('click', hideItemPopup);
+  document.getElementById('pp-auction-list').addEventListener('click', () => {
+    const q = Math.max(1, Math.min(parseInt(qtyEl.value) || 1, cnt));
+    const p = Math.max(1, parseInt(priceEl.value) || 1);
+    const r = listItem(auction, state.hero, item, p, q);
+    if (r.ok) {
+      toast(`Выставлено: ${item.name} ×${r.listed} за ${r.price}💰`, 'rare');
+      hideItemPopup();
+      renderAuctionSell();
+      renderHero();
+      callbacks.onEquipChange && callbacks.onEquipChange();
+    } else {
+      toast('Не удалось выставить', 'epic');
+    }
   });
 }
-
 export function showItemPopup(item, context) {
   const popup = document.getElementById('item-popup');
   const body = document.getElementById('item-popup-body');
@@ -1458,30 +1225,36 @@ export function showItemPopup(item, context) {
   if (context === 'backpack') {
     const can = canEquip(state.hero, item);
     const estimate = estimateItemValue(item);
-    if (item.kind === 'equip') {
-      actionBtns = `
-        <button class="popup-close" id="pp-equip" ${can ? '' : 'disabled'}>${can ? 'Надеть' : 'Нельзя надеть'}</button>
-        <button class="popup-close" id="pp-shadow-equip" style="border-color:#a855f7;color:#a855f7">👤 В тень</button>
-      `;
+    if (item.kind === 'book') {
+      actionBtns = `<button class="popup-close" id="pp-learn" style="border-color:#60a5fa;color:#60a5fa">📖 Изучить</button>`;
+      actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
+    } else if (item.kind === 'equip') {
+      actionBtns = `<button class="popup-close" id="pp-equip" ${can ? '' : 'disabled'}>${can ? 'Надеть' : 'Нельзя надеть'}</button>`;
+      actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
+    } else {
+      actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
     }
-    actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
   } else if (context === 'equip') {
     actionBtns = `<button class="popup-close" id="pp-unequip">Снять</button>`;
-  } else if (context === 'shadow') {
-    actionBtns = `<button class="popup-close" id="pp-shadow-unequip" style="border-color:#a855f7;color:#a855f7">👤 Снять с тени</button>`;
   }
 
   let extra = '';
-  if (item.kind === 'equip' && item.durability !== undefined) {
-    const color = item.durability >= 80 ? '#4ade80' : item.durability >= 50 ? '#fbbf24' : '#ef4444';
-    extra += `<div class="stat-row"><span class="stat-name">🔧 Прочность</span><span class="stat-val" style="color:${color}">${item.durability}%</span></div>`;
-  }
   const bonus = getEnhanceBonus(item);
   if (bonus) extra += `<div class="stat-row" style="color:#fbbf24"><span class="stat-name">${bonus.icon} ${bonus.name}</span><span class="stat-val">${bonus.display}</span></div>`;
 
   let bodyHtml = '';
   if (item.kind === 'pass') bodyHtml = `<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#a855f7">🎫 Пропуск на арену</span></div><div class="stat-row"><span class="stat-name">Описание</span><span class="stat-val">1 бой на арене</span></div>`;
-  else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; bodyHtml = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:${def.color}">${def.desc}</span></div>`; }
+  else if (item.kind === 'book') {
+    const def = SKILLS[item.skillId];
+    const lvl = state.hero.skills?.[item.skillId]?.level || 0;
+    bodyHtml = `
+      <div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#60a5fa">📖 Книга скилла</span></div>
+      ${def ? `<div class="stat-row"><span class="stat-name">Скилл</span><span class="stat-val">${def.icon} ${def.name}</span></div>` : ''}
+      ${def ? `<div class="stat-row"><span class="stat-name">Мана</span><span class="stat-val">${def.manaCost}</span></div>` : ''}
+      ${def ? `<div class="stat-row"><span class="stat-name">КД</span><span class="stat-val">${def.cooldown}с</span></div>` : ''}
+      <div class="stat-row"><span class="stat-name">Уровень</span><span class="stat-val">${lvl > 0 ? 'Lv.' + lvl : 'не изучен'}</span></div>
+    `;
+  }  else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; bodyHtml = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:${def.color}">${def.desc}</span></div>`; }
   else if (item.kind === 'blessed') bodyHtml = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:#fbbf24">Спасает от сгорания</span></div>`;
   else bodyHtml = `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div><div class="stat-row"><span class="stat-name">Слот</span><span class="stat-val">${SLOT_NAMES[item.slot] || '—'}</span></div>${statsMultiline(item)}`;
 
@@ -1494,17 +1267,32 @@ export function showItemPopup(item, context) {
   popup.classList.remove('hidden');
 
   document.getElementById('pp-close')?.addEventListener('click', hideItemPopup);
-  document.getElementById('pp-equip')?.addEventListener('click', () => {
+  document.getElementById('pp-learn')?.addEventListener('click', () => {
+    const r = learnSkill(state.hero, item.skillId);
+    if (!r.ok) {
+      if (r.reason === 'max_level') toast('Уже максимальный уровень', 'epic');
+      else toast('Нельзя изучить', 'epic');
+      return;
+    }
+    const idx = state.hero.backpack.indexOf(item);
+    if (idx >= 0) {
+      const it = state.hero.backpack[idx];
+      if ((it.count || 1) > 1) it.count -= 1;
+      else state.hero.backpack.splice(idx, 1);
+    }
+    if (r.learned) toast(`📖 Изучен: ${SKILLS[item.skillId].name} (Lv.1)`, 'legendary');
+    else toast(`📖 ${SKILLS[item.skillId].name} → Lv.${r.level}`, 'legendary');
+    hideItemPopup();
+    renderHeroTabs();
+    renderSkillBar();
+    callbacks.onEquipChange && callbacks.onEquipChange();
+  });  document.getElementById('pp-equip')?.addEventListener('click', () => {
     const r = equipItem(state.hero, item);
     if (r.ok) { hideItemPopup(); callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
     else if (r.reason === 'class') toast('Это оружие другого класса', 'epic');
     else toast('Нельзя надеть', 'epic');
   });
-  document.getElementById('pp-shadow-equip')?.addEventListener('click', () => {
-    const r = equipShadowItem(state.hero, item);
-    if (r.ok) { hideItemPopup(); toast('👤 Надето на тень', 'rare'); renderHero(); }
-    else toast('Нельзя надеть', 'epic');
-  });
+
   document.getElementById('pp-sell')?.addEventListener('click', () => {
     const r = sellToBot(state.hero, item);
     if (r.ok) { state.gold += r.price; toast(`Продано: +${r.price}💰`, 'rare'); hideItemPopup(); callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
@@ -1513,10 +1301,7 @@ export function showItemPopup(item, context) {
     const r = unequipItem(state.hero, item.slot);
     if (r.ok) { hideItemPopup(); callbacks.onEquipChange && callbacks.onEquipChange(); renderHero(); }
   });
-  document.getElementById('pp-shadow-unequip')?.addEventListener('click', () => {
-    const r = unequipShadowItem(state.hero, item.slot);
-    if (r.ok) { hideItemPopup(); toast('👤 Снято с тени', 'rare'); renderHero(); }
-  });
+
 }
 
 export function hideItemPopup() {
@@ -1524,7 +1309,6 @@ export function hideItemPopup() {
 }
 
 export function toast(text, cls = '') {
-  // Во время офлайн-досчёта тосты не нужны — они забивают DOM и лагают вкладку
   if (window._offlineSim) return;
   const container = document.getElementById('toast-container');
   const el = document.createElement('div');
@@ -1558,7 +1342,6 @@ function renderArenaProfile() {
   if (!el) return;
   const rating = hero.arena.rating;
   const tier = getTier(rating);
-  const myDur = avgShadowDurability(hero);
   const passes = hero.backpack.filter(x => x.kind === 'pass').reduce((s,x) => s + (x.count||1), 0);
   el.innerHTML = `
     <div class="ap-rating">Рейтинг: <b>${rating}</b></div>
@@ -1591,10 +1374,7 @@ function renderArenaList() {
   for (const bot of arena.bots) all.push({ type: 'bot', bot, rating: bot.rating });
   all.push({ type: 'me', rating: hero.arena.rating });
   all.sort((a, b) => b.rating - a.rating);
-
   const passes = hero.backpack.filter(x => x.kind === 'pass').reduce((s,x) => s + (x.count||1), 0);
-  const myAvgDur = avgShadowDurability(hero);
-  const myDurColor = myAvgDur >= 80 ? '#4ade80' : myAvgDur >= 50 ? '#fbbf24' : '#ef4444';
   const myClassIcon = hero.classType === 'mage' ? '🔮' : '🏹';
 
   el.innerHTML = all.map((entry, i) => {
@@ -1605,14 +1385,12 @@ function renderArenaList() {
         <span class="ar-class">${myClassIcon}</span>
         <span class="ar-name">⭐ ${hero.name} (ты)</span>
         <span class="ar-level">Lv.${hero.level}</span>
-        <span class="ar-dur">${durabilityBar(myAvgDur)}</span>
         <span class="ar-rating">${entry.rating}</span>
         <span class="ar-rest">🎫 ${passes}</span>
       </div>`;
     }
     const bot = entry.bot;
-    const avgDur = avgDurability(bot);
-    const classIcon = bot.classType === 'mage' ? '🔮' : '🏹';
+    const classIcon = bot.isTest ? '🧪' : (bot.classType === 'mage' ? '🔮' : '🏹');
     const level = bot.level || (1 + Math.floor(bot.rating / 30));
     const expected = expectedScore(hero.arena.rating, bot.rating);
     const winChange = Math.round(32 * (1 - expected));
@@ -1623,7 +1401,6 @@ function renderArenaList() {
       <span class="ar-class">${classIcon}</span>
       <span class="ar-name">${bot.name}</span>
       <span class="ar-level">Lv.${level}</span>
-      <span class="ar-dur">${durabilityBar(avgDur)}</span>
       <span class="ar-rating">${bot.rating}</span>
       <span class="ar-change">${winChange >= 0 ? '+' : ''}${winChange}/${loseChange}</span>
       <button class="ar-btn" data-fight="${bot.id}" ${passes <= 0 ? 'disabled' : ''}>Сравнить</button>
@@ -1632,21 +1409,20 @@ function renderArenaList() {
 
   el.querySelectorAll('[data-fight]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const botId = parseInt(btn.dataset.fight);
+      const botId = btn.dataset.fight;
       openCompareModal(botId);
     });
   });
 }
 
-// ===== СРАВНЕНИЕ =====
 function openCompareModal(botId) {
   const hero = state.hero;
-  const bot = arena.bots.find(b => b.id === botId);
+  const bot = arena.bots.find(b => String(b.id) === String(botId));
   if (!bot) { toast('Бот не найден', 'epic'); return; }
 
   compareBotId = botId;
 
-  const myStats = getShadowStats(hero);
+  const myStats = hero;
   const oppStats = getBotStats(bot);
   const expected = expectedScore(hero.arena.rating, bot.rating);
   const winChange = Math.round(32 * (1 - expected));
@@ -1657,20 +1433,13 @@ function openCompareModal(botId) {
   const body = document.getElementById('compare-body');
   if (!modal || !body) return;
 
-  // Твои расходники
-  const mySS = Object.values(hero.shadow.soulshots || {}).reduce((a,b) => a+b, 0);
-  const myPot = Object.values(hero.shadow.potions || {}).reduce((a,b) => a+b, 0);
-  const myScr = Object.values(hero.shadow.scrolls || {}).reduce((a,b) => a+b, 0);
-
-  // Расходники бота
+  const mySS = Object.values(hero.soulshots || {}).reduce((a,b) => a+b, 0);
+  const myPot = Object.values(hero.potions || {}).reduce((a,b) => a+b, 0);
+  const myScr = hero.backpack.filter(x => x.kind === 'buff').reduce((a,b) => a + (b.count||1), 0);
   const oppSS = Object.values(bot.soulshots || {}).reduce((a,b) => a+b, 0);
   const oppPot = Object.values(bot.potions || {}).reduce((a,b) => a+b, 0);
   const oppScr = Object.values(bot.activeBuffs || {}).filter(x => x).length;
 
-  const myDur = avgShadowDurability(hero);
-  const oppDur = avgDurability(bot);
-
-  // Функция сравнения статов
   const compare = (label, icon, my, opp, suffix = '') => {
     const myN = Math.round(my * 10) / 10;
     const oppN = Math.round(opp * 10) / 10;
@@ -1690,14 +1459,12 @@ function openCompareModal(botId) {
         <div class="cmp-avatar battle-archer">${hero.emoji}</div>
         <div class="cmp-name">${hero.name}</div>
         <div class="cmp-level">Lv.${hero.level} · ${hero.classType === 'mage' ? '🔮' : '🏹'}</div>
-        <div class="cmp-dur">${durabilityBar(myDur)}</div>
       </div>
       <div class="cmp-vs">VS</div>
       <div class="cmp-side">
         <div class="cmp-avatar ${bot.classType === 'mage' ? 'battle-mage' : 'battle-archer'}">${bot.classType === 'mage' ? '🔮' : '🏹'}</div>
         <div class="cmp-name">${bot.name}</div>
         <div class="cmp-level">Lv.${bot.level || (1 + Math.floor(bot.rating / 30))} · ${bot.classType === 'mage' ? '🔮' : '🏹'}</div>
-        <div class="cmp-dur">${durabilityBar(oppDur)}</div>
       </div>
     </div>
 
@@ -1706,6 +1473,7 @@ function openCompareModal(botId) {
       ${compare('Атака', '⚔', myStats.attack, oppStats.attack)}
       ${compare('Защита', '🛡', myStats.defense, oppStats.defense)}
       ${compare('HP', '❤', myStats.maxHp, oppStats.maxHp)}
+      ${compare('Мана', '🔷', myStats.maxMana, oppStats.maxMana || 0)}
       ${compare('Крит шанс', '💥', myStats.critChance, oppStats.critChance, '%')}
       ${compare('Крит урон', '💢', myStats.critDamage, oppStats.critDamage, '%')}
       ${compare('Скор. атаки', '⚡', myStats.attackSpeed, oppStats.attackSpeed)}
@@ -1752,28 +1520,167 @@ function openCompareModal(botId) {
 
 // ===== БОЙ =====
 function startArenaFight(botId) {
-  const hero = state.hero;
-  const passIdx = hero.backpack.findIndex(x => x.kind === 'pass');
-  if (passIdx < 0) { toast('Нет пропуска на арену!', 'epic'); return; }
-  const pass = hero.backpack[passIdx];
-  if (pass.count > 1) pass.count--;
-  else hero.backpack.splice(passIdx, 1);
-
-  const bot = arena.bots.find(b => b.id === botId);
+  const bot = arena.bots.find(b => String(b.id) === String(botId));
   if (!bot) { toast('Бот не найден', 'epic'); return; }
 
-  const result = fightBot(hero, bot);
-  if (!result.ok) { toast('Ошибка боя: ' + result.reason, 'epic'); return; }
+  // Закрываем модалку арены + сравнения
+  const modalArena = document.getElementById('modal-arena');
+  if (modalArena) modalArena.classList.add('hidden');
+  const modalCmp = document.getElementById('modal-compare');
+  if (modalCmp) modalCmp.classList.add('hidden');
 
-  lastArenaResult = result;
-  arenaScreen = 'result';
-  document.querySelectorAll('#arena-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.arena-tab-content').forEach(c => c.classList.add('hidden'));
-  document.getElementById('arena-tab-result').classList.remove('hidden');
-  renderArenaResult();
-  callbacks.onEquipChange && callbacks.onEquipChange();
+  // Передаём в main.js — он переключит режим
+  if (typeof window.enterArena === 'function') {
+    window.enterArena(bot);
+  } else {
+    toast('Арена не инициализирована', 'epic');
+  }
 }
 
+// ===== РЕЗУЛЬТАТ АРЕНЫ (вызывается из main.js) =====
+export function onArenaEnd(resultData) {
+  if (!resultData) return;
+
+  // Возвращаемся в город
+  showCityScreen();
+  if (callbacks.onEquipChange) callbacks.onEquipChange();
+
+  const { won, result, ratingChange: change, oldRating, newRating, botName } = resultData;
+  const title = won ? '🏆 Победа!' : (result === 'draw' ? '🤝 Ничья' : '💀 Поражение');
+  const color = won ? '#4ade80' : (result === 'draw' ? '#94a3b8' : '#ef4444');
+  const changeText = change > 0 ? `+${change}` : `${change}`;
+  const changeColor = change > 0 ? '#4ade80' : (change < 0 ? '#ef4444' : '#94a3b8');
+
+  toast(`${title} vs ${botName} · рейтинг ${changeText}`, won ? 'legendary' : 'epic');
+
+  showArenaResultOverlay({
+    title, color,
+    botName, change, changeText, changeColor,
+    oldRating, newRating, won,
+    log: resultData.log || [],
+    duration: resultData.duration || 0,
+    myHpLeft: resultData.myHpLeft,
+    myMaxHp: resultData.myMaxHp,
+    oppHpLeft: resultData.oppHpLeft,
+    oppMaxHp: resultData.oppMaxHp,
+  });
+}
+
+function showArenaResultOverlay(info) {
+  const oldOverlay = document.getElementById('arena-result-overlay');
+  if (oldOverlay) oldOverlay.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'arena-result-overlay';
+  overlay.className = 'arena-result-overlay';
+
+  // Лог боя
+  const logLines = (info.log || [])
+    .slice(-80)
+    .map(ev => renderArenaLogRow(ev))
+    .join('');
+
+  // HP-полоски
+  const myMax = info.myMaxHp || 1;
+  const oppMax = info.oppMaxHp || 1;
+  const myHpPct = info.myHpLeft != null ? Math.max(0, Math.min(100, info.myHpLeft / myMax * 100)) : 100;
+  const oppHpPct = info.oppHpLeft != null ? Math.max(0, Math.min(100, info.oppHpLeft / oppMax * 100)) : 100;
+
+  overlay.innerHTML = `
+    <div class="aro-panel aro-panel-large">
+      <div class="aro-title" style="color:${info.color}">${info.title}</div>
+      <div class="aro-sub">vs ${info.botName}${info.duration ? ' · ' + info.duration.toFixed(1) + 'с' : ''}</div>
+      <div class="aro-rating">
+        Рейтинг: ${info.oldRating} → <b>${info.newRating}</b>
+        <span style="color:${info.changeColor}">(${info.changeText})</span>
+      </div>
+
+      ${info.myHpLeft != null ? `
+      <div class="aro-hp-row">
+        <span class="aro-hp-label arl-me">Ты</span>
+        <div class="aro-hp-bar"><div class="aro-hp-fill arl-me" style="width:${myHpPct}%"></div></div>
+        <span class="aro-hp-num">${info.myHpLeft} / ${info.myMaxHp}</span>
+      </div>
+      <div class="aro-hp-row">
+        <span class="aro-hp-label arl-opp">Враг</span>
+        <div class="aro-hp-bar"><div class="aro-hp-fill arl-opp" style="width:${oppHpPct}%"></div></div>
+        <span class="aro-hp-num">${info.oppHpLeft} / ${info.oppMaxHp}</span>
+      </div>
+      ` : ''}
+
+      <div class="aro-log-title">📜 Лог боя</div>
+      <div class="arl-body" id="arl-body">${logLines || '<div class="arl-empty">Лог пуст</div>'}</div>
+
+      <div class="aro-log-title">🎁 Награда</div>
+      <div class="aro-cards" id="aro-cards"></div>
+      <div class="aro-hint">Нажми на карточку</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Скроллим лог вниз
+  const logBody = overlay.querySelector('#arl-body');
+  if (logBody) logBody.scrollTop = logBody.scrollHeight;
+
+  // Карточки наград
+  const cityGrade = CITIES[state.currentCity].grade;
+  const rewards = rollCardRewards(info.won, cityGrade);
+  const cardsEl = overlay.querySelector('#aro-cards');
+  cardsEl.innerHTML = rewards.map((reward, i) => `
+    <div class="reward-card card-${reward.rarity}" data-idx="${i}" style="animation-delay:${i * 0.15}s">
+      <div class="card-glow"></div>
+      <div class="card-icon">${reward.icon}</div>
+      <div class="card-name">${reward.name}</div>
+      <div class="card-rarity">${getRarityLabel(reward.rarity)}</div>
+    </div>
+  `).join('');
+
+  cardsEl.querySelectorAll('.reward-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.classList.contains('card-picked')) return;
+      const idx = parseInt(card.dataset.idx, 10);
+      const reward = rewards[idx];
+
+      cardsEl.querySelectorAll('.reward-card').forEach(c => {
+        if (c === card) c.classList.add('card-picked');
+        else c.classList.add('card-dimmed');
+      });
+
+      applyCardReward(state.hero, reward);
+
+      setTimeout(() => {
+        overlay.classList.add('reward-closing');
+        setTimeout(() => overlay.remove(), 300);
+      }, 1200);
+    });
+  });
+}
+// Рендер одной строки лога боя
+function renderArenaLogRow(ev) {
+  const t = (ev.t || 0).toFixed(1);
+  const side = ev.side === 'me' ? 'me' : 'opp';
+  const who = `<span class="arl-who arl-${side}">${ev.attacker || ev.name || '?'}</span>`;
+  const tgt = ev.target ? `<span class="arl-tgt">→ ${ev.target}</span>` : '';
+
+  if (ev.kind === 'miss') {
+    return `<div class="arl-row arl-miss"><span class="arl-t">${t}с</span>${who} ${tgt}: <b>промах</b></div>`;
+  }
+  if (ev.kind === 'potion') {
+    return `<div class="arl-row arl-potion"><span class="arl-t">${t}с</span>${who}: <b>🧪 +${ev.heal} HP</b></div>`;
+  }
+  if (ev.kind === 'death') {
+    return `<div class="arl-row arl-death"><span class="arl-t">${t}с</span><b>💀 ${ev.name} погиб</b></div>`;
+  }
+  if (ev.kind === 'debuff') {
+    const icon = ev.debuff === 'stun' ? '💫' : (ev.debuff === 'slow' ? '❄️' : '✦');
+    const label = ev.debuff === 'stun' ? 'стан' : (ev.debuff === 'slow' ? 'замедление' : 'дебафф');
+    return `<div class="arl-row arl-debuff"><span class="arl-t">${t}с</span>${who} ${tgt}: <b>${icon} ${label} ${(ev.duration || 0).toFixed(1)}с</b></div>`;
+  }
+  // hit / skill
+  const crit = ev.crit ? ' <span class="arl-crit">💥КРИТ</span>' : '';
+  const skill = ev.kind === 'skill' ? ' <span class="arl-skill">✦ умение</span>' : '';
+  return `<div class="arl-row arl-hit${ev.crit ? ' arl-row-crit' : ''}"><span class="arl-t">${t}с</span>${who} ${tgt}: <b class="arl-dmg">-${ev.damage}</b>${crit}${skill}</div>`;
+}
 let _battleAnim = null;
 
 function renderArenaResult() {
@@ -1829,7 +1736,6 @@ function renderArenaResult() {
 
     <div class="ar-result-info" id="ar-result-info" style="display:none">
       <div>Рейтинг: ${r.oldRating} → <b style="color:${r.ratingChange > 0 ? '#4ade80' : '#ef4444'}">${r.newRating}</b> (${r.ratingChange > 0 ? '+' : ''}${r.ratingChange})</div>
-      <div>Прочность тени: -${r.durabilityLoss}%</div>
       <div>Соски: ${r.usedSoulshots}, Зелья: ${r.usedPotions}</div>
     </div>
 
@@ -2245,16 +2151,33 @@ export function renderCityScreen() {
 }
 
 export function showCityScreen() {
+  // Гарантированно убираем всё, что связано с ареной
+  const ah = document.getElementById('arena-hud');
+  if (ah) ah.classList.add('hidden');
+  const ame = document.getElementById('arena-side-me');
+  if (ame) ame.classList.add('hidden');
+  const aop = document.getElementById('arena-side-opp');
+  if (aop) aop.classList.add('hidden');
+  const amob = document.getElementById('arena-mobile-hud');
+  if (amob) amob.classList.add('hidden');
+  document.body.classList.remove('arena-active');
+
   document.getElementById('city-screen').classList.remove('hidden');
   document.getElementById('hud-top').classList.remove('hidden');
   document.getElementById('hud-stats').classList.remove('hidden');
   document.getElementById('hud-zone').classList.add('hidden');
   document.getElementById('hud-actions').classList.add('hidden');
   document.getElementById('combat-log').classList.add('hidden');
+  const mb = document.getElementById('mana-bar-wrap');
+  if (mb) mb.classList.remove('hidden');
 
-  // Скрываем кнопку офлайн-фарма в городе
   const offBtn = document.getElementById('hud-offline');
   if (offBtn) offBtn.style.display = 'none';
+
+  const sb = document.getElementById('skill-bar');
+  if (sb) sb.classList.add('hidden');
+  const ab = document.getElementById('btn-auto');
+  if (ab) ab.classList.add('hidden');
 
   renderCityScreen();
 }
@@ -2266,15 +2189,21 @@ export function hideCityScreen() {
   document.getElementById('hud-zone').classList.remove('hidden');
   document.getElementById('hud-actions').classList.remove('hidden');
   document.getElementById('combat-log').classList.remove('hidden');
+  const mb = document.getElementById('mana-bar-wrap');
+  if (mb) mb.classList.remove('hidden');
 
-  // Показываем кнопку офлайн-фарма в зоне
   const offBtn = document.getElementById('hud-offline');
   if (offBtn) offBtn.style.display = '';
 
-  // Офлайн в зоне — только если прожил 30 сек
   if (offBtn && !state?.offlineAliveCheck) {
     offBtn.classList.remove('ready');
   }
+
+  const sb = document.getElementById('skill-bar');
+  if (sb) sb.classList.remove('hidden');
+  const ab = document.getElementById('btn-auto');
+  if (ab) ab.classList.remove('hidden');
+  renderSkillBar();
 }
 
 function renderTeleport() {
@@ -2306,3 +2235,279 @@ function renderTeleport() {
 
 export function tickUIPanels() {}
 export function refreshUI() {}
+
+// ===== БОКОВЫЕ ПАНЕЛИ АРЕНЫ =====
+function isMobileView() {
+  return window.innerWidth <= 900;
+}
+
+export function showArenaHud(oppName) {
+    console.log('[showArenaHud] called, before:', document.getElementById('arena-side-me')?.className);
+
+  // Верхняя плашка
+  const el = document.getElementById('arena-hud');
+  if (el) { el.classList.remove('hidden'); el.style.display = ''; }
+  const nameEl = document.getElementById('ah-opp-name');
+  if (nameEl) nameEl.textContent = oppName || 'Противник';
+
+  // Боковые панели
+  const me = document.getElementById('arena-side-me');
+  const opp = document.getElementById('arena-side-opp');
+  if (me) { me.classList.remove('hidden'); me.style.display = ''; }
+  if (opp) { opp.classList.remove('hidden'); opp.style.display = ''; }
+
+  // Название врага
+  const oppNameEl = document.getElementById('as-opp-name');
+  if (oppNameEl) oppNameEl.textContent = oppName || 'Враг';
+
+  document.body.classList.add('arena-active');
+
+  // Кнопка «Выйти»
+  const exitBtn = document.getElementById('ah-exit');
+  if (exitBtn && !exitBtn.dataset.bound) {
+    exitBtn.dataset.bound = '1';
+    exitBtn.addEventListener('click', () => {
+      if (typeof window.exitArena === 'function') window.exitArena();
+    });
+  }
+
+  // Скиллы и АВТО — как в зоне
+  const sb = document.getElementById('skill-bar');
+  if (sb) sb.classList.remove('hidden');
+  const ab = document.getElementById('btn-auto');
+  if (ab) ab.classList.remove('hidden');
+
+  state.arenaElapsed = 0;
+  updateArenaHud();
+console.log('[showArenaHud] after:', document.getElementById('arena-side-me')?.className);
+}
+
+export function hideArenaHud() {
+  const ids = ['arena-hud', 'arena-side-me', 'arena-side-opp', 'arena-mobile-hud'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.classList.add('hidden');
+      el.style.display = 'none';
+    }
+  }
+  document.body.classList.remove('arena-active');
+}
+
+// ===== ОБНОВЛЕНИЕ ПАНЕЛЕЙ =====
+export function updateArenaHud() {
+  const hero = state?.hero;
+  const enemy = state?.arenaEnemy;
+
+  // Секундомер
+  state.arenaElapsed = (state.arenaElapsed || 0) + 0.05;
+  const timerEl = document.getElementById('ah-timer');
+  if (timerEl) {
+    const sec = state.arenaElapsed;
+    const m = Math.floor(sec / 60);
+    const s = (sec % 60).toFixed(1);
+    timerEl.textContent = `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  if (!hero || !enemy) return;
+
+  // HP / мана — ты
+  const meHpPct = Math.max(0, Math.min(100, hero.hp / hero.maxHp * 100));
+  const meManaPct = hero.maxMana > 0 ? Math.max(0, Math.min(100, hero.mana / hero.maxMana * 100)) : 0;
+
+  setFillWidth('as-me-hp-fill', meHpPct);
+  setFillWidth('as-me-mana-fill', meManaPct);
+  setFillWidth('amh-me-hp', meHpPct);
+  setFillWidth('amh-me-mana', meManaPct);
+  setText('as-me-hp-text', `${Math.max(0, Math.floor(hero.hp))}/${hero.maxHp}`);
+  setText('as-me-mana-text', `${Math.floor(hero.mana)}/${hero.maxMana}`);
+
+  // HP / мана — враг
+  const oppHpPct = Math.max(0, Math.min(100, enemy.hp / enemy.maxHp * 100));
+  const oppManaPct = enemy.maxMana > 0 ? Math.max(0, Math.min(100, enemy.mana / enemy.maxMana * 100)) : 0;
+
+  setFillWidth('as-opp-hp-fill', oppHpPct);
+  setFillWidth('as-opp-mana-fill', oppManaPct);
+  setFillWidth('amh-opp-hp', oppHpPct);
+  setFillWidth('amh-opp-mana', oppManaPct);
+  setText('as-opp-hp-text', `${Math.max(0, Math.floor(enemy.hp))}/${enemy.maxHp}`);
+  setText('as-opp-mana-text', `${Math.floor(enemy.mana)}/${enemy.maxMana}`);
+
+  // Скиллы — ты
+  renderArenaSkillIcons('as-me-skills', 'amh-me-skills', hero);
+  // Скиллы — враг
+  renderArenaSkillIcons('as-opp-skills', 'amh-opp-skills', enemy);
+
+  // Баффы — ты (только десктоп)
+  renderArenaBuffs('as-me-buffs', hero);
+  // Баффы — враг
+  renderArenaBuffs('as-opp-buffs', enemy);
+}
+
+function setFillWidth(id, pct) {
+  const el = document.getElementById(id);
+  if (el) el.style.width = pct + '%';
+}
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function renderArenaSkillIcons(sideId, mobileId, char) {
+  const container = document.getElementById(sideId);
+  const mobile = document.getElementById(mobileId);
+  const slots = char.skillSlots || [];
+
+  if (container) {
+    container.innerHTML = '';
+    for (let i = 0; i < 5; i++) {
+      const skillId = slots[i];
+      const def = skillId ? SKILLS[skillId] : null;
+      const cd = skillId ? (char.skillCooldowns?.[skillId] || 0) : 0;
+      const ready = skillId && cd <= 0;
+      const el = document.createElement('div');
+      el.className = 'as-skill' + (def ? '' : ' empty') + (ready ? ' ready' : '') + (cd > 0 ? ' on-cd' : '');
+      if (def) {
+        el.innerHTML = `
+          <span class="as-skill-icon">${def.icon}</span>
+          <span class="as-skill-cd">${cd > 0 ? Math.ceil(cd) : ''}</span>
+        `;
+      } else {
+        el.innerHTML = `<span class="as-skill-icon" style="opacity:0.2">·</span>`;
+      }
+      container.appendChild(el);
+    }
+  }
+
+  if (mobile) {
+    mobile.innerHTML = '';
+    for (let i = 0; i < 5; i++) {
+      const skillId = slots[i];
+      const def = skillId ? SKILLS[skillId] : null;
+      const cd = skillId ? (char.skillCooldowns?.[skillId] || 0) : 0;
+
+      const el = document.createElement('div');
+      el.className = 'amh-skill' + (cd > 0 ? ' on-cd' : '');
+      if (def) {
+        el.textContent = def.icon;
+        if (cd > 0) el.dataset.cd = String(Math.ceil(cd));
+      } else {
+        el.textContent = '·';
+        el.style.opacity = '0.3';
+      }
+      mobile.appendChild(el);
+    }
+  }
+}
+
+function renderArenaBuffs(containerId, char) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+
+  const now = Date.now();
+  const buffs = [];
+
+  // Скилловые баффы (dodge)
+  if (char.skillBuffs?.dodge && char.skillBuffs.dodge.until > now) {
+    const left = Math.ceil((char.skillBuffs.dodge.until - now) / 1000);
+    buffs.push({ icon: '💨', time: left, color: '#80d4e0' });
+  }
+
+  // Свитки (attack, crit, speed, range) — если есть
+  const sc = BUFF_SCROLLS;
+  for (const type of ['attack','crit','speed','range']) {
+    const until = char.activeBuffs?.[type];
+    if (until && until > now) {
+      const left = Math.ceil((until - now) / 1000);
+      const def = sc[type];
+      if (def) buffs.push({ icon: def.icon, time: left, color: def.color });
+    }
+  }
+
+  // Дебаффы: stun/slow — считаются от timestamp
+  if (char.stunUntil && char.stunUntil > now) {
+    const left = Math.ceil((char.stunUntil - now) / 1000);
+    buffs.push({ icon: '💫', time: left, color: '#fbbf24', debuff: true });
+  }
+  if (char.slowUntil && char.slowUntil > now) {
+    const left = Math.ceil((char.slowUntil - now) / 1000);
+    buffs.push({ icon: '❄️', time: left, color: '#67e8f9', debuff: true });
+  }
+
+  for (const b of buffs) {
+    const el = document.createElement('div');
+    el.className = 'as-buff' + (b.time <= 2 ? ' expiring' : '');
+    el.title = b.icon;
+    el.innerHTML = `${b.icon}<span class="as-buff-time">${b.time}</span>`;
+    if (b.color) el.style.borderColor = b.color;
+    container.appendChild(el);
+  }
+}
+
+// ===== ПАНЕЛЬ СКИЛЛОВ В HUD =====
+export function renderSkillBar() {
+  const hero = state?.hero;
+  const bar = document.getElementById('skill-bar');
+  if (!bar || !hero) return;
+  const btns = bar.querySelectorAll('.skill-btn');
+  for (let i = 0; i < 5; i++) {
+    const btn = btns[i];
+    if (!btn) continue;
+    const skillId = hero.skillSlots?.[i] || null;
+    btn.dataset.skillId = skillId || '';
+    const iconEl = btn.querySelector('.skill-icon');
+    const manaEl = btn.querySelector('.skill-mana');
+    if (!skillId || !SKILLS[skillId]) {
+      btn.classList.add('empty');
+      btn.classList.remove('ready', 'on-cd');
+      btn.disabled = true;
+      iconEl.textContent = '·';
+      manaEl.textContent = '';
+      continue;
+    }
+    btn.classList.remove('empty');
+    const def = SKILLS[skillId];
+    iconEl.textContent = def.icon;
+    const cost = getSkillManaCost(hero, skillId);
+    manaEl.textContent = cost;
+    const ready = isSkillReady(hero, skillId);
+    const hasMana = hero.mana >= cost;
+    btn.disabled = !ready || !hasMana;
+    btn.classList.toggle('ready', ready && hasMana);
+    btn.classList.remove('on-cd');
+  }
+}
+
+export function updateSkillBar() {
+  const hero = state?.hero;
+  const bar = document.getElementById('skill-bar');
+  if (!bar || !hero || bar.classList.contains('hidden')) return;
+  const btns = bar.querySelectorAll('.skill-btn');
+  for (let i = 0; i < 5; i++) {
+    const btn = btns[i];
+    if (!btn || btn.classList.contains('empty')) continue;
+    const skillId = btn.dataset.skillId;
+    if (!skillId || !SKILLS[skillId]) continue;
+    const cd = getSkillRemainingCooldown(hero, skillId);
+    const cost = getSkillManaCost(hero, skillId);
+    const cdNum = btn.querySelector('.skill-cd-num');
+    const manaEl = btn.querySelector('.skill-mana');
+    if (manaEl) manaEl.textContent = cost;
+    if (cd > 0) {
+      btn.classList.add('on-cd');
+      if (cdNum) cdNum.textContent = Math.ceil(cd);
+    } else {
+      btn.classList.remove('on-cd');
+      if (cdNum) cdNum.textContent = '';
+    }
+    const ready = cd <= 0;
+    const hasMana = hero.mana >= cost;
+    btn.disabled = !ready || !hasMana;
+    btn.classList.toggle('ready', ready && hasMana);
+  }
+  window.showArenaHud = showArenaHud;
+window.hideArenaHud = hideArenaHud;
+window.updateArenaHud = updateArenaHud;
+window.onArenaEnd = onArenaEnd;
+}

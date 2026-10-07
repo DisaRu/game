@@ -1,5 +1,5 @@
-import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus, BUFF_SCROLLS, EQUIP_PRICES } from './config.js';
-import { itemStats, durabilityMultiplier } from './items.js';
+import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus, BUFF_SCROLLS, SKILLS, MAX_SKILL_LEVEL, SKILL_LEVEL_EFFECT, SKILL_LEVEL_COST } from './config.js';
+import { itemStats } from './items.js';
 export { ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt };
 
 // ===== СОЗДАНИЕ ГЕРОЯ =====
@@ -11,6 +11,8 @@ export function createHero(classType) {
     weaponType: base.weapon,
     level: 1, xp: 0, xpToNext: CONFIG.level.baseXp,
     baseMaxHp: base.hp, hp: base.hp, maxHp: base.hp,
+    baseMaxMana: base.maxMana, mana: base.maxMana, maxMana: base.maxMana,
+    baseManaRegen: base.manaRegen, manaRegen: base.manaRegen,
     baseAttack: base.attack, attack: base.attack, defense: 0,
     baseAttackSpeed: base.attackSpeed, attackSpeed: base.attackSpeed,
     baseRange: base.range, range: base.range,
@@ -31,6 +33,7 @@ export function createHero(classType) {
 
     cooldown: 0, hitAnim: 0, attackAnim: 0, dead: false,
     x: 0, y: 0, facing: 1,
+    size: 0.8,
 
     equipment: { weapon:null, helmet:null, armor:null, gloves:null, boots:null, cloak:null, ring:null, amulet:null },
     backpack: [],
@@ -46,25 +49,32 @@ export function createHero(classType) {
     soulshotActive: false,
     activeBuffs: {},
 
-    // ===== ТЕНЬ =====
-    shadow: {
-      equipment: {
-        weapon: null, helmet: null, armor: null, gloves: null,
-        boots: null, cloak: null, ring: null, amulet: null,
-      },
-      potions: { small: 0, medium: 0, large: 0, epic: 0 },
-      soulshots: { ng: 0, d: 0, c: 0, b: 0, a: 0, s: 0 },
-      scrolls: { attack: 0, crit: 0, speed: 0, range: 0 },
-      durability: {},   // { itemId: 100 } — синхронизируется с предметами
-    },
+     // ===== СКИЛЛЫ =====
+    skills: {},
+    skillSlots: [],
+    skillCooldowns: {},
+    skillBuffs: {},
+
+    // ===== КАСТ =====
+    casting: null,
+    _pendingCastResult: null,
+    castSpeed: 0,
+    castStability: 0,
+
+    // ===== ДЕБАФФЫ =====
+    stunUntil: 0,
+    slowUntil: 0,
+    silenceUntil: 0,
+    attackSpeedDebuff: null,
+    dots: [],
 
     // ===== АРЕНА =====
     arena: {
       rating: 1000,
       wins: 0,
       losses: 0,
-      history: [],       // последние 20 боёв
-      claimedChests: [], // id сундуков, которые уже забрал
+      history: [],
+      claimedChests: [],
     },
   };
   recalcStats(hero);
@@ -94,43 +104,90 @@ export function applyEnhanceBonuses(hero) {
 // ===== ПЕРЕСЧЁТ СТАТОВ =====
 
 export function recalcStats(hero) {
-  let bHp=0,bAtk=0,bDef=0,bCrit=0,bCritDmg=0,bDodge=0,bLs=0,bAtkSpd=0,bRange=0;
+  // Миграция старых сейвов без маны + пересчёт по уровню
+  const _cls = CONFIG.hero[hero.classType];
+  if (hero.baseMaxMana === undefined) hero.baseMaxMana = _cls?.maxMana || 80;
+  if (hero.baseManaRegen === undefined) hero.baseManaRegen = _cls?.manaRegen || 4;
+
+  // Синхронизация с уровнем: если сейчас baseMaxMana меньше, чем должно быть
+  // по формуле (класс + уровни), — догоняем
+  if (hero.level && hero.level > 1) {
+    const expectedMana = (_cls?.maxMana || 80) + (hero.level - 1) * (CONFIG.level.manaPerLevel || 0);
+    const expectedRegen = (_cls?.manaRegen || 4) + (hero.level - 1) * (CONFIG.level.manaRegenPerLevel || 0);
+    if (hero.baseMaxMana < expectedMana) hero.baseMaxMana = expectedMana;
+    if (hero.baseManaRegen < expectedRegen) hero.baseManaRegen = expectedRegen;
+  }
+
+  // Миграция арены (старые сейвы без полей)
+  if (!hero.arena || typeof hero.arena !== 'object') {
+    hero.arena = { rating: 1000, wins: 0, losses: 0, history: [], claimedChests: [] };
+  }
+  if (!Array.isArray(hero.arena.history)) hero.arena.history = [];
+  if (!Array.isArray(hero.arena.claimedChests)) hero.arena.claimedChests = [];
+  if (typeof hero.arena.rating !== 'number') hero.arena.rating = 1000;
+  if (typeof hero.arena.wins !== 'number') hero.arena.wins = 0;
+  if (typeof hero.arena.losses !== 'number') hero.arena.losses = 0;
+
+  // Миграция старых сейвов без скиллов
+  if (!hero.skills || typeof hero.skills !== 'object') hero.skills = {};
+  if (!Array.isArray(hero.skillSlots)) hero.skillSlots = [];
+  if (!hero.skillCooldowns || typeof hero.skillCooldowns !== 'object') hero.skillCooldowns = {};
+  if (!hero.skillBuffs || typeof hero.skillBuffs !== 'object') hero.skillBuffs = {};
+
+  // Слоты: 5, изначально пустые (null)
+  while (hero.skillSlots.length < 5) hero.skillSlots.push(null);
+  if (hero.skillSlots.length > 5) hero.skillSlots.length = 5;
+  for (let i = 0; i < 5; i++) {
+    const id = hero.skillSlots[i];
+    if (id && !hero.skills[id]) hero.skillSlots[i] = null;
+  }
+
+   let bHp=0,bAtk=0,bDef=0,bCrit=0,bCritDmg=0,bDodge=0,bLs=0,bAtkSpd=0,bRange=0;
   let bAcc=0,bCritRes=0,bArmorPen=0,bAntiHeal=0,bBerserk=0,bThorns=0,bMoveSpd=0;
+  let bMana=0,bManaRegen=0;
+  let bCastSpeed=0,bCastStability=0;
 
   for (const slot of SLOTS) {
     const item = hero.equipment[slot];
     if (!item) continue;
     const s = itemStats(item);
-    const durMult = durabilityMultiplier(item);
-    bHp += (s.hp||0) * durMult;
-    bAtk += (s.attack||0) * durMult;
-    bDef += (s.defense||0) * durMult;
-    bCrit += (s.critChance||0) * durMult;
-    bCritDmg += (s.critDamage||0) * durMult;
-    bDodge += (s.dodge||0) * durMult;
-    bLs += (s.lifesteal||0) * durMult;
-    bAtkSpd += (s.attackSpeed||0) * durMult;
-    bRange += (s.range||0) * durMult;
-    bAcc += (s.accuracy||0) * durMult;
-    bCritRes += (s.critResist||0) * durMult;
-    bArmorPen += (s.armorPen||0) * durMult;
-    bAntiHeal += (s.antiHeal||0) * durMult;
-    bBerserk += (s.berserk||0) * durMult;
-    bThorns += (s.thorns||0) * durMult;
-    bMoveSpd += (s.moveSpeed||0) * durMult;
+    bHp += (s.hp||0);
+    bAtk += (s.attack||0);
+    bDef += (s.defense||0);
+    bCrit += (s.critChance||0);
+    bCritDmg += (s.critDamage||0);
+    bDodge += (s.dodge||0);
+    bLs += (s.lifesteal||0);
+    bAtkSpd += (s.attackSpeed||0);
+    bRange += (s.range||0);
+    bAcc += (s.accuracy||0);
+    bCritRes += (s.critResist||0);
+    bArmorPen += (s.armorPen||0);
+    bAntiHeal += (s.antiHeal||0);
+    bBerserk += (s.berserk||0);
+    bThorns += (s.thorns||0);
+     bMoveSpd += (s.moveSpeed||0);
+    bMana += (s.mana||0);
+    bManaRegen += (s.manaRegen||0);
+    bCastSpeed += (s.castSpeed||0);
+    bCastStability += (s.castStability||0);
   }
 
   const oldMax = hero.maxHp;
+  const oldMaxMana = hero.maxMana;
 
   applyEnhanceBonuses(hero);
 
   hero.maxHp = hero.baseMaxHp + bHp;
   if (hero.hpBonus > 0) hero.maxHp = Math.floor(hero.maxHp * (1 + hero.hpBonus));
 
+  hero.maxMana = hero.baseMaxMana + bMana;
+  hero.manaRegen = hero.baseManaRegen + bManaRegen;
+
   hero.attack = hero.baseAttack + bAtk;
   hero.defense = bDef;
   hero.critChance = Math.min(75, 5 + bCrit);
-  hero.critDamage = 50 + bCritDmg;
+  hero.critDamage = Math.min(300, 50 + bCritDmg);
   hero.dodge = Math.min(60, bDodge + hero.cloakDodge);
   hero.lifesteal = Math.min(30, bLs);
   hero.attackSpeedBonus = bAtkSpd;
@@ -145,6 +202,10 @@ export function recalcStats(hero) {
   hero.berserk = bBerserk;
   hero.thorns = bThorns;
 
+  // Каст: кап 70% на ускорение, 80% на устойчивость
+  hero.castSpeed = Math.min(70, bCastSpeed);
+  hero.castStability = Math.min(80, bCastStability);
+
   if (hero.activeBuffs) {
     const now = Date.now();
     if (hero.activeBuffs.attack && hero.activeBuffs.attack > now) hero.attack *= 1.20;
@@ -157,179 +218,41 @@ export function recalcStats(hero) {
     hero.hp = Math.min(hero.maxHp, Math.round(hero.hp / oldMax * hero.maxHp));
   }
   if (hero.hp > hero.maxHp) hero.hp = hero.maxHp;
-}
 
-// ===== ТЕНЬ: СТАТЫ =====
+  if (typeof hero.mana !== 'number') hero.mana = hero.maxMana;
+  if (oldMaxMana === undefined) hero.mana = hero.maxMana;
+  if (hero.mana > hero.maxMana) hero.mana = hero.maxMana;
+  if (hero.mana < 0) hero.mana = 0;
 
-// Статы тени — как у героя, но из shadow.equipment
-export function getShadowStats(hero) {
-  const shadow = hero.shadow;
-  if (!shadow) return null;
-
-  let bHp=0,bAtk=0,bDef=0,bCrit=0,bCritDmg=0,bDodge=0,bLs=0,bAtkSpd=0,bRange=0;
-  let bAcc=0,bCritRes=0,bArmorPen=0,bAntiHeal=0,bBerserk=0,bThorns=0,bMoveSpd=0;
-
-  for (const slot of SLOTS) {
-    const item = shadow.equipment[slot];
-    if (!item) continue;
-    const s = itemStats(item);
-    const durMult = durabilityMultiplier(item);
-    bHp += (s.hp||0) * durMult;
-    bAtk += (s.attack||0) * durMult;
-    bDef += (s.defense||0) * durMult;
-    bCrit += (s.critChance||0) * durMult;
-    bCritDmg += (s.critDamage||0) * durMult;
-    bDodge += (s.dodge||0) * durMult;
-    bLs += (s.lifesteal||0) * durMult;
-    bAtkSpd += (s.attackSpeed||0) * durMult;
-    bRange += (s.range||0) * durMult;
-    bAcc += (s.accuracy||0) * durMult;
-    bCritRes += (s.critResist||0) * durMult;
-    bArmorPen += (s.armorPen||0) * durMult;
-    bAntiHeal += (s.antiHeal||0) * durMult;
-    bBerserk += (s.berserk||0) * durMult;
-    bThorns += (s.thorns||0) * durMult;
-    bMoveSpd += (s.moveSpeed||0) * durMult;
-  }
-
-  const base = CONFIG.hero[hero.classType];
-
-  return {
-    maxHp: base.hp + bHp,
-    hp: base.hp + bHp,
-    attack: base.attack + bAtk,
-    defense: bDef,
-    critChance: Math.min(75, 5 + bCrit),
-    critDamage: 50 + bCritDmg,
-    dodge: Math.min(60, bDodge),
-    lifesteal: Math.min(30, bLs),
-    attackSpeed: base.attackSpeed * (1 + bAtkSpd / 100),
-    range: base.range + bRange,
-    moveSpeed: base.moveSpeed,
-    accuracy: bAcc,
-    critResist: Math.min(60, bCritRes),
-    armorPen: Math.min(80, bArmorPen),
-    antiHeal: Math.min(60, bAntiHeal),
-    berserk: bBerserk,
-    thorns: bThorns,
-  };
-}
-
-// ===== ТЕНЬ: РЕМОНТ =====
-
-// Стоимость ремонта одного предмета
-export function getShadowRepairCost(hero, slot) {
-  const item = hero.shadow?.equipment?.[slot];
-  if (!item) return 0;
-  if (item.durability === undefined) return 0;
-  if (item.durability >= 100) return 0;
-
-  const basePrice = EQUIP_PRICES[item.grade] || 100;
-  const missing = (100 - item.durability) / 100;
-  return Math.max(1, Math.floor(basePrice * missing * 0.5));
-}
-
-// Стоимость ремонта всех предметов
-export function getAllShadowRepairCost(hero) {
-  let total = 0;
-  for (const slot of SLOTS) {
-    total += getShadowRepairCost(hero, slot);
-  }
-  return total;
-}
-
-// Ремонт одного предмета
-export function repairShadowItem(hero, slot) {
-  const item = hero.shadow?.equipment?.[slot];
-  if (!item) return { ok: false, reason: 'no_item' };
-  if (item.durability === undefined) return { ok: false, reason: 'no_durability' };
-  if (item.durability >= 100) return { ok: false, reason: 'full' };
-
-  const cost = getShadowRepairCost(hero, slot);
-  if (hero.gold < cost) return { ok: false, reason: 'no_gold', cost };
-
-  hero.gold -= cost;
-  item.durability = 100;
-  return { ok: true, cost };
-}
-
-// Ремонт всех предметов
-export function repairAllShadow(hero) {
-  let totalCost = 0;
-  let repaired = 0;
-
-  for (const slot of SLOTS) {
-    const item = hero.shadow?.equipment?.[slot];
-    if (!item) continue;
-    if (item.durability === undefined) continue;
-    if (item.durability >= 100) continue;
-
-    const cost = getShadowRepairCost(hero, slot);
-    if (hero.gold < totalCost + cost) continue;
-
-    totalCost += cost;
-    item.durability = 100;
-    repaired++;
-  }
-
-  if (repaired === 0) return { ok: false, reason: 'nothing' };
-  if (totalCost === 0) return { ok: false, reason: 'nothing' };
-
-  hero.gold -= totalCost;
-  return { ok: true, cost: totalCost, repaired };
-}
-
-// ===== ТЕНЬ: ПОПОЛНЕНИЕ =====
-
-// Взять соски из основного запаса
-export function fillShadowSoulshots(hero, grade, amount) {
-  const have = hero.soulshots[grade] || 0;
-  const take = Math.min(amount, have);
-  if (take <= 0) return { ok: false, reason: 'no_soulshots' };
-
-  hero.soulshots[grade] -= take;
-  hero.shadow.soulshots[grade] = (hero.shadow.soulshots[grade] || 0) + take;
-  return { ok: true, amount: take };
-}
-
-// Взять зелья из основного запаса
-export function fillShadowPotions(hero, type, amount) {
-  const have = hero.potions[type] || 0;
-  const take = Math.min(amount, have);
-  if (take <= 0) return { ok: false, reason: 'no_potions' };
-
-  hero.potions[type] -= take;
-  hero.shadow.potions[type] = (hero.shadow.potions[type] || 0) + take;
-  return { ok: true, amount: take };
-}
-
-// Взять бафф-свитки из рюкзака
-export function fillShadowScrolls(hero, type, amount) {
-  let taken = 0;
-  for (let i = hero.backpack.length - 1; i >= 0 && taken < amount; i--) {
-    const item = hero.backpack[i];
-    if (item.kind === 'buff' && item.buffType === type) {
-      const cnt = item.count || 1;
-      const toTake = Math.min(cnt, amount - taken);
-      if (toTake >= cnt) {
-        hero.backpack.splice(i, 1);
-      } else {
-        item.count -= toTake;
-      }
-      taken += toTake;
+  // Скилловый бафф dodge
+  if (hero.skillBuffs) {
+    const now = Date.now();
+    if (hero.skillBuffs.dodge && hero.skillBuffs.dodge.until > now) {
+      hero.dodge = Math.min(95, hero.dodge + hero.skillBuffs.dodge.value);
     }
   }
-  if (taken <= 0) return { ok: false, reason: 'no_scrolls' };
+}
 
-  hero.shadow.scrolls[type] = (hero.shadow.scrolls[type] || 0) + taken;
-  return { ok: true, amount: taken };
+// ===== МАНА =====
+
+export function regenMana(hero, dt) {
+  if (hero.dead) return;
+  if (!hero.maxMana || hero.maxMana <= 0) return;
+  if (hero.mana >= hero.maxMana) return;
+  hero.mana = Math.min(hero.maxMana, hero.mana + (hero.manaRegen || 0) * dt);
+}
+
+export function gainManaOnKill(hero) {
+  if (!hero || hero.dead) return;
+  if (!hero.maxMana) return;
+  hero.mana = Math.min(hero.maxMana, hero.mana + hero.maxMana * 0.10);
 }
 
 // ===== ЭКИПИРОВКА =====
 
 export function canEquip(hero, item) {
   if (!item) return false;
-  if (item.kind === 'buff' || item.kind === 'blessed' || item.kind === 'pass') return false;
+  if (item.kind === 'buff' || item.kind === 'blessed' || item.kind === 'pass' || item.kind === 'book') return false;
   const g = GRADES[item.grade];
   if (!g) return false;
   if (item.slot === 'weapon' && item.weaponType && item.weaponType !== hero.weaponType) return false;
@@ -361,43 +284,22 @@ export function unequipItem(hero, slot) {
   return { ok:true };
 }
 
-// ===== ТЕНЬ: ЭКИПИРОВКА =====
-
-export function equipShadowItem(hero, item) {
-  if (!canEquip(hero, item)) return { ok:false, reason:'cannot_equip' };
-  const idx = hero.backpack.indexOf(item);
-  if (idx < 0) return { ok:false, reason:'not_in_backpack' };
-
-  hero.backpack.splice(idx, 1);
-  const prev = hero.shadow.equipment[item.slot];
-  if (prev) hero.backpack.push(prev);
-  hero.shadow.equipment[item.slot] = item;
-
-  // Если у предмета нет прочности — ставим 100
-  if (item.durability === undefined) item.durability = 100;
-
-  return { ok:true, replaced: prev };
-}
-
-export function unequipShadowItem(hero, slot) {
-  const item = hero.shadow.equipment[slot];
-  if (!item) return { ok:false };
-  hero.shadow.equipment[slot] = null;
-  hero.backpack.push(item);
-  return { ok:true };
-}
-
 // ===== УРОВЕНЬ =====
 
 export function applyLevelUp(hero) {
+  let leveledUp = false;
   while (hero.xp >= hero.xpToNext && hero.level < CONFIG.level.maxLevel) {
     hero.xp -= hero.xpToNext;
     hero.level++;
     hero.baseMaxHp += CONFIG.level.hpPerLevel;
     hero.baseAttack += CONFIG.level.attackPerLevel;
+    hero.baseMaxMana += CONFIG.level.manaPerLevel;
+    hero.baseManaRegen += CONFIG.level.manaRegenPerLevel;
     hero.xpToNext = Math.floor(CONFIG.level.baseXp * Math.pow(CONFIG.level.xpGrowth, hero.level - 1));
+    leveledUp = true;
   }
   recalcStats(hero);
+  if (leveledUp) hero.mana = hero.maxMana;
 }
 export function addXp(hero, amount) { hero.xp += amount; applyLevelUp(hero); }
 
@@ -405,6 +307,22 @@ export function addXp(hero, amount) { hero.xp += amount; applyLevelUp(hero); }
 
 export function damageHero(hero, amount) {
   if (Math.random() * 100 < hero.dodge) { hero.hitAnim = 0.15; return 'dodge'; }
+
+  // Прерывание каста: база 30%, снижается castStability
+  if (hero.casting) {
+    const stability = Math.min(80, hero.castStability || 0);
+    const interruptChance = 0.30 * (1 - stability / 100);
+    if (Math.random() < interruptChance) {
+      hero.casting = null;
+      hero.hitAnim = 0.15;
+      // Урон всё равно проходит
+      const reduced = Math.max(1, amount - Math.floor(hero.defense * 0.5));
+      hero.hp -= reduced;
+      if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; return 'dead'; }
+      return 'interrupted';
+    }
+  }
+
   const reduced = Math.max(1, amount - Math.floor(hero.defense * 0.5));
   hero.hp -= reduced;
   hero.hitAnim = 0.15;
@@ -518,6 +436,65 @@ export function calcEffectiveDefense(defender, attacker) {
 
 export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) {
   if (hero.dead) return;
+
+  // Стан — герой не двигается, не бьёт, не кастует
+  if (hero.stunUntil && hero.stunUntil > Date.now()) {
+    hero.hitAnim = 0.15;
+    return;
+  }
+
+  regenMana(hero, dt);
+  tickSkillCooldowns(hero, dt);
+
+  // ===== ТИК КАСТА =====
+  if (hero.casting) {
+    hero.casting.elapsed += dt;
+
+    // Истечение скилловых баффов (dodge)
+    if (hero.skillBuffs?.dodge) {
+      const b = hero.skillBuffs.dodge;
+      if (b.until <= Date.now() && !b._expired) {
+        b._expired = true;
+        recalcStats(hero);
+      }
+    }
+
+    // Прерывание по урону уже случилось в damageHero — если casting стал null,
+    // просто выходим и не двигаемся/не бьём в этом кадре.
+    if (!hero.casting) return;
+
+    // Завершение каста
+    if (hero.casting.elapsed >= hero.casting.duration) {
+      const c = hero.casting;
+      hero.casting = null;
+
+      // Списываем ману (только если хватает — иначе просто отмена)
+      if (hero.mana >= c.cost) {
+        hero.mana -= c.cost;
+        hero._pendingCastResult = {
+          skill: SKILLS[c.skillId],
+          skillId: c.skillId,
+          level: c.level,
+          cost: c.cost,
+          cooldown: c.cooldown,
+          effect: c.effect,
+        };
+      }
+    }
+
+    // Во время каста — не двигаемся, не бьём, не кастуем
+    return;
+  }
+
+  // Тик скилловых баффов
+  if (hero.skillBuffs?.dodge) {
+    const b = hero.skillBuffs.dodge;
+    if (b.until <= Date.now() && !b._expired) {
+      b._expired = true;
+      recalcStats(hero);
+    }
+  }
+
   if (hero.hitAnim > 0) hero.hitAnim -= dt;
   if (hero.attackAnim > 0) hero.attackAnim -= dt;
   hero.cooldown -= dt;
@@ -547,15 +524,18 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) 
   }
   if (!target) return;
 
-  hero.cooldown = 1 / hero.attackSpeed;
-  hero.attackAnim = 0.2;
+  let _atkMult = 1;
+  if (hero.attackSpeedDebuff && hero.attackSpeedDebuff.until > Date.now()) {
+    _atkMult = hero.attackSpeedDebuff.mult || 1;
+  }
+  hero.cooldown = 1 / (hero.attackSpeed * _atkMult);
 
   let damage = hero.attack;
   let isCrit = false;
   let isExecute = false;
 
   if (canUseSoulshot(hero) && consumeSoulshot(hero)) {
-    damage *= 2;
+    damage *= 1.3;
     effects.push({ x: hero.x, y: hero.y - 0.9, life: 0.45, maxLife: 0.45, color: '#fbbf24', text: '⚡', big: true });
   }
 
@@ -591,16 +571,18 @@ export function updateHero(hero, dt, mobs, projectiles, input, bounds, effects) 
     isCrit,
     isExecute,
     doubleStrike: hero.doubleStrikeChance > 0 && Math.random() < hero.doubleStrikeChance,
+    owner: hero,
   });
 }
 
 // ===== РЮКЗАК =====
 
 export function addToBackpack(hero, item) {
-  if (item.kind === 'buff' || item.kind === 'blessed' || item.kind === 'pass') {
+  if (item.kind === 'buff' || item.kind === 'blessed' || item.kind === 'pass' || item.kind === 'book') {
     const existing = hero.backpack.find(
       x => x.kind === item.kind &&
-           (item.kind !== 'buff' || x.buffType === item.buffType)
+           (item.kind !== 'buff' || x.buffType === item.buffType) &&
+           (item.kind !== 'book' || x.skillId === item.skillId)
     );
     if (existing) {
       existing.count = (existing.count || 1) + (item.count || 1);
@@ -627,4 +609,118 @@ export function bossAoeDamageFor(hero) {
 
 export function getChainTargets(hero) {
   return hero.chainTargets || 0;
+}
+
+// ===== СКИЛЛЫ: ЛОГИКА =====
+
+export function getSkillManaCost(hero, skillId) {
+  const def = SKILLS[skillId];
+  if (!def) return 0;
+  const lvl = hero.skills?.[skillId]?.level || 1;
+  return Math.floor(def.manaCost * (1 + SKILL_LEVEL_COST * (lvl - 1)));
+}
+
+export function getSkillEffect(hero, skillId) {
+  const def = SKILLS[skillId];
+  if (!def) return null;
+  const lvl = hero.skills?.[skillId]?.level || 1;
+  const mult = 1 + SKILL_LEVEL_EFFECT * (lvl - 1);
+  const out = { ...def.effect };
+  if (typeof def.effect.value === 'number') out.value = def.effect.value * mult;
+  return out;
+}
+
+export function getSkillLevel(hero, skillId) {
+  return hero.skills?.[skillId]?.level || 0;
+}
+
+export function getSkillRemainingCooldown(hero, skillId) {
+  return hero.skillCooldowns?.[skillId] || 0;
+}
+
+export function isSkillReady(hero, skillId) {
+  if (!hero.skills?.[skillId]) return false;
+  return (hero.skillCooldowns?.[skillId] || 0) <= 0;
+}
+
+export function tickSkillCooldowns(hero, dt) {
+  if (!hero.skillCooldowns) return;
+  for (const id in hero.skillCooldowns) {
+    if (hero.skillCooldowns[id] > 0) {
+      hero.skillCooldowns[id] = Math.max(0, hero.skillCooldowns[id] - dt);
+    }
+  }
+}
+
+export function tryUseSkill(hero, skillId) {
+  if (!hero || hero.dead) return { ok: false, reason: 'dead' };
+  if (hero.casting) return { ok: false, reason: 'already_casting' };
+  if (hero.silenceUntil && hero.silenceUntil > Date.now()) return { ok: false, reason: 'silenced' };
+  const def = SKILLS[skillId];
+  if (!def) return { ok: false, reason: 'unknown_skill' };
+  if (!hero.skills?.[skillId]) return { ok: false, reason: 'not_learned' };
+  if ((hero.skillCooldowns?.[skillId] || 0) > 0) {
+    return { ok: false, reason: 'cooldown', remaining: hero.skillCooldowns[skillId] };
+  }
+  const cost = getSkillManaCost(hero, skillId);
+  if (hero.mana < cost) {
+    return { ok: false, reason: 'no_mana', need: cost, have: Math.floor(hero.mana) };
+  }
+
+  const effect = getSkillEffect(hero, skillId);
+  const level = hero.skills[skillId].level;
+
+  // КД ставим сразу — при прерывании игрок всё равно теряет КД
+  hero.skillCooldowns[skillId] = def.cooldown;
+
+  // Есть время каста?
+  const castTime = def.castTime || 0;
+  if (castTime > 0) {
+    const speedMult = 1 - Math.min(70, hero.castSpeed || 0) / 100;
+    const realTime = Math.max(0.2, castTime * speedMult);
+    hero.casting = {
+      skillId,
+      elapsed: 0,
+      duration: realTime,
+      cost,
+      cooldown: def.cooldown,
+      effect,
+      level,
+    };
+    // Ману спишем при завершении каста (при прерывании — не тратится)
+    return { ok: true, casting: true, castTime: realTime, skill: def };
+  }
+
+  // Мгновенный — как было
+  hero.mana -= cost;
+  return {
+    ok: true,
+    skill: def,
+    level,
+    cost,
+    cooldown: def.cooldown,
+    effect,
+  };
+}
+
+export function learnSkill(hero, skillId) {
+  const def = SKILLS[skillId];
+  if (!def) return { ok: false, reason: 'unknown_skill' };
+  if (!hero.skills) hero.skills = {};
+  const cur = hero.skills[skillId]?.level || 0;
+  if (cur >= MAX_SKILL_LEVEL) return { ok: false, reason: 'max_level' };
+  hero.skills[skillId] = { level: cur + 1 };
+  return { ok: true, level: cur + 1, learned: cur === 0 };
+}
+
+export function setSkillSlot(hero, slotIndex, skillId) {
+  if (slotIndex < 0 || slotIndex > 4) return { ok: false, reason: 'bad_slot' };
+  if (skillId !== null && !hero.skills?.[skillId]) return { ok: false, reason: 'not_learned' };
+  if (!hero.skillSlots) hero.skillSlots = [null, null, null, null, null];
+  while (hero.skillSlots.length < 5) hero.skillSlots.push(null);
+  if (skillId !== null) {
+    for (let i = 0; i < 5; i++) if (i !== slotIndex && hero.skillSlots[i] === skillId) hero.skillSlots[i] = null;
+  }
+  hero.skillSlots[slotIndex] = skillId;
+  return { ok: true };
 }

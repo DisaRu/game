@@ -8,11 +8,11 @@ export const CONFIG = {
     updateRadius: 40,
   },
   hero: {
-    archer: { name:'Лучник', emoji:'🏹', hp:200, attack:15, attackSpeed:1.5, range:4.5, projectileSpeed:16, projectileColor:'#4ade80', aoe:0, moveSpeed:3.5, weapon:'bow' },
-    mage:   { name:'Маг',    emoji:'🔮', hp:150, attack:22, attackSpeed:0.9, range:3.5, projectileSpeed:10, projectileColor:'#c084fc', aoe:1.2, moveSpeed:3.2, weapon:'staff' },
+    archer: { name:'Лучник', emoji:'🏹', hp:200, attack:15, attackSpeed:1.5, range:4.5, projectileSpeed:16, projectileColor:'#4ade80', aoe:0, moveSpeed:3.5, weapon:'bow', maxMana:80,  manaRegen:4 },
+    mage:   { name:'Маг',    emoji:'🔮', hp:150, attack:22, attackSpeed:0.9, range:3.5, projectileSpeed:10, projectileColor:'#c084fc', aoe:1.2, moveSpeed:3.2, weapon:'staff', maxMana:120, manaRegen:6 },
   },
-  level: { baseXp:50, xpGrowth:1.35, maxLevel:80, hpPerLevel:80, attackPerLevel:3 },
-  death: { respawnTime:10, xpLossPercent:0.10 },
+  level: { baseXp:50, xpGrowth:1.35, maxLevel:80, hpPerLevel:80, attackPerLevel:3, manaPerLevel:15, manaRegenPerLevel:0.15 },
+ death: { respawnTime:10, xpLossPercent:0.10 },
   startGold: 300,
 };
 
@@ -26,16 +26,20 @@ export const SLOT_NAMES = {
 // ===== СТАТЫ =====
 export const STAT_NAMES = {
   attack:'Атака', defense:'Защита', hp:'HP',
+  mana:'Мана', manaRegen:'Реген маны',
   critChance:'Крит шанс', critDamage:'Крит урон', dodge:'Уворот',
-  attackSpeed:'Скор. атаки', lifesteal:'Вампиризм', range:'Дальность',
+  attackSpeed:'Скорость атаки', lifesteal:'Вампиризм', range:'Дальность',
   accuracy:'Точность', critResist:'Сопр. криту', armorPen:'Пробитие',
   antiHeal:'Анти-хил', berserk:'Берсерк', thorns:'Шипы', moveSpeed:'Скорость бега',
+  castSpeed:'Скорость каста', castStability:'Устойчивость каста',
 };
 
 export const STAT_SUFFIX = {
   critChance:'%', critDamage:'%', dodge:'%', attackSpeed:'%', lifesteal:'%',
   accuracy:'%', critResist:'%', armorPen:'%', antiHeal:'%', berserk:'%',
   thorns:'%', moveSpeed:'%',
+  manaRegen:'/с',
+  castSpeed:'%', castStability:'%',
 };
 
 export const PERCENT_STATS = [
@@ -77,14 +81,16 @@ export const ENHANCE_STATS = {
     thorns:['thorns','dodge'],
   },
   ring: {
-    crit:   ['critChance','attack'],
-    resist: ['critResist','hp'],
-    berserk:['berserk','attack'],
+    crit:      ['critChance','attack'],
+    resist:    ['critResist','hp'],
+    berserk:   ['berserk','attack'],
+    manaRegen: ['manaRegen','mana'],
   },
   amulet: {
     lifesteal: ['lifesteal','hp'],
     hp:        ['hp','lifesteal'],
     antiHeal:  ['antiHeal','hp'],
+    mana:      ['mana','hp'],
   },
 };
 
@@ -117,13 +123,15 @@ export const BASE_STATS = {
   cloak_dodge: { dodge: 4, range: 0.2 },
   cloak_thorns:{ thorns: 3, dodge: 3 },
 
-  ring_crit:    { critChance: 2, attack: 4 },
-  ring_resist:  { critResist: 3, hp: 15 },
-  ring_berserk: { berserk: 3, attack: 3 },
+  ring_crit:      { critChance: 2, attack: 4 },
+  ring_resist:    { critResist: 3, hp: 15 },
+  ring_berserk:   { berserk: 3, attack: 3 },
+  ring_manaRegen: { manaRegen: 1.5, mana: 20 },
 
   amulet_lifesteal: { lifesteal: 1, hp: 20 },
   amulet_hp:        { hp: 40, lifesteal: 0.5 },
   amulet_antiHeal:  { antiHeal: 3, hp: 20 },
+  amulet_mana:      { mana: 30, hp: 15 },
 };
 
 // ===== ГРЕЙДЫ =====
@@ -161,12 +169,14 @@ export const GRADE_ITEMS = {
     cloak_range: { name:'Плащ новичка (дальность)', icon:'🧥' },
     cloak_dodge: { name:'Плащ новичка (уворот)', icon:'🧥' },
     cloak_thorns:{ name:'Плащ новичка (шипы)', icon:'🧥' },
-    ring_crit:    { name:'Кольцо новичка (крит)', icon:'💍' },
-    ring_resist:  { name:'Кольцо новичка (сопр.)', icon:'💍' },
-    ring_berserk: { name:'Кольцо новичка (берсерк)', icon:'💍' },
+    ring_crit:      { name:'Кольцо новичка (крит)', icon:'💍' },
+    ring_resist:    { name:'Кольцо новичка (сопр.)', icon:'💍' },
+    ring_berserk:   { name:'Кольцо новичка (берсерк)', icon:'💍' },
+    ring_manaRegen: { name:'Кольцо новичка (реген маны)', icon:'💍' },
     amulet_lifesteal: { name:'Амулет новичка (вампиризм)', icon:'📿' },
     amulet_hp:        { name:'Амулет новичка (HP)', icon:'📿' },
     amulet_antiHeal:  { name:'Амулет новичка (анти-хил)', icon:'📿' },
+    amulet_mana:      { name:'Амулет новичка (мана)', icon:'📿' },
   },
   d: {
     weapon_archer_speed:  { name:'Лук охотника (скорость)', icon:'🏹' },
@@ -190,12 +200,14 @@ export const GRADE_ITEMS = {
     cloak_range: { name:'Плащ охотника (дальность)', icon:'🧥' },
     cloak_dodge: { name:'Плащ охотника (уворот)', icon:'🧥' },
     cloak_thorns:{ name:'Плащ охотника (шипы)', icon:'🧥' },
-    ring_crit:    { name:'Кольцо охотника (крит)', icon:'💍' },
-    ring_resist:  { name:'Кольцо охотника (сопр.)', icon:'💍' },
-    ring_berserk: { name:'Кольцо охотника (берсерк)', icon:'💍' },
+    ring_crit:      { name:'Кольцо охотника (крит)', icon:'💍' },
+    ring_resist:    { name:'Кольцо охотника (сопр.)', icon:'💍' },
+    ring_berserk:   { name:'Кольцо охотника (берсерк)', icon:'💍' },
+    ring_manaRegen: { name:'Кольцо охотника (реген маны)', icon:'💍' },
     amulet_lifesteal: { name:'Амулет охотника (вампиризм)', icon:'📿' },
     amulet_hp:        { name:'Амулет охотника (HP)', icon:'📿' },
     amulet_antiHeal:  { name:'Амулет охотника (анти-хил)', icon:'📿' },
+    amulet_mana:      { name:'Амулет охотника (мана)', icon:'📿' },
   },
   c: {
     weapon_archer_speed:  { name:'Лук бури (скорость)', icon:'🏹' },
@@ -219,12 +231,14 @@ export const GRADE_ITEMS = {
     cloak_range: { name:'Плащ бури (дальность)', icon:'🧥' },
     cloak_dodge: { name:'Плащ бури (уворот)', icon:'🧥' },
     cloak_thorns:{ name:'Плащ бури (шипы)', icon:'🧥' },
-    ring_crit:    { name:'Кольцо бури (крит)', icon:'💍' },
-    ring_resist:  { name:'Кольцо бури (сопр.)', icon:'💍' },
-    ring_berserk: { name:'Кольцо бури (берсерк)', icon:'💍' },
+    ring_crit:      { name:'Кольцо бури (крит)', icon:'💍' },
+    ring_resist:    { name:'Кольцо бури (сопр.)', icon:'💍' },
+    ring_berserk:   { name:'Кольцо бури (берсерк)', icon:'💍' },
+    ring_manaRegen: { name:'Кольцо бури (реген маны)', icon:'💍' },
     amulet_lifesteal: { name:'Амулет бури (вампиризм)', icon:'📿' },
     amulet_hp:        { name:'Амулет бури (HP)', icon:'📿' },
     amulet_antiHeal:  { name:'Амулет бури (анти-хил)', icon:'📿' },
+    amulet_mana:      { name:'Амулет бури (мана)', icon:'📿' },
   },
   b: {
     weapon_archer_speed:  { name:'Лук демона (скорость)', icon:'🏹' },
@@ -248,12 +262,14 @@ export const GRADE_ITEMS = {
     cloak_range: { name:'Плащ демона (дальность)', icon:'🧥' },
     cloak_dodge: { name:'Плащ демона (уворот)', icon:'🧥' },
     cloak_thorns:{ name:'Плащ демона (шипы)', icon:'🧥' },
-    ring_crit:    { name:'Кольцо демона (крит)', icon:'💍' },
-    ring_resist:  { name:'Кольцо демона (сопр.)', icon:'💍' },
-    ring_berserk: { name:'Кольцо демона (берсерк)', icon:'💍' },
+    ring_crit:      { name:'Кольцо демона (крит)', icon:'💍' },
+    ring_resist:    { name:'Кольцо демона (сопр.)', icon:'💍' },
+    ring_berserk:   { name:'Кольцо демона (берсерк)', icon:'💍' },
+    ring_manaRegen: { name:'Кольцо демона (реген маны)', icon:'💍' },
     amulet_lifesteal: { name:'Амулет демона (вампиризм)', icon:'📿' },
     amulet_hp:        { name:'Амулет демона (HP)', icon:'📿' },
     amulet_antiHeal:  { name:'Амулет демона (анти-хил)', icon:'📿' },
+    amulet_mana:      { name:'Амулет демона (мана)', icon:'📿' },
   },
   a: {
     weapon_archer_speed:  { name:'Лук дракона (скорость)', icon:'🏹' },
@@ -277,12 +293,14 @@ export const GRADE_ITEMS = {
     cloak_range: { name:'Плащ дракона (дальность)', icon:'🧥' },
     cloak_dodge: { name:'Плащ дракона (уворот)', icon:'🧥' },
     cloak_thorns:{ name:'Плащ дракона (шипы)', icon:'🧥' },
-    ring_crit:    { name:'Кольцо дракона (крит)', icon:'💍' },
-    ring_resist:  { name:'Кольцо дракона (сопр.)', icon:'💍' },
-    ring_berserk: { name:'Кольцо дракона (берсерк)', icon:'💍' },
+    ring_crit:      { name:'Кольцо дракона (крит)', icon:'💍' },
+    ring_resist:    { name:'Кольцо дракона (сопр.)', icon:'💍' },
+    ring_berserk:   { name:'Кольцо дракона (берсерк)', icon:'💍' },
+    ring_manaRegen: { name:'Кольцо дракона (реген маны)', icon:'💍' },
     amulet_lifesteal: { name:'Амулет дракона (вампиризм)', icon:'📿' },
     amulet_hp:        { name:'Амулет дракона (HP)', icon:'📿' },
     amulet_antiHeal:  { name:'Амулет дракона (анти-хил)', icon:'📿' },
+    amulet_mana:      { name:'Амулет дракона (мана)', icon:'📿' },
   },
   s: {
     weapon_archer_speed:  { name:'Лук богов (скорость)', icon:'🏹' },
@@ -306,12 +324,14 @@ export const GRADE_ITEMS = {
     cloak_range: { name:'Плащ богов (дальность)', icon:'🧥' },
     cloak_dodge: { name:'Плащ богов (уворот)', icon:'🧥' },
     cloak_thorns:{ name:'Плащ богов (шипы)', icon:'🧥' },
-    ring_crit:    { name:'Кольцо богов (крит)', icon:'💍' },
-    ring_resist:  { name:'Кольцо богов (сопр.)', icon:'💍' },
-    ring_berserk: { name:'Кольцо богов (берсерк)', icon:'💍' },
+    ring_crit:      { name:'Кольцо богов (крит)', icon:'💍' },
+    ring_resist:    { name:'Кольцо богов (сопр.)', icon:'💍' },
+    ring_berserk:   { name:'Кольцо богов (берсерк)', icon:'💍' },
+    ring_manaRegen: { name:'Кольцо богов (реген маны)', icon:'💍' },
     amulet_lifesteal: { name:'Амулет богов (вампиризм)', icon:'📿' },
     amulet_hp:        { name:'Амулет богов (HP)', icon:'📿' },
     amulet_antiHeal:  { name:'Амулет богов (анти-хил)', icon:'📿' },
+    amulet_mana:      { name:'Амулет богов (мана)', icon:'📿' },
   },
 };
 
@@ -473,20 +493,110 @@ export const RATING_CHESTS = [
 ];
 
 // ===== МОБЫ =====
+// ===== МОБЫ =====
+// У каждого моба:
+//   drops         — что падает с обычного
+//   championDrops — что падает с чемпиона ⭐ (если [] — падает drops)
+//
+// Формат записи дропа:
+//   { id:'<itemId>', chance:0.X, min:N, max:M }
+//   id — ключ из loot.js (ITEM_REGISTRY). chance 0..1. min/max — сколько штук.
+//
+// Примеры id: gold, scroll_weapon, scroll_armor, scroll_weapon_d,
+//   potion_small, soulshot, buff_attack,
+//   blessed_scroll, arena_pass,
+//   book_multishot, book_dodge, book_stun, book_fireball, book_frost, book_heal,
+//   equip_random, equip_d, equip_d_gloves, gloves_speed_d, weapon_bow_speed_d
+//
+// Пока не заполнено — падать не будет.
+
 export const MOBS = {
-  gremlin:   { id:'gremlin',   name:'Гремлин',        emoji:'sprites/mobs/gremlin.png', hp:40,   attack:3,  speed:2.2, reward:15,  xp:150,   size:0.7 },
-  keltir:    { id:'keltir',    name:'Кельтир',        emoji:'🐺', hp:60,   attack:5,  speed:1.4, reward:22,  xp:8,   size:0.6  },
-  werewolf:  { id:'werewolf',  name:'Оборотень',      emoji:'🐺', hp:200,  attack:12, speed:1.5, reward:50,  xp:25,  size:0.7  },
-  orc:       { id:'orc',       name:'Орк',            emoji:'👺', hp:120,  attack:8,  speed:1.0, reward:35,  xp:15,  size:0.65 },
-  skeleton:  { id:'skeleton',  name:'Скелет',         emoji:'💀', hp:90,   attack:7,  speed:1.2, reward:30,  xp:12,  size:0.6  },
-  spider:    { id:'spider',    name:'Паук',           emoji:'🕷️', hp:180,  attack:12, speed:1.5, reward:60,  xp:22,  size:0.6  },
-  warg:      { id:'warg',      name:'Варг',           emoji:'🐕', hp:240,  attack:15, speed:1.4, reward:80,  xp:28,  size:0.65 },
-  ghost:     { id:'ghost',     name:'Призрак',        emoji:'👻', hp:300,  attack:18, speed:1.3, reward:110, xp:40,  size:0.65 },
-  golem:     { id:'golem',     name:'Голем',          emoji:'🗿', hp:500,  attack:22, speed:0.8, reward:160, xp:55,  size:0.8  },
-  demon:     { id:'demon',     name:'Демон',          emoji:'😈', hp:700,  attack:30, speed:1.4, reward:250, xp:90,  size:0.75 },
-  dragon:    { id:'dragon',    name:'Дракон',         emoji:'🐉', hp:1200, attack:45, speed:1.0, reward:500, xp:180, size:0.95 },
-  ice_golem: { id:'ice_golem', name:'Ледяной голем',  emoji:'❄️', hp:2000, attack:60, speed:0.7, reward:800, xp:300, size:0.85 },
-  archdemon: { id:'archdemon', name:'Архидемон',      emoji:'👿', hp:3000, attack:90, speed:1.2, reward:1500,xp:600, size:1.0  },
+ gremlin: {
+  id:'gremlin', name:'Гремлин', emoji:'sprites/mobs/gremlin.png',
+  hp:40, attack:3, speed:2.2, xp:150, size:0.7,
+  drops: [
+    { id:'gold',           chance:1.0, min:5, max:15 },
+    { id:'potion_small',   chance:0.5, min:1, max:2 },
+    { id:'book_multishot', chance:0.2, min:1, max:1 },
+  ],
+  championDrops: [
+    { id:'gold',           chance:1.0, min:40, max:80 },
+    { id:'scroll_weapon_ng', chance:0.3, min:2, max:5 },
+    { id:'book_stun',      chance:0.3, min:1, max:1 },
+  ],
+},
+  keltir: {
+    id:'keltir', name:'Кельтир', emoji:'🐺',
+    hp:60, attack:5, speed:1.4, xp:8, size:0.6,
+    drops: [],
+    championDrops: [],
+  },
+  werewolf: {
+    id:'werewolf', name:'Оборотень', emoji:'🐺',
+    hp:200, attack:12, speed:1.5, xp:25, size:0.7,
+    drops: [],
+    championDrops: [],
+  },
+  orc: {
+    id:'orc', name:'Орк', emoji:'👺',
+    hp:120, attack:8, speed:1.0, xp:15, size:0.65,
+    drops: [],
+    championDrops: [],
+  },
+  skeleton: {
+    id:'skeleton', name:'Скелет', emoji:'💀',
+    hp:90, attack:7, speed:1.2, xp:12, size:0.6,
+    drops: [],
+    championDrops: [],
+  },
+  spider: {
+    id:'spider', name:'Паук', emoji:'🕷️',
+    hp:180, attack:12, speed:1.5, xp:22, size:0.6,
+    drops: [],
+    championDrops: [],
+  },
+  warg: {
+    id:'warg', name:'Варг', emoji:'🐕',
+    hp:240, attack:15, speed:1.4, xp:28, size:0.65,
+    drops: [],
+    championDrops: [],
+  },
+  ghost: {
+    id:'ghost', name:'Призрак', emoji:'👻',
+    hp:300, attack:18, speed:1.3, xp:40, size:0.65,
+    drops: [],
+    championDrops: [],
+  },
+  golem: {
+    id:'golem', name:'Голем', emoji:'🗿',
+    hp:500, attack:22, speed:0.8, xp:55, size:0.8,
+    drops: [],
+    championDrops: [],
+  },
+  demon: {
+    id:'demon', name:'Демон', emoji:'😈',
+    hp:700, attack:30, speed:1.4, xp:90, size:0.75,
+    drops: [],
+    championDrops: [],
+  },
+  dragon: {
+    id:'dragon', name:'Дракон', emoji:'🐉',
+    hp:1200, attack:45, speed:1.0, xp:180, size:0.95,
+    drops: [],
+    championDrops: [],
+  },
+  ice_golem: {
+    id:'ice_golem', name:'Ледяной голем', emoji:'❄️',
+    hp:2000, attack:60, speed:0.7, xp:300, size:0.85,
+    drops: [],
+    championDrops: [],
+  },
+  archdemon: {
+    id:'archdemon', name:'Архидемон', emoji:'👿',
+    hp:3000, attack:90, speed:1.2, xp:600, size:1.0,
+    drops: [],
+    championDrops: [],
+  },
 };
 
 export const CHAMPION = {
@@ -499,4 +609,92 @@ export const CHAMPION = {
 export const BUFF_DROP_CHANCE = {
   normal: 0.008,
   champion: 0.05,
+};
+// ===== СКИЛЛЫ =====
+// Уровни 1-10. Каждый уровень: +5% к value, +2% к мана-косту.
+export const MAX_SKILL_LEVEL = 100;
+export const SKILL_LEVEL_EFFECT = 0.05;  // +5% к value за каждый уровень после 1
+export const SKILL_LEVEL_COST   = 0.02;  // +2% к мана-косту за каждый уровень после 1
+
+export const SKILLS = {
+  // ===== УРОН / ДД =====
+  multishot: {
+    id: 'multishot', name: 'Мультивыстрел', icon: '🏹',
+    manaCost: 25, cooldown: 15, castTime: 2.0,
+    effect: { type: 'multishot', value: 0.4, count: 3, interval: 1.0 },
+    tags: ['damage'],
+  },
+  fireball: {
+    id: 'fireball', name: 'Огненный шар', icon: '🔥',
+    manaCost: 40, cooldown: 10, castTime: 2.5,
+    effect: { type: 'damage', value: 1.0, aoe: 1.5, slowProjectile: true },
+    tags: ['damage','aoe'],
+  },
+  poison: {
+    id: 'poison', name: 'Яд', icon: '☠️',
+    manaCost: 30, cooldown: 12, castTime: 1.2,
+    effect: { type: 'dot', value: 0.3, duration: 5, tickInterval: 1.0 },
+    tags: ['damage','dot'],
+  },
+
+  // ===== КОНТРОЛЬ =====
+  stun: {
+    id: 'stun', name: 'Стан', icon: '💫',
+    manaCost: 100, cooldown: 30, castTime: 3.0,
+    effect: { type: 'debuff', stat: 'stun', duration: 3.0, chance: 0.6 },
+    tags: ['control'],
+  },
+  frost: {
+    id: 'frost', name: 'Ледяной шип', icon: '❄️',
+    manaCost: 25, cooldown: 15, castTime: 1.5,
+    effect: { type: 'debuff', stat: 'attackSpeed', value: -50, duration: 4 },
+    tags: ['control'],
+  },
+  silence: {
+    id: 'silence', name: 'Немота', icon: '🤐',
+    manaCost: 50, cooldown: 12, castTime: 1.0,
+    effect: { type: 'debuff', stat: 'silence', duration: 3.0 },
+    tags: ['control'],
+  },
+
+  // ===== ПОДДЕРЖКА =====
+  heal: {
+    id: 'heal', name: 'Хил', icon: '❤️',
+    manaCost: 50, cooldown: 10, castTime: 1.5,
+    effect: { type: 'heal', value: 0.20 },
+    tags: ['support'],
+  },
+  dodge: {
+    id: 'dodge', name: 'Уворот', icon: '💨',
+    manaCost: 20, cooldown: 12, castTime: 0,
+    effect: { type: 'buff', stat: 'dodge', value: 60, duration: 4 },
+    tags: ['support'],
+  },
+  cleanse: {
+    id: 'cleanse', name: 'Очищение', icon: '✨',
+    manaCost: 40, cooldown: 8, castTime: 0,
+    effect: { type: 'cleanse' },
+    tags: ['support'],
+  },
+
+  // ===== СУММОН =====
+  summon_shadow: {
+    id: 'summon_shadow', name: 'Тень', icon: '👤',
+    manaCost: 150, cooldown: 30, castTime: 5.0,
+    effect: { type: 'summon', damagePercent: 10, duration: 20, shadowPerLevels: 10 },
+    tags: ['summon'],
+  },
+};
+
+export const SKILL_ORDER = [
+  'multishot','fireball','poison',
+  'stun','frost','silence',
+  'heal','dodge','cleanse',
+  'summon_shadow',
+];
+
+// Стартовые скиллы (выдаются сразу, 1-й уровень). Слоты = те же 3.
+export const STARTING_SKILLS = {
+  archer: ['multishot', 'dodge', 'stun'],
+  mage:   ['fireball', 'frost', 'heal'],
 };

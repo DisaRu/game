@@ -1,24 +1,25 @@
 import { CONFIG, GRADE_ORDER, BUFF_SCROLLS, BUFF_ORDER, BUFF_DROP_CHANCE, MOBS, POTIONS } from './config.js';
 import { createMob, createGroupId, pickMobDefFromZone, updateMob, aggroGroup } from './mobs.js';
-import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets, calcHitChance, calcEffectiveDefense } from './hero.js';
-import { rollDrops, gradeName, createItem, createBlessedScroll, createBuffScroll, createArenaPass } from './items.js';
+import { spawnPortalInZone, updatePortal, getPortalCooldown, createDungeon, spawnGuard } from './dungeon.js';
+import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets, calcHitChance, calcEffectiveDefense, gainManaOnKill, tryUseSkill, learnSkill } from './hero.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
 import { createShop, buildStock } from './shop.js';
-import { render } from './render.js';
-import { initUI, refreshUI, toast, showCityScreen, hideCityScreen, openArena } from './ui.js';
 import { CITIES, CITY_ORDER, findZone, cityTeleportCost } from './cities.js';
-import { spawnPortalInZone, updatePortal, getPortalCooldown, createDungeon, rollBossDrops, spawnGuard } from './dungeon.js';
-import { castBossAoe, checkAoeHit, checkFireHit, GUARD_CALL, BOSS_AOE } from './bosses.js';
-import { createArena } from './arena.js';
-import { createBots, tickBots } from './bots.js';
-import {
+import { render } from './render.js';
+import { initUI, refreshUI, toast, showCityScreen, hideCityScreen, openArena, updateSkillBar, renderSkillBar } from './ui.js';
+import { gradeName, createItem, createBlessedScroll, createBuffScroll, createArenaPass, createSkillBook } from './items.js';
+import { castBossAoe, checkAoeHit, checkFireHit, GUARD_CALL, BOSS_AOE, BOSSES } from './bosses.js';
+import { createArena, ratingChange } from './arena.js';
+import { createBots, tickBots, botToArenaHero } from './bots.js';
+import { createTestBots } from './test-bots.js';import {
   initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie
 } from './audio.js';
 import { initAuth, getAuthUser } from './auth-ui.js';
 import { saveProgress, saveLocalBackup } from './save.js';
 import { startOfflineFarm, getOfflineStatus, stopOffline, saveOfflineLocal, setOfflineUid, OFFLINE_MAX_HOURS } from './offline.js';
+import { rollDrops, applyDrops } from './loot.js';
+import { updateBattle } from './battle.js';// === ПРОГРЕВ SUPABASE ===
 
-// === ПРОГРЕВ SUPABASE ===
 import { supabase } from './supabase.js';
 
 async function warmupSupabase() {
@@ -53,9 +54,18 @@ const state = {
   sessionStats: { gold: 0, xp: 0, kills: 0, items: 0, scrolls: 0, blessed: 0 },
   lastSession: null,
 
+  autoBattle: false,
+
+  arenaMode: false,
+  arenaEnemy: null,
+  arenaBot: null,
+  arenaTime: 0,
+  _heroOrigRange: null,
+
   portal: null,
   dungeon: null,
   aoeList: [],
+  shadows: [],
   offlineAliveCheck: false,
   offlineInterval: null,
   aliveTime: 0,
@@ -155,6 +165,7 @@ canvas.addEventListener('touchcancel', handleJoyEnd, { passive: true });
 
 canvas.addEventListener('click', (e) => {
   if (!state.inBattle || !state.hero) return;
+  if (state.arenaMode) return;
   if (state.portal && state.portal.active && !state.dungeon) {
     const px = (e.clientX) / layout.cellPx + camera.x;
     const py = (e.clientY) / layout.cellPx + camera.y;
@@ -220,6 +231,16 @@ function bindHudActions() {
       updateHudActions();
     });
   });
+  // Кнопка АВТО
+  const autoBtn = document.getElementById('btn-auto');
+  if (autoBtn) {
+    autoBtn.addEventListener('click', () => {
+      state.autoBattle = !state.autoBattle;
+      autoBtn.classList.toggle('on', state.autoBattle);
+      autoBtn.textContent = state.autoBattle ? 'АВТО ✓' : 'АВТО';
+      toast(state.autoBattle ? '🤖 Автобой включён' : '🤖 Автобой выключен', 'legendary');
+    });
+  }
 
   // Кнопка офлайн-фарма
   const offlineBtn = document.getElementById('hud-offline');
@@ -269,7 +290,7 @@ function startGame(classType) {
   state.inBattle = false;
 
   arena.bots = createBots(100);
-
+  arena.bots.push(...createTestBots());
   document.getElementById('class-select').classList.add('hidden');
   document.getElementById('bottom-panel').classList.remove('hidden');
 
@@ -337,6 +358,7 @@ function enterZone(zoneId) {
   state.dungeon = null;
   state.aoeList = [];
   state.offlineAliveCheck = false;
+    state.shadows = [];
   state.aliveTime = 0;
 
   document.getElementById('zone-name').textContent = zone.name;
@@ -429,15 +451,28 @@ function travelToCity(cityId, cost) {
 }
 
 function updateHUD() {
-  // Во время офлайн-досчёта HUD не трогаем — обновим один раз по окончании батча
   if (window._offlineSim) return;
   const h = state.hero; if (!h) return;
+
+  // HP-бар (текст внутри)
   document.getElementById('hp').textContent = `${Math.ceil(h.hp)}/${h.maxHp}`;
+  document.getElementById('hp-fill').style.width = Math.max(0, Math.min(100, (h.hp / h.maxHp) * 100)) + '%';
+
+  // Мана-бар (текст внутри)
+  const manaText = document.getElementById('mana');
+  const manaFill = document.getElementById('mana-fill');
+  if (manaText && manaFill && h.maxMana > 0) {
+    manaText.textContent = `${Math.floor(h.mana)}/${h.maxMana}`;
+    manaFill.style.width = Math.max(0, Math.min(100, (h.mana / h.maxMana) * 100)) + '%';
+  }
+
   document.getElementById('gold').textContent = state.gold;
   document.getElementById('level').textContent = h.level;
   document.getElementById('xp-fill').style.width = Math.min(100, (h.xp/h.xpToNext)*100) + '%';
 
   const sAtk = document.getElementById('stat-atk');
+
+
   if (sAtk) {
     sAtk.textContent = Math.round(h.attack);
     document.getElementById('stat-def').textContent = Math.round(h.defense);
@@ -448,6 +483,7 @@ function updateHUD() {
   }
 
   updateHudActions();
+  updateSkillBar();
 }
 
 function updateHudActions() {
@@ -557,8 +593,7 @@ function trySpawnMob() {
 
 function heroDie() {
   const h = state.hero;
-  const lost = Math.floor(h.xp * CONFIG.death.xpLossPercent);
-  h.xp -= lost;
+  const lost = Math.floor(h.xp * (CONFIG.death?.xpLossPercent ?? 0.10));
   sfxHeroDie();
 
   // Во время офлайн-досчёта не трогаем death-screen/combat-log — плашка
@@ -627,8 +662,9 @@ function loop(now) {
   const shouldTick = hero && !hero.dead && state.currentZone && state.inBattle && !hero.offlineActive;
   const inOfflineZone = hero && hero.offlineActive && state.currentZone && state.currentZone.id === hero.offlineZoneId && !state.dungeon;
 
-  if (shouldTick) {
-    // === ОБЫЧНЫЙ БОЙ: update(dt) ===
+   if (state.arenaMode) {
+    updateArena(dt);
+  } else if (shouldTick) {
     update(dt);
   }
 
@@ -660,7 +696,6 @@ function loop(now) {
 
   requestAnimationFrame(loop);
 }
-
 // Фоновый тик офлайна через setInterval — работает даже в фоновой вкладке
 // Симуляция дробится на подшаги dt=0.05: тик dt=1 сек ломал физику боя
 // (снаряды телепортировались мимо мобов, хил не успевал) и вешал вкладку
@@ -841,10 +876,477 @@ function flushOfflineCombatLog(hero, elapsedSec) {
   if (hero.offlineLog.length > 50) hero.offlineLog.shift();
 }
 
+
+
+
+// ===== СКИЛЛЫ: ПРИМЕНЕНИЕ ЭФФЕКТОВ =====
+function findNearestMob(hero, maxRange) {
+  const candidates = [];
+  if (state.arenaMode) {
+    if (hero.team === 'enemy') {
+      if (state.hero && !state.hero.dead) candidates.push(state.hero);
+    } else {
+      if (state.arenaEnemy && !state.arenaEnemy.dead) candidates.push(state.arenaEnemy);
+    }
+  } else {
+    for (const m of state.mobs) if (!m.dead) candidates.push(m);
+  }
+  let best = null, bestD = Infinity;
+  for (const m of candidates) {
+    const d = Math.hypot(m.x - hero.x, m.y - hero.y);
+    if (d <= maxRange && d < bestD) { best = m; bestD = d; }
+  }
+  return best;
+}
+
+function applySkillEffect(hero, result) {
+  const fx = result.effect;
+  if (!fx) return;
+  const base = CONFIG.hero[hero.classType];
+  const now = Date.now();
+
+  switch (fx.type) {
+    case 'multishot': {
+      const target = findNearestMob(hero, hero.range + 3);
+      if (!target) return;
+      const count = fx.count || 3;
+      const interval = fx.interval || 1.0;
+      const baseAng = Math.atan2(target.y - hero.y, target.x - hero.x);
+      const colors = ['#fbbf24', '#f97316', '#ef4444'];
+      for (let i = 0; i < count; i++) {
+        const ang = baseAng; // все три по прямой
+        state.projectiles.push({
+          x: hero.x, y: hero.y,
+          vx: Math.cos(ang) * base.projectileSpeed,
+          vy: Math.sin(ang) * base.projectileSpeed,
+          damage: hero.attack * fx.value,
+          aoe: 0, color: colors[i % colors.length],
+          weaponType: hero.weaponType,
+          life: 3, trail: [],
+          isCrit: false, isExecute: false, doubleStrike: false,
+          isSkill: true, owner: hero,
+          delay: i * interval,
+        });
+      }
+      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.0, maxLife: 1.0, color: '#fbbf24', text: '🏹 МУЛЬТИ x' + count, big: true });
+      break;
+    }
+    case 'damage': {
+      const target = findNearestMob(hero, hero.range + 3);
+      if (!target) return;
+      const tx = target.x - hero.x, ty = target.y - hero.y;
+      const dist = Math.hypot(tx, ty) || 1;
+      const speed = base.projectileSpeed * (fx.slowProjectile ? 0.5 : 1);
+      state.projectiles.push({
+        x: hero.x, y: hero.y,
+        vx: tx / dist * speed,
+        vy: ty / dist * speed,
+        damage: hero.attack * fx.value,
+        aoe: fx.aoe || 0,
+        color: '#f97316', weaponType: hero.weaponType,
+        life: 4, trail: [],
+        isCrit: false, isExecute: false, doubleStrike: false,
+        isSkill: true, owner: hero,
+        bigProjectile: !!fx.slowProjectile,
+      });
+      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.0, maxLife: 1.0, color: '#f97316', text: '🔥 ОГНЕННЫЙ ШАР', big: true });
+      state.effects.push({ kind: 'flash', x: hero.x, y: hero.y, life: 0.4, maxLife: 0.4, color: '#f97316', radius: 1.4 });
+      break;
+    }
+    case 'dot': {
+      const target = findNearestMob(hero, hero.range + 3);
+      if (!target) return;
+      const duration = fx.duration || 5;
+      const tickInterval = fx.tickInterval || 1;
+      const ticks = Math.max(1, Math.floor(duration / tickInterval));
+      const dmgPerTick = Math.max(1, Math.floor(hero.attack * fx.value));
+      if (!target.dots) target.dots = [];
+      target.dots.push({
+        damage: dmgPerTick,
+        ticksLeft: ticks,
+        nextTick: now + tickInterval * 1000,
+        tickInterval,
+        sourceName: hero.name,
+        sourceTeam: hero.team || 'ally',
+      });
+      state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#22c55e', text: '☠️ ЯД', big: true });
+      break;
+    }
+      case 'heal': {
+      const v = (typeof fx?.value === 'number' && fx.value > 0) ? fx.value : 0.20;
+      const hpMax = hero.maxHp || 1;
+      const heal = Math.floor(hpMax * v);
+      const missing = Math.max(0, hpMax - hero.hp);
+      const actual = Math.min(heal, missing);
+      hero.hp = Math.min(hpMax, hero.hp + actual);
+      const shown = Math.floor(actual);
+      state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.2, maxLife: 1.2, color: '#4ade80', text: '+' + shown, big: true });
+      state.effects.push({ kind: 'heal_ring', x: hero.x, y: hero.y, life: 1.2, maxLife: 1.2, color: '#4ade80' });
+      break;
+    }
+    case 'buff': {
+      if (fx.stat === 'dodge') {
+        if (!hero.skillBuffs) hero.skillBuffs = {};
+        hero.skillBuffs.dodge = { value: fx.value, until: now + fx.duration * 1000 };
+        recalcStats(hero);
+        state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.2, maxLife: 1.2, color: '#80d4e0', text: '💨 DODGE', big: true });
+        state.effects.push({ kind: 'spin', x: hero.x, y: hero.y, life: fx.duration, maxLife: fx.duration, color: '#80d4e0', owner: hero });
+      }
+      break;
+    }
+    case 'debuff': {
+      const target = findNearestMob(hero, hero.range + 4);
+      if (!target) return;
+      if (fx.stat === 'stun') {
+        if (Math.random() < (fx.chance || 1)) {
+          target.stunUntil = now + fx.duration * 1000;
+          state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#fbbf24', text: '💫 STUN', big: true });
+          state.effects.push({ kind: 'stun_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#fbbf24', owner: target });
+        } else {
+          state.effects.push({ x: target.x, y: target.y - 1.2, life: 0.9, maxLife: 0.9, color: '#94a3b8', text: 'MISS', big: false });
+        }
+      } else if (fx.stat === 'attackSpeed') {
+        const mult = Math.max(0.1, 1 + (fx.value / 100));
+        target.attackSpeedDebuff = { mult, until: now + fx.duration * 1000 };
+        state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#67e8f9', text: '❄️ ЗАМЕДЛЕНИЕ', big: true });
+        state.effects.push({ kind: 'frost_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#67e8f9', owner: target });
+         } else if (fx.stat === 'silence') {
+        target.silenceUntil = now + fx.duration * 1000;
+        if (target.casting) target.casting = null;  // мгновенно прерываем
+        state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#3b82f6', text: '🤐 НЕМОТА', big: true });
+        state.effects.push({ kind: 'silence_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#3b82f6', owner: target });
+      }
+      break;
+    }
+    case 'cleanse': {
+      if (hero.stunUntil) hero.stunUntil = 0;
+      if (hero.slowUntil) hero.slowUntil = 0;
+      if (hero.silenceUntil) hero.silenceUntil = 0;
+      if (hero.dots) hero.dots = [];
+      if (hero.attackSpeedDebuff) hero.attackSpeedDebuff = null;
+      state.effects.push({ kind: 'cleanse_ring', x: hero.x, y: hero.y, life: 0.8, maxLife: 0.8, color: '#fef3c7' });
+      state.effects.push({ x: hero.x, y: hero.y - 1.2, life: 1.2, maxLife: 1.2, color: '#fef3c7', text: '✨ ОЧИЩЕН', big: true });
+      break;
+    }
+    case 'summon': {
+      const lvl = result.level || 1;
+      const perLevels = fx.shadowPerLevels || 10;
+      // На 10/20/30 уровне — +1 тень. На 10м их 2, на 20м — 3, и т.д.
+      const count = 1 + Math.floor(lvl / perLevels);
+      const duration = fx.duration || 20;
+      const damagePercent = fx.damagePercent || 10;
+         if (!state.shadows) state.shadows = [];
+
+      // Направление на ближайшего врага
+      const enemyTeam = (hero.team === 'enemy') ? (state.hero ? [state.hero] : []) : state.mobs;
+      const nearestEnemy = enemyTeam.find(e => e && !e.dead) || null;
+      let dirX = 0, dirY = -1;
+      if (nearestEnemy) {
+        const dx = nearestEnemy.x - hero.x;
+        const dy = nearestEnemy.y - hero.y;
+        const d = Math.hypot(dx, dy) || 1;
+        dirX = dx / d;
+        dirY = dy / d;
+      }
+
+      // Разлёт по кругу вокруг точки спавна
+      const baseDist = 2.5;
+          for (let i = 0; i < count; i++) {
+        const angle = (i / Math.max(1, count)) * Math.PI * 2;
+        const spread = 1.2;
+        const ox = Math.cos(angle) * spread;
+        const oy = Math.sin(angle) * spread;
+        const shadowPct = (damagePercent || 10) / 100;
+        state.shadows.push({
+          x: hero.x + dirX * baseDist + ox,
+          y: hero.y + dirY * baseDist + oy,
+          ownerName: hero.name,
+          ownerTeam: hero.team || 'ally',
+
+          // 10% от статов игрока
+          attack: Math.max(1, Math.floor((hero.attack || 10) * shadowPct)),
+          hp: Math.max(1, Math.floor((hero.maxHp || 100) * shadowPct)),
+          maxHp: Math.max(1, Math.floor((hero.maxHp || 100) * shadowPct)),
+          defense: Math.floor((hero.defense || 0) * shadowPct),
+          attackSpeed: Math.max(0.4, (hero.attackSpeed || 1) * 0.6),
+          critChance: (hero.critChance || 5) * 0.5,
+          critDamage: (hero.critDamage || 50),
+          accuracy: hero.accuracy || 0,
+          armorPen: hero.armorPen || 0,
+          lifesteal: 0,
+          dodge: 0,
+          range: Math.max(3, (hero.range || 4) * 0.8),
+          moveSpeed: 0.4,
+          damage: Math.max(1, Math.floor((hero.attack || 10) * shadowPct)),
+
+          cooldown: 0,
+          expiresAt: now + duration * 1000,
+          emoji: hero.emoji,
+          name: hero.name,
+          size: 0.7,
+        });
+      
+      }
+      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.5, maxLife: 1.5, color: '#a855f7', text: '👤 ТЕНЬ x' + count, big: true });
+      break;
+    }
+  }
+}
+
+function useSkillFromSlot(slotIndex) {
+  const hero = state.hero;
+  if (!hero || hero.dead) return;
+  const skillId = hero.skillSlots?.[slotIndex];
+  if (!skillId) return;
+  const r = tryUseSkill(hero, skillId);
+  if (!r.ok) return;
+  applySkillEffect(hero, r);
+  updateSkillBar();
+}
+// ===== АРЕНА =====
+
+function enterArena(bot) {
+  const hero = state.hero;
+  if (!hero || !bot) return;
+
+  // Пропуск
+  const passIdx = hero.backpack.findIndex(x => x.kind === 'pass');
+  if (passIdx < 0) { toast('Нет пропуска на арену!', 'epic'); return; }
+  const pass = hero.backpack[passIdx];
+  if ((pass.count || 1) > 1) pass.count--;
+  else hero.backpack.splice(passIdx, 1);
+
+  // Создать врага
+  state.arenaBot = bot;
+  state.arenaEnemy = botToArenaHero(bot);
+
+    // Позиции: оба чуть выше, чтобы не лезли под HUD на мобиле
+  hero.x = COLS / 2;
+  hero.y = 24;
+  hero.facing = -1;
+  state.arenaEnemy.x = COLS / 2;
+  state.arenaEnemy.y = 12;
+  state.arenaEnemy.facing = 1;
+
+  // HP/мана фулл, кулдауны сброшены
+  hero.hp = hero.maxHp;
+  hero.mana = hero.maxMana;
+  hero.dead = false;
+  hero.cooldown = 0;
+  hero.skillCooldowns = {};
+
+  // Range — на арене всё попадает, без движения
+  state._heroOrigRange = hero.range;
+  hero.range = 999;
+  state.arenaEnemy.range = 999;
+
+  // Флаги
+  state.arenaMode = true;
+  state.inBattle = true;
+  state.mobs = [];
+  state._arenaLog = [];
+  state.arenaRageApplied = false;
+  hero._rageBaseAttack = 0;
+  hero._rageBaseSpeed = 0;
+  state.projectiles = [];
+  state.effects = [];
+  state.portal = null;
+  state.dungeon = null;
+  state.aoeList = [];
+
+  // UI — плашка арены
+  hideCityScreen();
+  if (typeof window.showArenaHud === 'function') {
+    try { window.showArenaHud(bot.name, bot.rating); } catch (e) { console.error('showArenaHud error:', e); }
+  }
+
+  // Страховка — принудительно показываем боковые панели
+  const _me = document.getElementById('arena-side-me');
+  const _opp = document.getElementById('arena-side-opp');
+  const _ah = document.getElementById('arena-hud');
+  if (_me) { _me.classList.remove('hidden'); _me.style.display = 'flex'; }
+  if (_opp) { _opp.classList.remove('hidden'); _opp.style.display = 'flex'; }
+  if (_ah) { _ah.classList.remove('hidden'); _ah.style.display = ''; }
+  document.body.classList.add('arena-active');
+
+  updateHUD();
+  renderSkillBar();
+  console.log('[enterArena] after show:', document.getElementById('arena-side-me')?.className);
+}
+
+function updateArena(dt) {
+  const hero = state.hero;
+  const enemy = state.arenaEnemy;
+  if (!hero || !enemy) { endArena(); return; }
+
+  // ===== ЕДИНОЕ ЯДРО: два героя, без движения =====
+  const logArena = (ev) => {
+    if (state._arenaLog) {
+      const clean = { ...ev, t: Math.round((state.arenaElapsed || 0) * 10) / 10 };
+      if (typeof clean.damage === 'number') clean.damage = Math.round(clean.damage);
+      if (typeof clean.heal === 'number') clean.heal = Math.round(clean.heal);
+      state._arenaLog.push(clean);
+    }
+  };
+  if (!state.shadows) state.shadows = [];
+
+  updateBattle(dt, {
+    heroes: [hero],
+    enemies: [enemy],
+    shadows: state.shadows,
+    projectiles: state.projectiles,
+    effects: state.effects,
+    aoeList: [],
+    bounds: { cols: COLS, rows: ROWS },
+    moveInput: { left: false, right: false, up: false, down: false },
+    currentZone: null,
+    autoBattle: state.autoBattle,
+    allowMovement: false,
+    addEffect,
+    applySkillEffect,
+    noteOfflineEvent: () => {},
+    toast: () => {},
+    logArena,
+  });
+
+  // Клампим HP и флажок death (battle.js не ставит dead)
+  if (hero.hp <= 0 && !hero.dead) { hero.hp = 0; hero.dead = true; }
+  if (enemy.hp <= 0 && !enemy.dead) { enemy.hp = 0; enemy.dead = true; }
+
+  // Тик эффектов
+  for (let i = state.effects.length - 1; i >= 0; i--) {
+    state.effects[i].life -= dt;
+    if (state.effects[i].life <= 0) state.effects.splice(i, 1);
+  }
+
+  // Камера — фиксируем на середину арены
+  camera.x = Math.max(0, Math.min(COLS - camera.w, COLS / 2 - camera.w / 2));
+  camera.y = Math.max(0, Math.min(ROWS - camera.h, ROWS / 2 - camera.h / 2));
+
+  updateHUD();
+  if (typeof window.updateArenaHud === 'function') window.updateArenaHud();
+
+  // ===== ЯРОСТЬ БОЯ (через 2 минуты) =====
+  if (!state.arenaRageApplied && state.arenaElapsed >= 120) {
+    state.arenaRageApplied = true;
+    hero._rageBaseAttack = hero._rageBaseAttack || hero.attack;
+    hero._rageBaseSpeed = hero._rageBaseSpeed || hero.attackSpeed;
+    enemy._rageBaseAttack = enemy._rageBaseAttack || enemy.attack;
+    enemy._rageBaseSpeed = enemy._rageBaseSpeed || enemy.attackSpeed;
+    hero.attack = hero._rageBaseAttack * 2;
+    hero.attackSpeed = hero._rageBaseSpeed * 2;
+    enemy.attack = enemy._rageBaseAttack * 2;
+    enemy.attackSpeed = enemy._rageBaseSpeed * 2;
+    toast('⚡ ЯРОСТЬ БОЯ! Урон и скорость ×2', 'legendary');
+    if (typeof window.updateArenaHud === 'function') window.updateArenaHud();
+  }
+
+  // Проверка конца — только смерть
+  if (hero.dead || enemy.dead) {
+    endArena();
+  }
+}
+// Принудительно завершаем бой (враг «умирает» — победа игрока не считается)
+function exitArena() {
+  const hero = state.hero;
+  const enemy = state.arenaEnemy;
+  if (!hero || !enemy || !state.arenaMode) return;
+
+  hero.dead = false;
+  enemy.dead = true;
+  endArena();
+}
+
+function endArena() {
+  const hero = state.hero;
+  const enemy = state.arenaEnemy;
+  const bot = state.arenaBot;
+  if (!hero || !enemy || !bot) {
+    state.arenaMode = false;
+    return;
+  }
+
+  // Результат — только по смерти
+  let result;
+  if (enemy.dead && !hero.dead) result = 'win';
+  else if (hero.dead && !enemy.dead) result = 'loss';
+  else result = 'draw';
+
+  const won = result === 'win';
+  const oldRating = hero.arena.rating;
+  const change = ratingChange(oldRating, bot.rating, won);
+  hero.arena.rating = Math.max(0, oldRating + change);
+  if (won) hero.arena.wins++;
+  else if (result === 'loss') hero.arena.losses++;
+
+  hero.arena.history.unshift({
+    botName: bot.name,
+    botRating: bot.rating,
+    result,
+    change,
+    timestamp: Date.now(),
+  });
+  if (hero.arena.history.length > 20) hero.arena.history.pop();
+
+  // Вернуть range
+  if (state._heroOrigRange != null) {
+    hero.range = state._heroOrigRange;
+    recalcStats(hero);
+    state._heroOrigRange = null;
+  }
+
+  // Флаги
+  state.arenaMode = false;
+  state.arenaEnemy = null;
+  state.arenaBot = null;
+  state.projectiles = [];
+  state.effects = [];
+  state.shadows = [];
+  state.inBattle = false;
+
+  // UI
+  // UI
+  if (typeof window.hideArenaHud === 'function') window.hideArenaHud();
+  // Страховка на случай сбоя
+  const _hideIds = ['arena-hud', 'arena-side-me', 'arena-side-opp', 'arena-mobile-hud'];
+  for (const id of _hideIds) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  }
+  document.body.classList.remove('arena-active');
+  const resultData = {
+    won, result,
+    oldRating,
+    newRating: hero.arena.rating,
+    ratingChange: change,
+    botName: bot.name,
+    botRating: bot.rating,
+    log: state._arenaLog || [],
+    duration: state.arenaElapsed || 0,
+    myHpLeft: Math.max(0, Math.floor(hero.hp)),
+    myMaxHp: hero.maxHp,
+    oppHpLeft: Math.max(0, Math.floor(enemy.hp)),
+    oppMaxHp: enemy.maxHp,
+  };
+  state.lastArenaResult = resultData;
+  state._arenaLog = [];
+
+  // Показать результат и вернуть в город
+  if (typeof window.onArenaEnd === 'function') {
+    window.onArenaEnd(resultData);
+  } else {
+    toast(won ? '🏆 Победа!' : (result === 'draw' ? '🤝 Ничья' : '💀 Поражение'), 'legendary');
+    showCityScreen();
+    updateHUD();
+  }
+
+  setTimeout(() => saveProgress(state), 300);
+}
+
 function update(dt) {
-   const hero = state.hero;
+  const hero = state.hero;
   if (!hero) return;
-  if (!state.currentZone) return;  // нет зоны — нет боя
+  if (!state.currentZone) return;
   if (hero.dead) {
     state.deathTimer -= dt;
     if (!window._offlineSim) {
@@ -857,21 +1359,17 @@ function update(dt) {
     return;
   }
 
+  // ===== Аукцион =====
   tickAuction(auction, dt);
   const sold = collectSold(auction, state);
   if (sold > 0) toast(`Продано с аукциона: +${sold}💰`, 'legendary');
 
-  const moveInput = {
-    left: input.left || input.joyX < -0.2,
-    right: input.right || input.joyX > 0.2,
-    up: input.up || input.joyY < -0.2,
-    down: input.down || input.joyY > 0.2,
-  };
-
+  // ===== Портал =====
   if (state.portal && !state.dungeon) {
     updatePortal(state.portal, dt, !!state.dungeon);
   }
 
+  // ===== Спавн мобов =====
   if (!state.dungeon && state.currentZone) {
     const sp = state.currentZone.spawn;
     state.spawnTimer -= dt;
@@ -880,292 +1378,97 @@ function update(dt) {
       state.spawnTimer = sp.interval * (0.7 + Math.random() * 0.6);
     }
   }
-  // Передаём safeRadius из зоны
   window.__zoneSafeRadius = state.currentZone?.spawn?.safeRadius ?? 4;
 
-  for (const m of state.mobs) {
-    if (m.dead) continue;
-    const action = updateMob(m, dt, hero, hero.x, hero.y);
-    m.x = Math.max(0.3, Math.min(COLS - 0.3, m.x));
-    m.y = Math.max(0.3, Math.min(ROWS - 0.3, m.y));
+  // ===== Ввод движения =====
+  const moveInput = {
+    left: input.left || input.joyX < -0.2,
+    right: input.right || input.joyX > 0.2,
+    up: input.up || input.joyY < -0.2,
+    down: input.down || input.joyY > 0.2,
+  };
 
-    if (m.boss && !m.dead) {
-      if (m.castGlow > 0) m.castGlow -= dt;
+  // ===== ЕДИНОЕ ЯДРО БОЯ =====
+  if (!state.shadows) state.shadows = [];
+  const { killed, heroDied } = updateBattle(dt, {
+    heroes: [hero],
+    enemies: state.mobs,
+    shadows: state.shadows,
+    projectiles: state.projectiles,
+    effects: state.effects,
+    aoeList: state.aoeList,
+    bounds: { cols: COLS, rows: ROWS },
+    moveInput,
+    currentZone: state.currentZone,
+    autoBattle: state.autoBattle,
+    allowMovement: true,
+    addEffect,
+    applySkillEffect,
+    noteOfflineEvent: noteOfflineCombatEvent,
+    toast,
+    spawnBossGuard: spawnGuard,
+  });
 
-      m.aoeTimer -= dt;
-      if (m.aoeTimer <= 0) {
-        const grade = m.grade || 'ng';
-        const aoeDef = BOSS_AOE[grade] || BOSS_AOE.ng;
-        const interval = aoeDef.interval;
-        m.aoeTimer = interval[0] + Math.random() * (interval[1] - interval[0]);
-        m.castGlow = 0.6;
-        const aoe = castBossAoe(m, hero);
-        if (aoe) state.aoeList.push(aoe);
-      }
-
-      const call = GUARD_CALL[m.grade || 'ng'] || GUARD_CALL.ng;
-      m.guardTimer -= dt;
-      if (m.guardTimer <= 0) {
-        m.guardTimer = call.interval;
-        const guardsAlive = state.mobs.filter(x => x.dungeonGuard && !x.dead).length;
-        const canSpawn = Math.min(call.count, call.max - guardsAlive);
-        for (let g = 0; g < canSpawn; g++) {
-          const angle = Math.random() * Math.PI * 2;
-          const dist = 3 + Math.random() * 4;
-          const gx = Math.max(1, Math.min(COLS - 1, m.x + Math.cos(angle) * dist));
-          const gy = Math.max(1, Math.min(ROWS - 1, m.y + Math.sin(angle) * dist));
-          const guard = spawnGuard(state.currentZone, gx, gy, null);
-          state.mobs.push(guard);
-        }
-        if (canSpawn > 0) toast(`⚠️ Босс призвал ${canSpawn} охраны`, 'epic');
-      }
-    }
-
-    if (action === 'attack') {
-      const mobDmg = m.boss ? bossDamageFor(hero) : mobDamageFor(hero, state.currentZone.diff);
-      const result = damageHero(hero, mobDmg);
-      if (result === 'dodge') {
-        noteOfflineCombatEvent('dodge', { mob: m.name || m.id });
-        addEffect({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a5f3fc', text: 'DODGE' });
-      } else {
-        if (hero.thornsPercent > 0) {
-          const thorns = Math.floor(mobDmg * hero.thornsPercent);
-          m.hp -= thorns;
-          m.hitFlash = 0.15;
-          addEffect({ x: m.x, y: m.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a855f7', text: '🌵' + thorns, big: true });
-          addEffect({ kind: 'flash', x: m.x, y: m.y, life: 0.4, maxLife: 0.4, color: '#a855f7', radius: 0.9 });
-        }
-        sfxHeroHit();
-        noteOfflineCombatEvent('hit', { mob: m.name || m.id, dmg: mobDmg });
-        addEffect({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ef4444', text: '-' + mobDmg });
-        if (result === 'dead') { heroDie(); return; }
-      }
-      updateHUD();
-    }
-  }
-
-  updateHero(hero, dt, state.mobs, state.projectiles, moveInput, { cols: COLS, rows: ROWS }, state.effects);
-
-  const potResult = autoUsePotion(hero, dt);
-  if (potResult) {
-    addEffect({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: potResult.color, text: '+' + potResult.healed, big: true });
-  }
-
-  for (let i = state.aoeList.length - 1; i >= 0; i--) {
-    const aoe = state.aoeList[i];
-    aoe.life -= dt;
-
-    if (aoe.type === 'fire') {
-      if (aoe.life > aoe.life - 0.01 || aoe.life <= 5) {
-        for (const s of aoe.spots) {
-          if (s.life <= 0) continue;
-          s.life -= dt;
-          s.tickTimer -= dt;
-          if (s.tickTimer <= 0) {
-            s.tickTimer = 1.0;
-            const d = Math.hypot(s.x - hero.x, s.y - hero.y);
-            if (d <= s.radius) {
-              const dmg = Math.max(1, s.damage - Math.floor(hero.defense * 0.5));
-              hero.hp -= dmg;
-              hero.hitAnim = 0.15;
-              addEffect({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#ea580c', text: '-' + Math.floor(dmg) });
-              sfxHeroHit();
-              if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; heroDie(); return; }
-            }
-          }
-        }
-      }
-    } else if (aoe.life <= 0) {
-      if (checkAoeHit(aoe, hero)) {
-        const dmg = bossAoeDamageFor(hero);
-        hero.hp -= dmg;
-        hero.hitAnim = 0.2;
-        addEffect({ x: hero.x, y: hero.y - 1, life: 1.0, maxLife: 1.0, color: '#dc2626', text: '-' + Math.floor(dmg), big: true });
-        sfxHeroHit();
-        if (hero.hp <= 0) { hero.hp = 0; hero.dead = true; heroDie(); return; }
-      }
-      state.aoeList.splice(i, 1);
-      continue;
-    }
-
-    if (aoe.life <= -10) state.aoeList.splice(i, 1);
-  }
-
-  for (let i = state.projectiles.length - 1; i >= 0; i--) {
-    const p = state.projectiles[i];
-    p.trail.push({ x: p.x, y: p.y });
-    if (p.trail.length > 5) p.trail.shift();
-    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-
-    let hit = false;
-    for (const m of state.mobs) {
-      if (m.dead) continue;
-      const dist = Math.hypot(m.x - p.x, m.y - p.y);
-      if (dist < m.size * 0.5 + 0.2) {
-        const hitChance = calcHitChance(hero, m);
-        if (Math.random() * 100 > hitChance) {
-          noteOfflineCombatEvent('miss');
-          addEffect({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: '#a5f3fc', text: 'MISS' });
-          hit = true;
-          break;
-        }
-
-        const effDef = calcEffectiveDefense(m, hero);
-        let finalDamage = Math.max(1, p.damage - Math.floor(effDef * 0.5));
-
-        if (p.doubleStrike && !p.doubleStrikeDone) {
-          p.doubleStrikeDone = true;
-          finalDamage *= 2;
-          addEffect({ x: m.x, y: m.y - 1.2, life: 0.8, maxLife: 0.8, color: '#fbbf24', text: '👊 x2', big: true });
-          addEffect({ kind: 'flash', x: m.x, y: m.y, life: 0.4, maxLife: 0.4, color: '#fbbf24', radius: 1.0 });
-        }
-
-        if (p.isExecute) {
-          addEffect({ x: m.x, y: m.y - 1.6, life: 0.9, maxLife: 0.9, color: '#dc2626', text: '💀 КАЗНЬ', big: true });
-        }
-
-        m.hp -= finalDamage; m.hitFlash = 0.12; m.aggro = true;
-        if (m.groupId) aggroGroup(state.mobs, m.groupId);
-        sfxHit();
-        noteOfflineCombatEvent(p.isCrit ? 'crit' : 'deal', { mob: m.name || m.id, dmg: Math.floor(finalDamage) });
-        const dmgColor = p.isCrit ? '#f97316' : '#facc15';
-        const dmgText = (p.isCrit ? '💥' : '-') + Math.floor(finalDamage);
-        addEffect({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: dmgColor, text: dmgText, big: p.isCrit });
-
-        if (p.aoe > 0) {
-          for (const other of state.mobs) {
-            if (other === m || other.dead) continue;
-            if (Math.hypot(other.x - m.x, other.y - m.y) <= p.aoe) {
-              other.hp -= finalDamage * 0.6; other.hitFlash = 0.12; other.aggro = true;
-              if (other.groupId) aggroGroup(state.mobs, other.groupId);
-            }
-          }
-        }
-
-        const chainCount = getChainTargets(hero);
-        if (chainCount > 0) {
-          const candidates = state.mobs
-            .filter(x => !x.dead && x !== m && Math.hypot(x.x - m.x, x.y - m.y) <= 4)
-            .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))
-            .slice(0, chainCount);
-
-          let prev = m;
-          for (const target of candidates) {
-            target.hp -= finalDamage * 0.7;
-            target.hitFlash = 0.12; target.aggro = true;
-            if (target.groupId) aggroGroup(state.mobs, target.groupId);
-            addEffect({ x: target.x, y: target.y - 0.5, life: 0.6, maxLife: 0.6, color: '#a855f7', text: '⚡' + Math.floor(finalDamage * 0.7), big: true });
-            for (let k = 0; k < 2; k++) {
-              addEffect({ kind: 'chain', x1: prev.x, y1: prev.y, x2: target.x, y2: target.y, life: 0.35, maxLife: 0.35, color: k === 0 ? '#a855f7' : '#d4a5ff' });
-            }
-            addEffect({ kind: 'flash', x: target.x, y: target.y, life: 0.3, maxLife: 0.3, color: '#a855f7', radius: 0.8 });
-            prev = target;
-          }
-          if (candidates.length > 0) {
-            addEffect({ x: m.x, y: m.y - 2.0, life: 0.7, maxLife: 0.7, color: '#d4a5ff', text: '⚡⚡⚡ x' + candidates.length, big: true });
-          }
-        }
-
-        hit = true; break;
-      }
-    }
-    if (hit || p.life <= 0 || p.y < -2 || p.y > ROWS + 2 || p.x < -2 || p.x > COLS + 2) {
-      state.projectiles.splice(i, 1);
-    }
-  }
-
+  // ===== Обработка убийств (xp, дроп, level up) =====
   const prevLevel = hero.level;
-  for (let i = state.mobs.length - 1; i >= 0; i--) {
-    const m = state.mobs[i];
-    if (m.hp <= 0) {
-         m.dead = true;
-      state.gold += m.reward;
-      addXp(hero, m.xp);
-      state.sessionStats.gold += m.reward;
-      state.sessionStats.xp += m.xp;
-      state.sessionStats.kills++;
-          if (hero.offlineActive && hero.offlineCounters) {
-        hero.offlineCounters.gold += m.reward;
-        hero.offlineCounters.xp += m.xp;
-        hero.offlineCounters.kills++;
-        noteOfflineCombatEvent('kill', { gold: m.reward });
-      }
-      sfxDeath();
+  const _lootCtx = {
+    cityGrade: CITIES[state.currentCity].grade,
+    heroWeaponType: hero.weaponType,
+    heroWeaponGrade: hero.equipment?.weapon?.grade || null,
+  };
 
-      if (m.boss && state.dungeon) {
-        const drops = rollBossDrops(hero, state.currentZone, state.dungeon.cityGrade);
-        state.gold += drops.gold;
-        state.sessionStats.gold += drops.gold;
-        toast(`💰 +${drops.gold} с босса`, 'legendary');
+  for (const m of killed) {
+    addXp(hero, m.xp);
+    gainManaOnKill(hero);
+    state.sessionStats.xp += m.xp;
+    state.sessionStats.kills++;
+    if (hero.offlineActive && hero.offlineCounters) {
+      hero.offlineCounters.xp += m.xp;
+      hero.offlineCounters.kills++;
+    }
 
-        addToBackpack(hero, createArenaPass(1));
-        toast('🎫 Пропуск на арену!', 'legendary');
-
-        for (const t of drops.buffs) {
-          const sc = createBuffScroll(t);
-          if (sc) addToBackpack(hero, sc);
+    // ===== ДРОП =====
+    let entries = [];
+    if (m.boss && state.dungeon) {
+      const bossDef = BOSSES[m.defId || state.dungeon.cityGrade];
+      entries = bossDef?.drops || [];
+    } else {
+      const mobDef = MOBS[m.id];
+      if (mobDef) {
+        if (m.champion && Array.isArray(mobDef.championDrops) && mobDef.championDrops.length > 0) {
+          entries = mobDef.championDrops;
+        } else {
+          entries = mobDef.drops || [];
         }
-        if (drops.buffs.length > 0) toast(`📜 Свитки ×${drops.buffs.length}`, 'legendary');
-
-        if (drops.blessed > 0) {
-          addToBackpack(hero, createBlessedScroll());
-          toast('✨ Blessed Scroll!', 'unique');
-        }
-
-        if (drops.item) {
-          const item = createItem(drops.item, ['weapon','armor','helmet','boots','gloves','cloak','ring','amulet'][Math.floor(Math.random()*8)], state.hero.weaponType);
-          if (item) { addToBackpack(hero, item); toast(`⚔ ${item.name}!`, drops.item); }
-        }
-
-        state.mobs.splice(i, 1);
-        setTimeout(() => { if (state.dungeon) exitDungeon(true); }, 1500);
-        continue;
       }
+    }
 
-        const drops = rollDrops(CITIES[state.currentCity].grade, m.champion);
-      for (const it of drops.items) {
-        hero.backpack.push(it);
-        state.sessionStats.items++;
-        if (hero.offlineActive && hero.offlineCounters) {
-          hero.offlineCounters.items++;
-          noteOfflineCombatEvent('drop', { grade: it.grade });
-        }
-        toast(`${it.icon} ${it.name}`, it.grade);
-      }
-      for (const sc of drops.scrolls) {
-        if (!hero.scrolls[sc.grade]) hero.scrolls[sc.grade] = { weapon: 0, armor: 0 };
-        hero.scrolls[sc.grade][sc.type]++;
-        state.sessionStats.scrolls++;
-        if (hero.offlineActive && hero.offlineCounters) {
-          hero.offlineCounters.scrolls++;
-          noteOfflineCombatEvent('drop', { grade: sc.grade });
-        }
-        toast(`📜 Свиток: ${gradeName(sc.grade)}`, sc.grade);
-      }
-      if (drops.blessed > 0) {
-        for (let k = 0; k < drops.blessed; k++) addToBackpack(hero, createBlessedScroll());
-        state.sessionStats.blessed += drops.blessed;
-        if (hero.offlineActive && hero.offlineCounters) {
-          hero.offlineCounters.scrolls++;
-          noteOfflineCombatEvent('drop', { grade: 'blessed' });
-        }
-        toast(`✨ Blessed Scroll найден!`, 'unique');
-      }
+    const drops = rollDrops(entries, _lootCtx);
+    const summary = applyDrops(drops, hero, state);
 
-      if (drops.passes > 0) {
-        for (let k = 0; k < drops.passes; k++) addToBackpack(hero, createArenaPass());
-        toast(`🎫 Пропуск на арену!`, 'unique');
-      }
+    state.sessionStats.gold += summary.gold;
+    state.sessionStats.items += summary.items;
+    state.sessionStats.scrolls += summary.scrolls;
+    state.sessionStats.blessed += summary.blessed;
 
-      const buffChance = m.champion ? BUFF_DROP_CHANCE.champion : BUFF_DROP_CHANCE.normal;
-      if (Math.random() < buffChance) {
-        const types = ['attack','crit','speed','range'];
-        const t = types[Math.floor(Math.random() * types.length)];
-        const scroll = createBuffScroll(t);
-        if (scroll) { addToBackpack(hero, scroll); toast(`📜 ${scroll.name}`, 'legendary'); }
-      }
+    if (hero.offlineActive && hero.offlineCounters) {
+      hero.offlineCounters.gold += summary.gold;
+      hero.offlineCounters.items += summary.items;
+      hero.offlineCounters.scrolls += summary.scrolls;
+      if (summary.items > 0) noteOfflineCombatEvent('drop', { grade: '?' });
+    }
 
-      state.mobs.splice(i, 1);
+    if (summary.gold > 0 && m.boss) toast(`💰 +${summary.gold} золота с босса`, 'legendary');
+    if (summary.blessed > 0) toast(`✨ Blessed Scroll ×${summary.blessed}`, 'unique');
+    if (summary.books > 0) toast(`📖 Книжка скилла!`, 'legendary');
+
+    // Удаляем мёртвого из общего массива
+    const idx = state.mobs.indexOf(m);
+    if (idx >= 0) state.mobs.splice(idx, 1);
+
+    // Босс — завершение данжа
+    if (m.boss && state.dungeon) {
+      setTimeout(() => { if (state.dungeon) exitDungeon(true); }, 1500);
     }
   }
 
@@ -1175,6 +1478,13 @@ function update(dt) {
     updateHUD();
   }
 
+  // ===== Смерть героя =====
+  if (heroDied) {
+    heroDie();
+    return;
+  }
+
+  // ===== Тик эффектов =====
   for (let i = state.effects.length - 1; i >= 0; i--) {
     state.effects[i].life -= dt;
     if (state.effects[i].life <= 0) state.effects.splice(i, 1);
@@ -1239,9 +1549,44 @@ function applyDevCode(code) {
     toast(`🎁 Dev: ${grade.toUpperCase()}-сет +${level}`, 'unique');
     return;
   }
-  if (code === 'gold') { state.gold += 1000000; updateHUD(); toast('💰 +1 000 000 золота', 'unique'); return; }
-  if (code === 'level') { hero.level += 50; hero.baseMaxHp += 50 * 25; hero.baseAttack += 50 * 3; recalcStats(hero); updateHUD(); toast(`⭐ +50 уровней`, 'unique'); return; }
-  if (code === 'arena') { state.hero.arena.rating = 1500; toast('🏟️ Рейтинг = 1500', 'unique'); return; }
+  if (code === 'books') {
+    const all = ['multishot','fireball','poison','stun','frost','silence','heal','dodge','cleanse','summon_shadow'];
+    for (const id of all) {
+      addToBackpack(hero, createSkillBook(id, 5));
+    }
+    toast('📖 Все 10 книжек ×5', 'unique');
+    return;
+  }
+  if (code === 'learnall') {
+    const all = ['multishot','fireball','poison','stun','frost','silence','heal','dodge','cleanse','summon_shadow'];
+    for (const id of all) {
+      // 5 уровней для теста
+      for (let i = 0; i < 5; i++) learnSkill(hero, id);
+    }
+    // Автоматически ставим первые 3 в слоты (или 6 популярных)
+    hero.skillSlots = ['multishot','fireball','heal','dodge','silence'];
+    renderSkillBar();
+    return;
+  }
+  if (code === 'slot') {
+    // Быстрая смена слотов для теста
+    // slot multishot,fireball,heal
+    const m = code.match(/^slot\s+(.+)$/i);
+    if (m) {
+      const ids = m[1].split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length > 0) {
+        hero.skillSlots = [null, null, null, null, null];
+        for (let i = 0; i < Math.min(5, ids.length); i++) {
+          if (hero.skills[ids[i]]) hero.skillSlots[i] = ids[i];
+        }
+        renderSkillBar();
+        toast('🎯 Слоты: ' + hero.skillSlots.filter(Boolean).join(', '), 'unique');
+      }
+      return;
+    }
+  }
+  if (code === 'gold') { state.gold += 1000000; updateHUD(); toast('💰 +1 000 000 золота', 'unique'); return; } 
+   if (code === 'arena') { state.hero.arena.rating = 1500; toast('🏟️ Рейтинг = 1500', 'unique'); return; }
   if (code === 'full') { applyDevCode('s20'); return; }
   toast('❌ Неизвестный код', 'epic');
 }
@@ -1275,6 +1620,7 @@ initUI(state, auction, shop, arena, {
   onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
   onReturnToCity: () => returnToCity(),
   makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
+  onSkillClick: (slot) => useSkillFromSlot(slot),
 });
 // ===== АВТОРИЗАЦИЯ =====
 // ===== АВТОРИЗАЦИЯ =====
@@ -1423,6 +1769,8 @@ function returnFromOffline() {
     state.dungeon = null;
     state.portal = null;
     state.aoeList = [];
+      state.shadows = [];
+
     showCityScreen();
     updateHUD();
   } else {
@@ -1469,8 +1817,11 @@ initAuth({
       recalcStats(state.hero);
 
       // ✅ Создаём ботов (иначе арена пустая)
-      if (!arena.bots || arena.bots.length === 0) {
+          if (!arena.bots || arena.bots.length === 0) {
         arena.bots = createBots(100);
+      }
+      if (!arena.bots.some(b => b.isTest)) {
+        arena.bots.push(...createTestBots());
       }
              // === ВОССТАНОВЛЕНИЕ ОФЛАЙНА из localStorage ===
             // === ВОССТАНОВЛЕНИЕ ОФЛАЙНА из localStorage ===
@@ -1686,5 +2037,9 @@ setTimeout(() => {
 }, 200);
 
 window.openOfflinePanel = openOfflinePanel;
-
+window.enterArena = enterArena;
 requestAnimationFrame(loop);
+
+window.exitArena = exitArena;
+window.arena = arena;
+window.state = state;

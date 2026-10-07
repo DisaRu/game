@@ -1,13 +1,69 @@
 import { GRADES } from './config.js';
 
-// Боссы для каждого грейда
+// ============================================================
+// БОССЫ
+// ============================================================
+//
+// У каждого босса:
+//   статы (hp, attack, speed, xp, size, emoji)
+//   drops    — таблица дропа, тот же формат, что у мобов:
+//              { id:'<itemId>', chance:0.X, min:N, max:M }
+//   skills   — список активных скиллов босса (логика — потом)
+//   resists  — сопротивления урону/эффектам (логика — потом)
+//
+// Формат drops — см. loot.js (ITEM_REGISTRY).
+//
+// Базовые примеры для заполнения:
+//   { id:'gold',              chance:1.0,  min:500, max:1000 }
+//   { id:'arena_pass',        chance:1.0,  min:1,   max:1 }
+//   { id:'scroll_weapon_d',   chance:0.5,  min:5,   max:15 }
+//   { id:'blessed_scroll',    chance:0.2,  min:1,   max:3 }
+//   { id:'book_fireball',     chance:0.1,  min:1,   max:1 }
+//   { id:'weapon_bow_speed_d',chance:0.05, min:1,   max:1 }
+
 export const BOSSES = {
-  ng: { id:'boss_ng', name:'Король гремлинов', emoji:'👑', hp:2000, attack:25, speed:0.6, reward:300, xp:200, size:1.5 },
-  d:  { id:'boss_d',  name:'Тролль-вождь',     emoji:'🧌', hp:6000, attack:50, speed:0.6, reward:800, xp:500, size:1.5 },
-  c:  { id:'boss_c',  name:'Королева пауков',  emoji:'🕸️', hp:18000,attack:100,speed:0.6, reward:2000,xp:1200,size:1.5 },
-  b:  { id:'boss_b',  name:'Древний лич',      emoji:'☠️', hp:50000,attack:200,speed:0.6, reward:5000,xp:3000,size:1.6 },
-  a:  { id:'boss_a',  name:'Дракон-тиран',     emoji:'🐲', hp:150000,attack:400,speed:0.6,reward:12000,xp:8000,size:1.7 },
-  s:  { id:'boss_s',  name:'Владыка бездны',   emoji:'👁️', hp:400000,attack:800,speed:0.6,reward:30000,xp:20000,size:1.8 },
+  ng: {
+    id:'boss_ng', name:'Король гремлинов', emoji:'👑',
+    hp:2000, attack:25, speed:0.6, xp:200, size:1.5,
+    drops: [],
+    skills: [],
+    resists: {},
+  },
+  d: {
+    id:'boss_d', name:'Тролль-вождь', emoji:'🧌',
+    hp:6000, attack:50, speed:0.6, xp:500, size:1.5,
+    drops: [],
+    skills: [],
+    resists: {},
+  },
+  c: {
+    id:'boss_c', name:'Королева пауков', emoji:'🕸️',
+    hp:18000, attack:100, speed:0.6, xp:1200, size:1.5,
+    drops: [],
+    skills: [],
+    resists: {},
+  },
+  b: {
+    id:'boss_b', name:'Древний лич', emoji:'☠️',
+    hp:50000, attack:200, speed:0.6, xp:3000, size:1.6,
+    drops: [],
+    skills: [],
+    resists: {},
+  },
+  a: {
+    id:'boss_a', name:'Дракон-тиран', emoji:'🐲',
+    hp:150000, attack:400, speed:0.6, xp:8000, size:1.7,
+    drops: [],
+    skills: [],
+    resists: {},
+  },
+  s: {
+    id:'boss_s', name:'Владыка бездны', emoji:'👁️',
+    hp:400000, attack:800, speed:0.6, xp:20000, size:1.8,
+    drops: [],
+    skills: [],
+    resists: {},
+  },
 };
 
 // Прогрессия призыва охраны по грейду
@@ -37,6 +93,7 @@ export function createBoss(grade, x, y, mult = 1) {
   const atk = Math.floor(def.attack * Math.sqrt(mult));
   return {
     id: def.id,
+    defId: grade,             // ключ грейда — нужен для поиска .drops
     name: def.name,
     emoji: def.emoji,
     boss: true,
@@ -44,7 +101,6 @@ export function createBoss(grade, x, y, mult = 1) {
     hp, maxHp: hp,
     attack: atk,
     speed: def.speed,
-    reward: Math.floor(def.reward * Math.sqrt(mult)),
     xp: Math.floor(def.xp * Math.sqrt(mult)),
     size: def.size,
     x, y,
@@ -56,11 +112,11 @@ export function createBoss(grade, x, y, mult = 1) {
 
     // AoE
     aoeTimer: 2 + Math.random() * 2,
-    castGlow: 0,     // > 0 — босс светится, готовит атаку
+    castGlow: 0,
 
     // Призыв охраны
     guardTimer: call.interval,
-    guardsSpawned: 0, // не используется, оставил для совместимости
+    guardsSpawned: 0,
   };
 }
 
@@ -105,27 +161,25 @@ export function castBossAoe(boss, hero) {
     };
   }
   if (type === 'ring') {
-    // Расширяющееся кольцо: центр на боссе, безопасно ВНУТРИ радиуса
     return {
       type: 'ring',
       x: boss.x, y: boss.y,
-      innerRadius: 2.5,     // внутри этого — безопасно
-      outerRadius: 7,       // всё, что за 2.5 и до 7 — урон
+      innerRadius: 2.5,
+      outerRadius: 7,
       delay, life: delay,
       damage: dmg,
       color: '#a855f7',
     };
   }
   if (type === 'fire') {
-    // Горящая земля: 3-4 пятна, каждое наносит урон при касании
     const spots = [];
     for (let i = 0; i < 3 + Math.floor(Math.random() * 2); i++) {
       spots.push({
         x: hero.x + (Math.random() - 0.5) * 5,
         y: hero.y + (Math.random() - 0.5) * 5,
         radius: 1.8,
-        life: delay + 5,      // 3 сек ожидание + 5 сек горения
-        damage: Math.floor(hero.maxHp * 0.10), // 10% за тик
+        life: delay + 5,
+        damage: Math.floor(hero.maxHp * 0.10),
         tickTimer: 0,
         burned: 0,
       });
@@ -142,7 +196,6 @@ export function castBossAoe(boss, hero) {
   return null;
 }
 
-// Проверка попадания AoE в героя
 export function checkAoeHit(aoe, hero) {
   if (aoe.type === 'circle' || aoe.type === 'marker') {
     const d = Math.hypot(aoe.x - hero.x, aoe.y - hero.y);
@@ -158,11 +211,9 @@ export function checkAoeHit(aoe, hero) {
     const d = Math.hypot(aoe.x - hero.x, aoe.y - hero.y);
     return d >= aoe.innerRadius && d <= aoe.outerRadius;
   }
-  // fire проверяется отдельно, по пятнам
   return false;
 }
 
-// Проверка попадания в одно из пятен огня
 export function checkFireHit(aoe, hero) {
   if (aoe.type !== 'fire') return false;
   for (const s of aoe.spots) {

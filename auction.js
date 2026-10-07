@@ -49,13 +49,61 @@ export function buyListing(auction, listingId, hero, state) {
   auction.listings.splice(idx, 1);
   return { ok: true, item: listing.item };
 }
+export function cancelListing(auction, hero, listingId) {
+  const idx = auction.myListings.findIndex(l => l.id === listingId);
+  if (idx < 0) return { ok: false, reason: 'not_found' };
+  const l = auction.myListings[idx];
+  if (l.sold) return { ok: false, reason: 'sold' };
 
-export function listItem(auction, hero, item, price) {
+  const item = l.item;
+  const cnt = item.count || 1;
+
+  // Возвращаем в рюкзак: стакаем с существующим
+  const existing = hero.backpack.find(x =>
+    x.kind === item.kind &&
+    x.id !== item.id &&
+    (item.kind !== 'buff' || x.buffType === item.buffType) &&
+    (item.kind !== 'book' || x.skillId === item.skillId) &&
+    (item.kind !== 'blessed' || x.kind === 'blessed') &&
+    (item.kind !== 'pass' || x.kind === 'pass')
+  );
+  if (existing && (item.kind === 'buff' || item.kind === 'book' || item.kind === 'blessed' || item.kind === 'pass')) {
+    existing.count = (existing.count || 1) + cnt;
+  } else {
+    hero.backpack.push(item);
+  }
+
+  auction.myListings.splice(idx, 1);
+  return { ok: true, item, quantity: cnt };
+}
+
+export function listItem(auction, hero, item, price, quantity = 1) {
   const idx = hero.backpack.indexOf(item);
   if (idx < 0) return { ok: false };
-  hero.backpack.splice(idx, 1);
-  auction.myListings.push({ id: auction.nextId++, item, price, timeLeft: 30 + Math.random() * 30, sold: false });
-  return { ok: true };
+
+  const cnt = item.count || 1;
+  const qty = Math.max(1, Math.min(quantity, cnt));
+
+  let listingItem;
+  if (cnt > qty) {
+    // Стек: списываем qty, клонируем для лота
+    item.count = cnt - qty;
+    listingItem = { ...item, count: qty, id: item.id + Math.random() };
+  } else {
+    // Забираем всё, что есть (cnt === qty)
+    hero.backpack.splice(idx, 1);
+    listingItem = item;
+    listingItem.count = qty;
+  }
+
+  auction.myListings.push({
+    id: auction.nextId++,
+    item: listingItem,
+    price,
+    timeLeft: 30 + Math.random() * 30,
+    sold: false,
+  });
+  return { ok: true, listed: qty, price };
 }
 
 export function sellToBot(hero, item) {

@@ -9,37 +9,133 @@
 </head>
 <body>
   <canvas id="game"></canvas>
-<div id="account-info" class="account-info"></div>
 <div id="loading-screen" class="loading-screen">
   <div class="loading-box">
     <div class="loading-icon">⏳</div>
     <div class="loading-text">Загрузка...</div>
   </div>
 </div>
-  <div id="hud-top" class="hidden">
-    <div class="hud-item"><span class="icon">❤️</span><span id="hp">200/200</span></div>
-    <div class="hud-item"><span class="icon">💰</span><span id="gold">0</span></div>
-    <div class="hud-item"><span class="icon">⭐</span><span id="level">1</span><div class="xp-bar"><div id="xp-fill"></div></div></div>
-  </div>
+<div id="hud-top" class="hidden">
+    <!-- Полоски HP / мана -->
+    <div class="hud-bars">
+      <div class="hud-bar hp-bar">
+        <div class="hud-bar-fill" id="hp-fill"></div>
+        <div class="hud-bar-text" id="hp">200/200</div>
+      </div>
+      <div class="hud-bar mana-bar">
+        <div class="hud-bar-fill" id="mana-fill"></div>
+        <div class="hud-bar-text" id="mana">80/80</div>
+      </div>
+    </div>
 
-  <div id="hud-stats" class="hidden">
+    <!-- Статы -->
+    
+    <!-- Ресурсы: золото + уровень -->
+    <div class="hud-res">
+        <span class="hud-item"><span class="icon">💰</span><span id="gold">0</span></span>
+        <span class="hud-item"><span class="icon">⭐</span><span id="level">1</span><div class="xp-bar"><div id="xp-fill"></div></div></span>
+    </div>
+    
+    <!-- Аккаунт -->
+    <div id="account-info" class="account-info"></div>
+</div>
+<div id="hud-stats" class="hud-stats">
+  <span class="hs hs-atk">⚔<b id="stat-atk">0</b></span>
+  <span class="hs hs-def">🛡<b id="stat-def">0</b></span>
+  <span class="hs hs-range">📏<b id="stat-range">4.5</b></span>
+  <span class="hs hs-crit">💥<b id="stat-crit">0</b>%</span>
+  <span class="hs hs-dodge">💨<b id="stat-dodge">0</b>%</span>
+  <span class="hs hs-ls">🩸<b id="stat-ls">0</b>%</span>
+</div>
+
     <span class="hs hs-atk">⚔ <b id="stat-atk">0</b></span>
     <span class="hs hs-def">🛡 <b id="stat-def">0</b></span>
     <span class="hs hs-range">📏 <b id="stat-range">4.5</b></span>
     <span class="hs hs-crit">💥 <b id="stat-crit">0</b>%</span>
     <span class="hs hs-dodge">💨 <b id="stat-dodge">0</b>%</span>
     <span class="hs hs-ls">🩸 <b id="stat-ls">0</b>%</span>
-  </div>
+  
+
   <div id="hud-zone" class="hidden">
     <div><span id="zone-diff">🟢</span> <span id="zone-name">Поля Гремлинов</span></div>
   </div>
+
+  <!-- ===== ПЛАШКА АРЕНЫ ===== -->
+  <div id="arena-hud" class="hidden">
+    <div class="arena-hud-inner">
+      <div class="ah-vs">⚔ Ты vs <span id="ah-opp-name">—</span></div>
+      <div class="ah-timer" id="ah-timer">00:00.0</div>
+      <button id="ah-exit" class="ah-exit">Выйти</button>
+    </div>
+  </div>
+
+  <!-- ===== БОКОВАЯ ПАНЕЛЬ — ТЫ ===== -->
+  <div id="arena-side-me" class="arena-side hidden">
+    <div class="as-name">Ты</div>
+    <div class="as-bar as-hp">
+      <div class="as-bar-fill" id="as-me-hp-fill"></div>
+      <div class="as-bar-text" id="as-me-hp-text">0/0</div>
+    </div>
+    <div class="as-bar as-mana">
+      <div class="as-bar-fill" id="as-me-mana-fill"></div>
+      <div class="as-bar-text" id="as-me-mana-text">0/0</div>
+    </div>
+    <div class="as-skills" id="as-me-skills"></div>
+    <div class="as-buffs" id="as-me-buffs"></div>
+  </div>
+
+  <!-- ===== БОКОВАЯ ПАНЕЛЬ — ВРАГ ===== -->
+  <div id="arena-side-opp" class="arena-side hidden">
+    <div class="as-name" id="as-opp-name">Враг</div>
+    <div class="as-bar as-hp">
+      <div class="as-bar-fill" id="as-opp-hp-fill"></div>
+      <div class="as-bar-text" id="as-opp-hp-text">0/0</div>
+    </div>
+    <div class="as-bar as-mana">
+      <div class="as-bar-fill" id="as-opp-mana-fill"></div>
+      <div class="as-bar-text" id="as-opp-mana-text">0/0</div>
+    </div>
+    <div class="as-skills" id="as-opp-skills"></div>
+    <div class="as-buffs" id="as-opp-buffs"></div>
+  </div>
+
+
 
   <div id="combat-log" class="hidden"></div>
 
   <div id="joystick" class="hidden">
     <div id="joystick-base"><div id="joystick-stick"></div></div>
   </div>
+    <button id="btn-auto" class="hidden">АВТО</button>
 
+  <div id="skill-bar" class="hidden">
+    <button class="skill-btn" data-skill-slot="0">
+      <span class="skill-icon">·</span>
+      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
+      <span class="skill-mana"></span>
+    </button>
+    <button class="skill-btn" data-skill-slot="1">
+      <span class="skill-icon">·</span>
+      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
+      <span class="skill-mana"></span>
+    </button>
+     <button class="skill-btn" data-skill-slot="2">
+      <span class="skill-icon">·</span>
+      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
+      <span class="skill-mana"></span>
+    </button>
+    <button class="skill-btn" data-skill-slot="3">
+      <span class="skill-icon">·</span>
+      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
+      <span class="skill-mana"></span>
+    </button>
+    <button class="skill-btn" data-skill-slot="4">
+      <span class="skill-icon">·</span>
+      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
+      <span class="skill-mana"></span>
+    </button>
+  </div>
+ 
   <div id="hud-actions" class="hidden">
     <div class="hud-stat hud-potion" data-potion="epic"><span class="hud-icon">🏺</span><span class="hud-count" id="pot-epic">0</span></div>
     <div class="hud-stat hud-potion" data-potion="large"><span class="hud-icon">🍷</span><span class="hud-count" id="pot-large">0</span></div>
@@ -80,27 +176,7 @@
     <input id="dev-code-input" type="text" placeholder="dev-код" autocomplete="off">
     <button id="dev-code-apply">Активировать</button>
   </div>
-</div>>
-
-    <div id="last-session" class="last-session hidden">
-      <div class="ls-title">📦 Последняя сессия · <span id="ls-zone">—</span></div>
-      <div class="ls-grid">
-        <div class="ls-cell"><div class="ls-ico">💰</div><div class="ls-val" id="ls-gold">0</div></div>
-        <div class="ls-cell"><div class="ls-ico">⭐</div><div class="ls-val" id="ls-xp">0</div></div>
-        <div class="ls-cell"><div class="ls-ico">👹</div><div class="ls-val" id="ls-kills">0</div></div>
-        <div class="ls-cell"><div class="ls-ico">⚔</div><div class="ls-val" id="ls-items">0</div></div>
-        <div class="ls-cell"><div class="ls-ico">📜</div><div class="ls-val" id="ls-scrolls">0</div></div>
-        <div class="ls-cell"><div class="ls-ico">✨</div><div class="ls-val" id="ls-blessed">0</div></div>
-      </div>
-    </div>
-    <div id="city-zones"></div>
-    <button id="btn-open-teleport" class="city-btn">🌍 Телепорт в другой город</button>
-
-    <div id="dev-codes">
-      <input id="dev-code-input" type="text" placeholder="dev-код" autocomplete="off">
-      <button id="dev-code-apply">Активировать</button>
-    </div>
-  </div>
+</div>
 
   <div id="bottom-panel" class="hidden">
     <button data-panel="city"><span class="bp-icon">🏙</span><span class="bp-label">Город</span></button>
@@ -111,54 +187,45 @@
     <button data-panel="arena"><span class="bp-icon">🏟️</span><span class="bp-label">Арена</span></button>
   </div>
 
-  <!-- ===== МОДАЛКА ГЕРОЯ (с переключателем Герой/Тень) ===== -->
   <div id="modal-hero" class="modal hidden">
     <div class="modal-window">
-      <div class="modal-header">
-        <div class="hero-switch">
-          <button class="hero-switch-btn active" data-switch="hero">🧙 Герой</button>
-          <button class="hero-switch-btn" data-switch="shadow">👤 Тень</button>
-        </div>
+         <div class="modal-header">
+        <h2>🧙 Герой</h2>
         <button class="modal-close" data-modal="hero">✕</button>
       </div>
       <div class="modal-body">
 
-        <!-- ===== БЛОК ГЕРОЯ ===== -->
         <div id="hero-block">
           <div class="hero-layout">
             <div class="mannequin" id="mannequin"></div>
             <div class="hero-stats" id="hero-stats"></div>
           </div>
           <div id="hero-bonuses" class="hero-bonuses"></div>
-          <div class="tab-bar" id="hero-tabs">
+                <div class="tab-bar" id="hero-tabs">
             <button class="tab-btn active" data-hero-tab="backpack">Рюкзак</button>
+            <button class="tab-btn" data-hero-tab="skills">Скиллы</button>
             <button class="tab-btn" data-hero-tab="scrolls">Свитки</button>
             <button class="tab-btn" data-hero-tab="potions">Зелья</button>
             <button class="tab-btn" data-hero-tab="soulshots">Соски</button>
           </div>
           <div id="hero-tab-backpack" class="hero-tab-content"><div class="backpack-grid" id="backpack-grid"></div></div>
-          <div id="hero-tab-scrolls" class="hero-tab-content hidden"><div class="scrolls-list" id="scrolls-list"></div></div>
+          <div id="hero-tab-skills" class="hero-tab-content hidden">
+            <div class="section-title">⚔ Боевые слоты (3)</div>
+            <div class="skill-slots-row" id="skill-slots-row"></div>
+            <div class="section-title">📚 Изученные скиллы</div>
+            <div class="learned-skills" id="learned-skills"></div>
+            <div class="skills-hint">💡 Открой книжку скилла из рюкзака, чтобы изучить его. Затем клик по изученному — поставит его в свободный слот.</div>
+          </div>          <div id="hero-tab-scrolls" class="hero-tab-content hidden"><div class="scrolls-list" id="scrolls-list"></div></div>
           <div id="hero-tab-potions" class="hero-tab-content hidden"><div class="potions-list" id="potions-list"></div></div>
           <div id="hero-tab-soulshots" class="hero-tab-content hidden"><div class="soulshots-list" id="soulshots-list"></div></div>
         </div>
 
-        <!-- ===== БЛОК ТЕНИ ===== -->
-    <div id="shadow-block" class="hidden">
-  <div class="shadow-top">
-    <div class="mannequin shadow-mannequin" id="shadow-mannequin"></div>
-    <div class="hero-stats shadow-stats" id="shadow-stats"></div>
-  </div>
-  <div id="shadow-consumables" class="shadow-consumables"></div>
-  <div id="shadow-durability" class="shadow-durability"></div>
-  <div class="section-title" style="margin-top:6px">👤 Рюкзак тени</div>
-  <div class="shadow-backpack" id="shadow-backpack"></div>
-</div>
+
 
       </div>
     </div>
   </div>
 
-  <!-- ===== МОДАЛКА АРЕНЫ ===== -->
   <div id="modal-arena" class="modal hidden">
     <div class="modal-window arena-window">
       <div class="modal-header arena-header">
@@ -187,7 +254,6 @@
       </div>
     </div>
   </div>
-<!-- ===== МОДАЛКА СРАВНЕНИЯ ===== -->
 <div id="modal-compare" class="modal hidden">
   <div class="modal-window compare-window">
     <div class="modal-header">
@@ -197,7 +263,6 @@
     <div class="modal-body" id="compare-body"></div>
   </div>
 </div>
-  <!-- ===== ЗАТОЧКА ===== -->
   <div id="modal-enhance" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>⚒ Заточка</h2><button class="modal-close" data-modal="enhance">✕</button></div>
@@ -212,7 +277,6 @@
     </div>
   </div>
 
-  <!-- ===== МАГАЗИН ===== -->
   <div id="modal-shop" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>🏪 Магазин</h2><button class="modal-close" data-modal="shop">✕</button></div>
@@ -229,7 +293,6 @@
     </div>
   </div>
 
-  <!-- ===== АУКЦИОН ===== -->
   <div id="modal-auction" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>⚖ Аукцион</h2><button class="modal-close" data-modal="auction">✕</button></div>
@@ -246,7 +309,6 @@
     </div>
   </div>
 
-  <!-- ===== ТЕЛЕПОРТ ===== -->
   <div id="modal-teleport" class="modal hidden">
     <div class="modal-window">
       <div class="modal-header"><h2>🌍 Телепорт</h2><button class="modal-close" data-modal="teleport">✕</button></div>
@@ -300,7 +362,6 @@
     <div class="tp-ring"></div>
     <div class="tp-icon">🌍</div>
   </div>
-<!-- ===== ОФЛАЙН-ФАРМ ПЛАШКА ===== -->
 <div id="offline-overlay" class="offline-overlay hidden">
   <div class="offline-panel">
     <div class="offline-header">
@@ -356,7 +417,6 @@
   </div>
 </div>
 
-<!-- ===== ОТЧЁТ ОФЛАЙН-ФАРМА ===== -->
 <div id="offline-report" class="offline-overlay hidden">
   <div class="offline-panel">
     <div class="offline-header">

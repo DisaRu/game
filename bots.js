@@ -182,7 +182,7 @@ export function getBotStats(bot) {
     attack: base.attack + bAtk,
     defense: bDef,
     critChance: Math.min(75, 5 + bCrit),
-    critDamage: 50 + bCritDmg,
+    critDamage: Math.min(300, 50 + bCritDmg),
     dodge: Math.min(60, bDodge),
     lifesteal: Math.min(30, bLs),
     attackSpeed: base.attackSpeed * (1 + bAtkSpd / 100),
@@ -222,17 +222,112 @@ export function tickBots(bots, dt) {
   }
 }
 
-// ===== СЕРИАЛИЗАЦИЯ (для аукциона/боя) =====
 
-export function botToShadow(bot) {
+// Возвращает объект того же типа, что и герой игрока,
+// чтобы battle.js мог работать с ним единообразно.
+export function botToArenaHero(bot) {
+  const stats = getBotStats(bot);
+  const level = bot.level || (1 + Math.floor(bot.rating / 30));
+  const isMage = bot.classType === 'mage' || bot.classType === 'staff';
+
+  // Стартовые расходники бота
+  const potions = { small: 0, medium: 0, large: 0, epic: 0 };
+  const potionTotal = Object.values(bot.potions || {}).reduce((a,b) => a+b, 0);
+  if (potionTotal > 0) potions.small = potionTotal;
+
+  // Скиллы: если у бота задан skillIds — используем его, иначе по классу
+  const botSkills = {};
+  const botSlots = [];
+  const botSkillIds = (bot.skillIds && bot.skillIds.length)
+    ? bot.skillIds
+    : (isMage ? ['fireball', 'frost', 'heal'] : ['multishot', 'dodge', 'stun']);
+  for (const id of botSkillIds) {
+    botSkills[id] = { level: 1 };
+    botSlots.push(id);
+  }
+
   return {
+    isAI: true,
+    team: 'enemy',
+    classType: isMage ? 'mage' : 'archer',
     name: bot.name,
-    classType: bot.classType,
-    rating: bot.rating,
-    equipment: bot.equipment,
-    soulshots: bot.soulshots,
-    potions: bot.potions,
-    activeBuffs: bot.activeBuffs,
-    durability: bot.durability,
+    emoji: isMage ? '🔮' : '🏹',
+    weaponType: isMage ? 'staff' : 'bow',
+
+    level,
+    xp: 0, xpToNext: 999999,
+
+    baseMaxHp: stats.maxHp,
+    maxHp: stats.maxHp,
+    hp: stats.maxHp,
+    baseMaxMana: isMage ? 120 : 80,
+    maxMana: isMage ? 120 : 80,
+    mana: isMage ? 120 : 80,
+    baseManaRegen: isMage ? 6 : 4,
+    manaRegen: isMage ? 6 : 4,
+
+      baseAttack: stats.attack,
+    attack: stats.attack * ((bot.activeBuffs?.attack) ? 1.20 : 1),
+    baseAttackSpeed: stats.attackSpeed,
+    attackSpeed: stats.attackSpeed * ((bot.activeBuffs?.speed) ? 1.50 : 1),
+    baseRange: stats.range,
+    range: stats.range * ((bot.activeBuffs?.range) ? 1.50 : 1),
+    baseMoveSpeed: 3.2,
+    moveSpeed: 3.2,
+    defense: stats.defense,
+
+    critChance: Math.min(75, stats.critChance + ((bot.activeBuffs?.crit) ? 15 : 0)),
+    critDamage: stats.critDamage,
+    dodge: stats.dodge,
+    lifesteal: stats.lifesteal,
+    accuracy: stats.accuracy || 0,
+    critResist: stats.critResist || 0,
+    armorPen: stats.armorPen || 0,
+    antiHeal: stats.antiHeal || 0,
+    berserk: stats.berserk || 0,
+    thorns: stats.thorns || 0,
+
+    chainTargets: 0,
+    hpBonus: 0,
+    thornsPercent: 0,
+    doubleStrikeChance: 0,
+    speedBonus: 0,
+    cloakDodge: 0,
+    executeBonus: 0,
+    shieldPercent: 0,
+
+    cooldown: 0, hitAnim: 0, attackAnim: 0, dead: false,
+    x: 0, y: 0, facing: 1, facingAngle: 0,
+    size: 0.8,
+
+    // ===== КАСТ =====
+    casting: null,
+    _pendingCastResult: null,
+    castSpeed: 0,
+    castStability: 0,
+
+    // ===== ДЕБАФФЫ =====
+    stunUntil: 0,
+    slowUntil: 0,
+    silenceUntil: 0,
+    attackSpeedDebuff: null,
+    dots: [],
+
+    equipment: bot.equipment || {},
+    backpack: [],
+
+    skills: botSkills,
+    skillSlots: botSlots,
+    skillCooldowns: {},
+    skillBuffs: {},
+
+      potions,
+    activePotion: (Object.values(bot.potions || {}).some(v => v > 0)) ? 'small' : null,
+    soulshots: bot.soulshots || {},
+    soulshotActive: Object.values(bot.soulshots || {}).some(v => v > 0),
+    activeBuffs: bot.activeBuffs || {},
+
+    arenaRating: bot.rating,
+    arenaId: bot.id,
   };
 }

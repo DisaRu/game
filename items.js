@@ -1,4 +1,4 @@
-import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, CHAMPION, BUFF_SCROLLS, getEnhanceBonus, ARENA_PASS } from './config.js';
+import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, BUFF_SCROLLS, ARENA_PASS, SKILLS, MAX_SKILL_LEVEL } from './config.js';
 
 let nextItemId = 1;
 
@@ -41,7 +41,6 @@ export function createItem(grade, slot, weaponType = null, variant = null) {
     name: def.name,
     icon: def.icon,
     baseStats: { ...baseStats },
-    durability: 100,
   };
 }
 
@@ -72,7 +71,6 @@ export function createBuffScroll(type, count = 1) {
   };
 }
 
-// НОВОЕ: Пропуск на арену
 export function createArenaPass(count = 1) {
   return {
     id: nextItemId++,
@@ -82,6 +80,24 @@ export function createArenaPass(count = 1) {
     slot: 'pass',
     grade: 'any',
     count: count,
+  };
+}
+
+// ===== КНИЖКИ СКИЛЛОВ =====
+// Книжка = обычный предмет в рюкзаке, стакается по skillId.
+// При изучении: не выучен → уровень 1; выучен → +1 уровень (до MAX_SKILL_LEVEL).
+export function createSkillBook(skillId, count = 1) {
+  const def = SKILLS[skillId];
+  if (!def) return null;
+  return {
+    id: nextItemId++,
+    kind: 'book',
+    skillId,
+    name: '📖 ' + def.name,
+    icon: '📖',
+    slot: 'book',
+    grade: 'any',
+    count,
   };
 }
 
@@ -104,7 +120,25 @@ export function itemStats(item) {
   const res = {};
 
   for (const [k, v] of Object.entries(item.baseStats)) {
-    const noGradeMult = ['attackSpeed','lifesteal','moveSpeed','thorns','berserk','critResist','armorPen','antiHeal','accuracy'];
+    // Флэт-статы: не масштабируются грейдом, только заточкой
+    const noGradeMult = ['lifesteal','moveSpeed','thorns','berserk','critResist','armorPen','antiHeal','accuracy','manaRegen','critDamage'];
+    // HP: ×10 бонус к грейд-множителю — бои дольше
+    if (k === 'hp') {
+      const HP_MULT = 10;
+      let val = v * g.mult * HP_MULT;
+      if (k === mainKey) val *= (1 + item.enhance * 0.45);
+      else if (k === secondKey) val *= (1 + item.enhance * 0.30);
+      res[k] = Math.floor(val);
+      continue;
+    }
+    // attackSpeed: без грейда, но сильно растёт от заточки
+    if (k === 'attackSpeed') {
+      let val = v;
+      if (k === mainKey) val *= (1 + item.enhance * 0.75);
+      else if (k === secondKey) val *= (1 + item.enhance * 0.50);
+      res[k] = Math.round(val * 10) / 10;
+      continue;
+    }
     if (noGradeMult.includes(k)) {
       let val = v;
       if (k === mainKey) val *= (1 + item.enhance * 0.15);
@@ -134,6 +168,11 @@ export function estimateItemValue(item) {
   if (item.kind === 'blessed') return 5000;
   if (item.kind === 'buff') return 3000;
   if (item.kind === 'pass') return 50000;
+  if (item.kind === 'book') {
+    const def = SKILLS[item.skillId];
+    if (!def) return 5000;
+    return 5000 + Math.floor(def.cooldown * 1000);
+  }
 
   const g = GRADES[item.grade];
   if (!g) return 100;
@@ -155,47 +194,4 @@ export function getVariantsForSlot(slot, weaponType = null) {
     });
   }
   return Object.keys(ENHANCE_STATS[slot] || {});
-}
-
-// ===== ДРОП =====
-
-export function rollDrops(zoneGrade, isChampion) {
-  const drops = { items: [], scrolls: [], blessed: 0, passes: 0 };
-  const itemChance = isChampion ? 0.09 : 0.03;
-  const scrollChance = isChampion ? 0.24 : 0.08;
-
-  if (Math.random() < itemChance) {
-    const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
-    const weaponType = slot === 'weapon' ? (Math.random() < 0.5 ? 'bow' : 'staff') : null;
-    const variants = getVariantsForSlot(slot, weaponType);
-    const variant = variants[Math.floor(Math.random() * variants.length)];
-    const item = createItem(zoneGrade, slot, weaponType, variant);
-    if (item) drops.items.push(item);
-  }
-  if (Math.random() < scrollChance) {
-    const type = Math.random() < 0.3 ? 'weapon' : 'armor';
-    drops.scrolls.push({ grade: zoneGrade, type });
-  }
-  if (isChampion && Math.random() < CHAMPION.blessedDropChance) {
-    drops.blessed = 1;
-  }
-  // Пропуск с чемпионов — 2%
-  if (isChampion && Math.random() < 0.02) {
-    drops.passes = 1;
-  }
-  return drops;
-}
-
-// ===== ПРОЧНОСТЬ =====
-
-// Износ при атаке: победа -5%, поражение -15%
-export function applyDurabilityLoss(item, percent) {
-  if (!item || item.durability === undefined) return;
-  item.durability = Math.max(0, item.durability - percent);
-}
-
-// Эффективный множитель статов от прочности
-export function durabilityMultiplier(item) {
-  if (!item || item.durability === undefined) return 1;
-  return item.durability / 100;
 }

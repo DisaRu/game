@@ -77,28 +77,3 @@ export function spawnGuard(zone, x, y, groupId) {
   m.dungeonGuard = true;
   return m;
 }
-
-// Дроп с босса
-export function rollBossDrops(hero, zone, cityGrade) {
-  const drops = { gold: 0, buffs: [], blessed: 0, item: null };
-
-  const baseReward = 30;
-  drops.gold = Math.floor(baseReward * zone.mult * 20);
-
-  const buffCount = 1 + Math.floor(Math.random() * 2);
-  const types = ['attack','crit','speed','range'];
-  for (let i = 0; i < buffCount; i++) {
-    drops.buffs.push(types[Math.floor(Math.random() * types.length)]);
-  }
-
-  if (Math.random() < 0.20) drops.blessed = 1;
-
-  if (Math.random() < 0.20) {
-    const gradeOrder = ['ng','d','c','b','a','s'];
-    const idx = gradeOrder.indexOf(cityGrade);
-    const nextGrade = gradeOrder[Math.min(idx + 1, gradeOrder.length - 1)];
-    drops.item = nextGrade;
-  }
-
-  return drops;
-}

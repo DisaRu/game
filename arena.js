@@ -1,6 +1,6 @@
 import { CONFIG, SLOTS, ROULETTE_REWARDS, RATING_CHESTS, EQUIP_PRICES, GRADE_ORDER } from './config.js';
-import { itemStats, durabilityMultiplier, createArenaPass, createBlessedScroll, createItem, getVariantsForSlot } from './items.js';
-import { getShadowStats, calcHitChance, calcCritChance, calcEffectiveDefense } from './hero.js';
+import { itemStats, createArenaPass, createBlessedScroll, createItem, getVariantsForSlot } from './items.js';
+import { calcHitChance, calcCritChance, calcEffectiveDefense } from './hero.js';
 import { getBotStats } from './bots.js';
 
 // ===== СОЗДАНИЕ АРЕНЫ =====
@@ -30,7 +30,6 @@ export function ratingChange(myRating, oppRating, won) {
 
 // ===== ПРОГНОЗ ШАНСА ПОБЕДЫ =====
 
-// Грубая оценка: сравниваем «силу» двух героев
 function computePower(stats) {
   const dps = stats.attack * stats.attackSpeed * (1 + stats.critChance / 100 * stats.critDamage / 100);
   const ehp = stats.maxHp * (1 + stats.defense / 200) * (1 + stats.dodge / 100);
@@ -48,20 +47,42 @@ export function estimateWinChance(myStats, oppStats) {
   const total = myPower + oppPower;
   if (total <= 0) return 50;
   const raw = (myPower / total) * 100;
-  // Сжимаем к 50%, чтобы не было 99% и 1%
   const clamped = Math.max(5, Math.min(95, raw));
   return Math.round(clamped);
 }
 
+// ===== СТАТЫ ГЕРОЯ ДЛЯ БОЯ =====
+// Возвращает плоский объект статов, понятный simulateBattle.
+// Используем актуальные поля героя — они уже пересчитаны recalcStats(),
+// включая экипировку, заточку, баффы-свитки.
+function heroStatsForBattle(hero) {
+  return {
+    maxHp: hero.maxHp,
+    hp: hero.maxHp,
+    attack: hero.attack,
+    defense: hero.defense,
+    critChance: hero.critChance,
+    critDamage: hero.critDamage,
+    dodge: hero.dodge,
+    lifesteal: hero.lifesteal,
+    attackSpeed: hero.attackSpeed,
+    range: hero.range,
+    moveSpeed: hero.moveSpeed,
+    accuracy: hero.accuracy,
+    critResist: hero.critResist,
+    armorPen: hero.armorPen,
+    antiHeal: hero.antiHeal,
+    berserk: hero.berserk,
+    thorns: hero.thorns,
+  };
+}
+
 // ===== СИМУЛЯЦИЯ БОЯ =====
 
-const BATTLE_DURATION = 30; // секунд
-const TICK_RATE = 0.5;       // каждые 0.5 сек — удар
+const BATTLE_DURATION = 30;
+const TICK_RATE = 0.5;
+const TICK = 0.25;
 
-// Симулируем бой между двумя героями
-// myHero — реальный hero.shadow
-// oppStats — статы бота
-// oppConsumables — расходники бота
 export function simulateBattle(myStats, oppStats, myConsumables, oppConsumables) {
   let myHp = myStats.maxHp;
   let oppHp = oppStats.maxHp;
@@ -70,9 +91,6 @@ export function simulateBattle(myStats, oppStats, myConsumables, oppConsumables)
   let oppSoulshots = oppConsumables?.soulshots || 0;
   let myPotions = myConsumables?.potions || 0;
   let oppPotions = oppConsumables?.potions || 0;
-
-  const myHasScrolls = myConsumables?.scrolls || {};
-  const oppHasScrolls = oppConsumables?.scrolls || {};
 
   const log = [];
   let time = 0;
@@ -86,16 +104,11 @@ export function simulateBattle(myStats, oppStats, myConsumables, oppConsumables)
     return s;
   };
 
-  const myBuffed = applyBuffs(myStats, myHasScrolls);
-  const oppBuffed = applyBuffs(oppStats, oppHasScrolls);
+  const myBuffed = applyBuffs(myStats, myConsumables?.scrolls || {});
+  const oppBuffed = applyBuffs(oppStats, oppConsumables?.scrolls || {});
 
   let myCd = 1 / myBuffed.attackSpeed;
   let oppCd = 1 / oppBuffed.attackSpeed;
-
-  // Более мелкий тик для плавности анимации
-  const TICK = 0.25;
-  let myHpDisplay = myHp;
-  let oppHpDisplay = oppHp;
 
   while (time < BATTLE_DURATION && myHp > 0 && oppHp > 0) {
     time += TICK;
@@ -212,30 +225,31 @@ export function simulateBattle(myStats, oppStats, myConsumables, oppConsumables)
 // ===== ПРОВЕДЕНИЕ БОЯ =====
 
 export function fightBot(hero, bot) {
-  const myStats = getShadowStats(hero);
-  if (!myStats) return { ok: false, reason: 'no_shadow' };
+  const myStats = heroStatsForBattle(hero);
+  if (!myStats) return { ok: false, reason: 'no_stats' };
 
   const oppStats = getBotStats(bot);
 
+  // Герой тратит СВОИ соски/зелья. Свитков в бою не тратим —
+  // бафф-свитки уже наложены на статы (recalcStats) и работают
+  // своим временем (20 мин), а не "1 за бой".
   const myConsumables = {
-    soulshots: Object.values(hero.shadow.soulshots || {}).reduce((a,b) => a+b, 0),
-    potions: Object.values(hero.shadow.potions || {}).reduce((a,b) => a+b, 0),
+    soulshots: Object.values(hero.soulshots || {}).reduce((a,b) => a+b, 0),
+    potions: Object.values(hero.potions || {}).reduce((a,b) => a+b, 0),
     scrolls: {},
+    name: hero.name,
+    emoji: hero.emoji,
+    classType: hero.classType,
   };
-  // Какие свитки активны у меня
-  const now = Date.now();
-  for (const type of ['attack','crit','speed','range']) {
-    if (hero.shadow.scrolls[type] > 0) myConsumables.scrolls[type] = true;
-  }
 
-const oppConsumables = {
-  soulshots: Object.values(bot.soulshots || {}).reduce((a,b) => a+b, 0),
-  potions: Object.values(bot.potions || {}).reduce((a,b) => a+b, 0),
-  scrolls: bot.activeBuffs || {},
-  name: bot.name,
-  emoji: bot.classType === 'staff' ? '🔮' : '🏹',
-  classType: bot.classType,
-};
+  const oppConsumables = {
+    soulshots: Object.values(bot.soulshots || {}).reduce((a,b) => a+b, 0),
+    potions: Object.values(bot.potions || {}).reduce((a,b) => a+b, 0),
+    scrolls: bot.activeBuffs || {},
+    name: bot.name,
+    emoji: bot.classType === 'staff' ? '🔮' : '🏹',
+    classType: bot.classType,
+  };
 
   const battle = simulateBattle(myStats, oppStats, myConsumables, oppConsumables);
 
@@ -247,42 +261,29 @@ const oppConsumables = {
   if (won) hero.arena.wins++;
   else if (battle.result === 'loss') hero.arena.losses++;
 
-  // Износ экипировки тени
-  const durabilityLoss = won ? 5 : battle.result === 'loss' ? 15 : 8;
-  for (const slot of SLOTS) {
-    const item = hero.shadow.equipment[slot];
-    if (item && item.durability !== undefined) {
-      item.durability = Math.max(0, item.durability - durabilityLoss);
-    }
-  }
-
-  // Трата расходников
+  // Трата сосок героя (по грейдам — списываем из любого, где есть)
   const usedSoulshots = battle.soulshotsUsed;
-  const usedPotions = battle.potionsUsed;
-  // Соски
   let remainSoulshots = usedSoulshots;
   for (const grade of GRADE_ORDER) {
     if (remainSoulshots <= 0) break;
-    const have = hero.shadow.soulshots[grade] || 0;
+    const have = hero.soulshots[grade] || 0;
     const take = Math.min(have, remainSoulshots);
-    hero.shadow.soulshots[grade] -= take;
+    hero.soulshots[grade] -= take;
     remainSoulshots -= take;
   }
-  // Зелья
+  if (hero.soulshots[hero.equipment?.weapon?.grade] === 0) hero.soulshotActive = false;
+
+  // Трата зелий героя
+  const usedPotions = battle.potionsUsed;
   let remainPotions = usedPotions;
   for (const type of ['small','medium','large','epic']) {
     if (remainPotions <= 0) break;
-    const have = hero.shadow.potions[type] || 0;
+    const have = hero.potions[type] || 0;
     const take = Math.min(have, remainPotions);
-    hero.shadow.potions[type] -= take;
+    hero.potions[type] -= take;
     remainPotions -= take;
   }
-  // Свитки — тратятся по 1 за бой
-  for (const type of ['attack','crit','speed','range']) {
-    if (hero.shadow.scrolls[type] > 0) {
-      hero.shadow.scrolls[type]--;
-    }
-  }
+  if (hero.activePotion && (hero.potions[hero.activePotion] || 0) <= 0) hero.activePotion = null;
 
   // История
   const record = {
@@ -291,7 +292,6 @@ const oppConsumables = {
     result: battle.result,
     change,
     timestamp: Date.now(),
-    durabilityLoss,
   };
   hero.arena.history.unshift(record);
   if (hero.arena.history.length > 20) hero.arena.history.pop();
@@ -305,7 +305,6 @@ const oppConsumables = {
     newRating: hero.arena.rating,
     botName: bot.name,
     botRating: bot.rating,
-    durabilityLoss,
     usedSoulshots,
     usedPotions,
   };
@@ -331,7 +330,6 @@ export function claimChest(hero, chestId) {
 
   hero.arena.claimedChests.push(chestId);
 
-  // Выдаём награды
   const rewards = {
     gold: chest.gold,
     scrolls: chest.scrolls,
@@ -340,16 +338,11 @@ export function claimChest(hero, chestId) {
     itemGrade: chest.itemGrade,
   };
 
-  // Золото
-  // (hero.gold снаружи — но у нас есть только hero, state отдельно;
-  //  поэтому возвращаем данные, а применяет вызывающий)
-
   return { ok: true, chest, rewards };
 }
 
-// ===== РУЛЕТКА =====
+// ===== КАРТОЧКИ НАГРАД =====
 
-// Выбрать 3 карточки наград (без рулетки)
 export function rollCardRewards(won, cityGrade = 'ng') {
   const pool = [
     { id: 'gold_small', icon: '💰', name: '500 золота', gold: 500, rarity: 'common' },
@@ -365,14 +358,11 @@ export function rollCardRewards(won, cityGrade = 'ng') {
     { id: 'pass_3',     icon: '🎫', name: '3 пропуска', passes: 3, rarity: 'epic' },
   ];
 
-  // При победе — шансы лучше
   let pool2 = pool;
   if (!won) {
-    // При поражении убираем самые жирные
     pool2 = pool.filter(p => p.rarity !== 'legendary');
   }
 
-  // Выбираем 3 уникальные карточки
   const chosen = [];
   const used = new Set();
   while (chosen.length < 3) {
@@ -386,7 +376,7 @@ export function rollCardRewards(won, cityGrade = 'ng') {
   return chosen;
 }
 
-// ===== ПРИМЕНЕНИЕ НАГРАДЫ РУЛЕТКИ =====
+// ===== ПРИМЕНЕНИЕ НАГРАДЫ =====
 
 export function applyRouletteReward(hero, reward) {
   switch (reward.id) {
@@ -409,8 +399,6 @@ export function applyRouletteReward(hero, reward) {
   }
 }
 
-// ===== ПРИМЕНЕНИЕ РУЛЕТКИ К ГЕРОЮ =====
-
 export function applyRouletteToHero(hero, reward, cityGrade = 'ng') {
   const result = applyRouletteReward(hero, reward);
 
@@ -424,7 +412,6 @@ export function applyRouletteToHero(hero, reward, cityGrade = 'ng') {
 
   if (result.blessed) {
     const bs = createBlessedScroll(1);
-    // стакаем
     const existing = hero.backpack.find(x => x.kind === 'blessed');
     if (existing) existing.count = (existing.count || 1) + 1;
     else hero.backpack.push(bs);
@@ -438,7 +425,6 @@ export function applyRouletteToHero(hero, reward, cityGrade = 'ng') {
   }
 
   if (result.item) {
-    // Случайный предмет текущего грейда
     const slots = SLOTS;
     const slot = slots[Math.floor(Math.random() * slots.length)];
     const weaponType = slot === 'weapon' ? hero.weaponType : null;
