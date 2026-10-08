@@ -134,7 +134,29 @@ export function updateBattle(dt, world) {
       const hero = heroes[0];
       const diff = currentZone?.diff || 'easy';
       const mobDmg = m.boss ? bossDamageFor(hero) : mobDamageFor(hero, diff);
-      const result = damageHero(hero, mobDmg);
+
+      // ── Дальний бой: стреляем снарядом вместо прямого удара ──
+      if ((m.attackRange || 0) > 2) {
+        const proj = m.attackProjectile || { type: 'bow', color: '#f97316', speed: 12 };
+        const tx = hero.x - m.x, ty = hero.y - m.y;
+        const dist = Math.hypot(tx, ty) || 1;
+        projectiles.push({
+          x: m.x, y: m.y,
+          vx: tx/dist * (proj.speed || 12),
+          vy: ty/dist * (proj.speed || 12),
+          damage: mobDmg,
+          aoe: 0,
+          color: proj.color || '#f97316',
+          weaponType: proj.type || 'bow',
+          life: 3, trail: [],
+          isCrit: false, isExecute: false, doubleStrike: false,
+          isSkill: false,
+          owner: m,
+        });
+        continue;   // урон нанесётся при попадании снаряда
+      }
+
+      const result = damageHero(hero, mobDmg, m);
       if (result === 'dodge') {
         noteOfflineEvent('dodge', { mob: m.name || m.id });
         addEffect({ x: hero.x, y: hero.y - 0.5, life: 0.7, maxLife: 0.7, color: '#a5f3fc', text: 'DODGE' });
@@ -301,6 +323,49 @@ export function updateBattle(dt, world) {
         }
         let finalDamage = Math.max(1, p.damage - Math.floor(effDef * 0.5));
 
+        // Pierce от milestone 90
+        if (p.pierce > 0) {
+          finalDamage += Math.floor(effDef * (p.pierce / 100));
+        }
+
+        // Execute от lethal_shot (или milestone)
+        if (p.executeBonus > 0 && m.hp / m.maxHp < 0.3) {
+          finalDamage = Math.floor(finalDamage * (1 + p.executeBonus));
+          addEffect({ x: m.x, y: m.y - 1.6, life: 0.9, maxLife: 0.9, color: '#dc2626', text: '💀 КАЗНЬ', big: true });
+          addEffect({ kind: 'flash', x: m.x, y: m.y, life: 0.4, maxLife: 0.4, color: '#dc2626', radius: 1.2 });
+        }
+
+        // Crit bonus от milestone 30 (для скиллов)
+        if (p.critBonus > 0 && !p.isCrit) {
+          if (Math.random() * 100 < p.critBonus) {
+            p.isCrit = true;
+            finalDamage = Math.floor(finalDamage * (1 + (attacker.critDamage || 50) / 100));
+          }
+        }
+
+        // Chain lightning — рикошет (chain_lightning)
+        if (p.chain > 0) {
+          addEffect({ kind: 'flash', x: m.x, y: m.y, life: 0.4, maxLife: 0.4, color: '#a855f7', radius: 1.0 });
+          let prev = m;
+          let chainDmg = finalDamage;
+          for (let c = 0; c < p.chain; c++) {
+            const cand = targets
+              .filter(x => !x.dead && x !== prev && Math.hypot(x.x - prev.x, x.y - prev.y) <= 4)
+              .sort((a, b) => Math.hypot(a.x - prev.x, a.y - prev.y) - Math.hypot(b.x - prev.x, b.y - prev.y));
+            if (cand.length === 0) break;
+            const next = cand[0];
+            chainDmg = Math.floor(chainDmg * (p.chainDecay || 0.7));
+            next.hp -= chainDmg;
+            next.hitFlash = 0.12;
+            next.aggro = true;
+            if (next.groupId) aggroGroup(enemies, next.groupId);
+            addEffect({ kind: 'chain', x1: prev.x, y1: prev.y, x2: next.x, y2: next.y, life: 0.35, maxLife: 0.35, color: '#a855f7' });
+            addEffect({ kind: 'flash', x: next.x, y: next.y, life: 0.3, maxLife: 0.3, color: '#a855f7', radius: 0.8 });
+            addEffect({ x: next.x, y: next.y - 0.5, life: 0.6, maxLife: 0.6, color: '#a855f7', text: '⚡' + chainDmg, big: true });
+            prev = next;
+          }
+        }
+
         if (p.doubleStrike && !p.doubleStrikeDone) {
           p.doubleStrikeDone = true;
           finalDamage *= 2;
@@ -315,6 +380,28 @@ export function updateBattle(dt, world) {
         m.hp -= finalDamage; m.hitFlash = 0.12; m.aggro = true;
         if (m.groupId) aggroGroup(enemies, m.groupId);
         sfxHit();
+
+        // ── Встроенный дебафф от снаряда (ice_bolt: замедление) ──
+        if (p.onHitDebuff && !m.dead) {
+          const db = p.onHitDebuff;
+          const nowDb = Date.now();
+          if (db.stat === 'attackSpeed') {
+            m.attackSpeedDebuff = {
+              mult: Math.max(0.1, 1 + (db.value / 100)),
+              until: nowDb + (db.duration || 3) * 1000,
+            };
+            addEffect({ kind: 'frost_ring', x: m.x, y: m.y, life: db.duration || 3, maxLife: db.duration || 3, color: '#67e8f9', owner: m });
+            addEffect({ x: m.x, y: m.y - 1.2, life: 1.0, maxLife: 1.0, color: '#67e8f9', text: '❄️ замедл.', big: false });
+          } else if (db.stat === 'stun') {
+            m.stunUntil = nowDb + (db.duration || 2) * 1000;
+            addEffect({ kind: 'stun_ring', x: m.x, y: m.y, life: db.duration || 2, maxLife: db.duration || 2, color: '#fbbf24', owner: m });
+          } else if (db.stat === 'silence') {
+            m.silenceUntil = nowDb + (db.duration || 3) * 1000;
+            if (m.casting) m.casting = null;
+            addEffect({ kind: 'silence_ring', x: m.x, y: m.y, life: db.duration || 3, maxLife: db.duration || 3, color: '#3b82f6', owner: m });
+          }
+        }
+
         noteOfflineEvent(p.isCrit ? 'crit' : 'deal', { mob: m.name || m.id, dmg: Math.floor(finalDamage) });
         if (logArena) logArena({
           kind: p.isSkill ? 'skill' : 'hit',
@@ -327,6 +414,7 @@ export function updateBattle(dt, world) {
         addEffect({ x: m.x, y: m.y - 0.5, life: 0.6, maxLife: 0.6, color: dmgColor, text: dmgText, big: p.isCrit });
 
         if (p.aoe > 0) {
+          addEffect({ kind: 'aoe_hit', x: m.x, y: m.y, life: 0.5, maxLife: 0.5, color: p.color, radius: p.aoe });
           for (const other of targets) {
             if (other === m || other.dead) continue;
             if (Math.hypot(other.x - m.x, other.y - m.y) <= p.aoe) {
@@ -416,33 +504,54 @@ export function updateBattle(dt, world) {
         if (d < bestD) { best = t; bestD = d; }
       }
 
-      // Двигается к цели, если она дальше 1.5 клетки
-      if (best && bestD > 1.5) {
+      const isPanther = s.petType === 'panther';
+      const minDist = isPanther ? 1.0 : 1.5;
+      if (best && bestD > minDist) {
         const tx = best.x - s.x, ty = best.y - s.y;
         const dist = Math.hypot(tx, ty) || 1;
         const spd = s.moveSpeed || 0.4;
+        s.x += tx / dist * spd * dt;
         s.y += ty / dist * spd * dt;
       }
 
       // Атака
-      if (s.cooldown <= 0 && best && bestD < 12) {
+      const attackRange = isPanther ? 1.5 : 12;
+      if (s.cooldown <= 0 && best && bestD < attackRange) {
         s.cooldown = 1 / Math.max(0.3, s.attackSpeed || 1);
-        const tx = best.x - s.x, ty = best.y - s.y;
-        const dist = Math.hypot(tx, ty) || 1;
-        const spd = 12;
-        projectiles.push({
-          x: s.x, y: s.y,
-          vx: tx / dist * spd,
-          vy: ty / dist * spd,
-          damage: s.damage,
-          aoe: 0,
-          color: '#a855f7',
-          weaponType: 'staff',
-          life: 2, trail: [],
-          isCrit: false, isExecute: false, doubleStrike: false,
-          isSkill: false,
-          owner: { name: s.ownerName, team: s.ownerTeam, isShadow: true },
-        });
+
+        if (isPanther) {
+          // Ближний бой — урон напрямую, без снаряда
+          const finalDamage = Math.max(1, Math.floor(s.damage - (best.defense || 0) * 0.3));
+          best.hp -= finalDamage;
+          best.hitFlash = 0.12;
+          best.aggro = true;
+          if (best.groupId && typeof aggroGroup === 'function') aggroGroup(enemies, best.groupId);
+          sfxHit();
+          if (typeof logArena === 'function') logArena({
+            kind: 'hit', side: (s.ownerTeam === 'enemy') ? 'opp' : 'me',
+            attacker: s.name, target: best.name,
+            damage: finalDamage, crit: false,
+          });
+          addEffect({ x: best.x, y: best.y - 0.5, life: 0.6, maxLife: 0.6, color: '#fbbf24', text: '🐆-' + finalDamage, big: false });
+        } else {
+          // Тень-маг — стреляет снарядом
+          const tx = best.x - s.x, ty = best.y - s.y;
+          const dist = Math.hypot(tx, ty) || 1;
+          const spd = 12;
+          projectiles.push({
+            x: s.x, y: s.y,
+            vx: tx / dist * spd,
+            vy: ty / dist * spd,
+            damage: s.damage,
+            aoe: 0,
+            color: '#a855f7',
+            weaponType: 'staff',
+            life: 2, trail: [],
+            isCrit: false, isExecute: false, doubleStrike: false,
+            isSkill: false,
+            owner: { name: s.ownerName, team: s.ownerTeam, isShadow: true },
+          });
+        }
       }
     }
   }

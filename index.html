@@ -9,94 +9,69 @@
 </head>
 <body>
   <canvas id="game"></canvas>
-<div id="loading-screen" class="loading-screen">
-  <div class="loading-box">
-    <div class="loading-icon">⏳</div>
-    <div class="loading-text">Загрузка...</div>
+  <div id="damage-numbers"></div>
+
+  <div id="loading-screen" class="loading-screen">
+    <div class="loading-box">
+      <div class="loading-icon"><span>⏳</span></div>
+      <div class="loading-text">Загрузка...</div>
+    </div>
   </div>
-</div>
-<div id="hud-top" class="hidden">
-    <!-- Полоски HP / мана -->
-    <div class="hud-bars">
-      <div class="hud-bar hp-bar">
-        <div class="hud-bar-fill" id="hp-fill"></div>
-        <div class="hud-bar-text" id="hp">200/200</div>
-      </div>
-      <div class="hud-bar mana-bar">
-        <div class="hud-bar-fill" id="mana-fill"></div>
-        <div class="hud-bar-text" id="mana">80/80</div>
-      </div>
-    </div>
 
-    <!-- Статы -->
-    
-    <!-- Ресурсы: золото + уровень -->
+  <div id="hud-top" class="hidden">
+    <button id="hud-offline" title="Офлайн-фарм" style="display:none"><span class="hud-icon">💤</span></button>
     <div class="hud-res">
-        <span class="hud-item"><span class="icon">💰</span><span id="gold">0</span></span>
-        <span class="hud-item"><span class="icon">⭐</span><span id="level">1</span><div class="xp-bar"><div id="xp-fill"></div></div></span>
+      <span class="hud-item"><span class="icon">💰</span><span id="gold">0</span></span>
+      <span class="hud-item"><span class="icon">⭐</span><span id="level">1</span><div class="xp-bar"><div id="xp-fill"></div></div></span>
     </div>
-    
-    <!-- Аккаунт -->
     <div id="account-info" class="account-info"></div>
-</div>
-<div id="hud-stats" class="hud-stats">
-  <span class="hs hs-atk">⚔<b id="stat-atk">0</b></span>
-  <span class="hs hs-def">🛡<b id="stat-def">0</b></span>
-  <span class="hs hs-range">📏<b id="stat-range">4.5</b></span>
-  <span class="hs hs-crit">💥<b id="stat-crit">0</b>%</span>
-  <span class="hs hs-dodge">💨<b id="stat-dodge">0</b>%</span>
-  <span class="hs hs-ls">🩸<b id="stat-ls">0</b>%</span>
-</div>
+  </div>
 
-    <span class="hs hs-atk">⚔ <b id="stat-atk">0</b></span>
-    <span class="hs hs-def">🛡 <b id="stat-def">0</b></span>
-    <span class="hs hs-range">📏 <b id="stat-range">4.5</b></span>
-    <span class="hs hs-crit">💥 <b id="stat-crit">0</b>%</span>
-    <span class="hs hs-dodge">💨 <b id="stat-dodge">0</b>%</span>
-    <span class="hs hs-ls">🩸 <b id="stat-ls">0</b>%</span>
-  
+  <div id="hud-stats" class="hud-stats">
+    <span class="hs hs-atk"><span>⚔</span><b id="stat-atk">0</b></span>
+    <span class="hs hs-def"><span>🛡</span><b id="stat-def">0</b></span>
+    <span class="hs hs-range"><span>📏</span><b id="stat-range">4.5</b></span>
+    <span class="hs hs-crit"><span>💥</span><b id="stat-crit">0</b>%</span>
+    <span class="hs hs-dodge"><span>💨</span><b id="stat-dodge">0</b>%</span>
+    <span class="hs hs-ls"><span>🩸</span><b id="stat-ls">0</b>%</span>
+  </div>
+
+      <!-- Универсальная плашка — игрок (фарм + арена) -->
+  <div id="hud-plate-me" class="hud-plate hud-plate-me hidden">
+    <div class="hp-bar hud-bar">
+      <div class="hud-bar-fill" id="as-me-hp-fill"></div>
+      <div class="hud-bar-text" id="as-me-hp-text">0/0</div>
+    </div>
+    <div class="mana-bar hud-bar">
+      <div class="hud-bar-fill" id="as-me-mana-fill"></div>
+      <div class="hud-bar-text" id="as-me-mana-text">0/0</div>
+    </div>
+    <div class="as-buffs" id="as-me-buffs"></div>
+  </div>
+
+  <!-- Универсальная плашка — таргет (фарм + арена) -->
+  <div id="hud-plate-target" class="hud-plate hud-plate-target hidden">
+    <div class="hp-bar hud-bar">
+      <div class="hud-bar-fill" id="as-opp-hp-fill"></div>
+      <div class="hud-bar-text" id="as-opp-hp-text">0/0</div>
+    </div>
+    <div class="mana-bar hud-bar">
+      <div class="hud-bar-fill" id="as-opp-mana-fill"></div>
+      <div class="hud-bar-text" id="as-opp-mana-text">0/0</div>
+    </div>
+    <div class="as-buffs" id="as-opp-buffs"></div>
+  </div>
 
   <div id="hud-zone" class="hidden">
     <div><span id="zone-diff">🟢</span> <span id="zone-name">Поля Гремлинов</span></div>
   </div>
 
-  <!-- ===== ПЛАШКА АРЕНЫ ===== -->
   <div id="arena-hud" class="hidden">
+   
     <div class="arena-hud-inner">
-      <div class="ah-vs">⚔ Ты vs <span id="ah-opp-name">—</span></div>
       <div class="ah-timer" id="ah-timer">00:00.0</div>
       <button id="ah-exit" class="ah-exit">Выйти</button>
     </div>
-  </div>
-
-  <!-- ===== БОКОВАЯ ПАНЕЛЬ — ТЫ ===== -->
-  <div id="arena-side-me" class="arena-side hidden">
-    <div class="as-name">Ты</div>
-    <div class="as-bar as-hp">
-      <div class="as-bar-fill" id="as-me-hp-fill"></div>
-      <div class="as-bar-text" id="as-me-hp-text">0/0</div>
-    </div>
-    <div class="as-bar as-mana">
-      <div class="as-bar-fill" id="as-me-mana-fill"></div>
-      <div class="as-bar-text" id="as-me-mana-text">0/0</div>
-    </div>
-    <div class="as-skills" id="as-me-skills"></div>
-    <div class="as-buffs" id="as-me-buffs"></div>
-  </div>
-
-  <!-- ===== БОКОВАЯ ПАНЕЛЬ — ВРАГ ===== -->
-  <div id="arena-side-opp" class="arena-side hidden">
-    <div class="as-name" id="as-opp-name">Враг</div>
-    <div class="as-bar as-hp">
-      <div class="as-bar-fill" id="as-opp-hp-fill"></div>
-      <div class="as-bar-text" id="as-opp-hp-text">0/0</div>
-    </div>
-    <div class="as-bar as-mana">
-      <div class="as-bar-fill" id="as-opp-mana-fill"></div>
-      <div class="as-bar-text" id="as-opp-mana-text">0/0</div>
-    </div>
-    <div class="as-skills" id="as-opp-skills"></div>
-    <div class="as-buffs" id="as-opp-buffs"></div>
   </div>
 
 
@@ -106,166 +81,145 @@
   <div id="joystick" class="hidden">
     <div id="joystick-base"><div id="joystick-stick"></div></div>
   </div>
-    <button id="btn-auto" class="hidden">АВТО</button>
+
+  <button id="btn-auto" class="hidden">АВТО</button>
 
   <div id="skill-bar" class="hidden">
-    <button class="skill-btn" data-skill-slot="0">
-      <span class="skill-icon">·</span>
-      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
-      <span class="skill-mana"></span>
-    </button>
-    <button class="skill-btn" data-skill-slot="1">
-      <span class="skill-icon">·</span>
-      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
-      <span class="skill-mana"></span>
-    </button>
-     <button class="skill-btn" data-skill-slot="2">
-      <span class="skill-icon">·</span>
-      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
-      <span class="skill-mana"></span>
-    </button>
-    <button class="skill-btn" data-skill-slot="3">
-      <span class="skill-icon">·</span>
-      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
-      <span class="skill-mana"></span>
-    </button>
-    <button class="skill-btn" data-skill-slot="4">
-      <span class="skill-icon">·</span>
-      <span class="skill-cd-overlay"><span class="skill-cd-num"></span></span>
-      <span class="skill-mana"></span>
-    </button>
-  </div>
- 
-  <div id="hud-actions" class="hidden">
-    <div class="hud-stat hud-potion" data-potion="epic"><span class="hud-icon">🏺</span><span class="hud-count" id="pot-epic">0</span></div>
-    <div class="hud-stat hud-potion" data-potion="large"><span class="hud-icon">🍷</span><span class="hud-count" id="pot-large">0</span></div>
-    <div class="hud-stat hud-potion" data-potion="medium"><span class="hud-icon">⚗️</span><span class="hud-count" id="pot-medium">0</span></div>
-    <div class="hud-stat hud-potion" data-potion="small"><span class="hud-icon">🧪</span><span class="hud-count" id="pot-small">5</span></div>
-    <div class="hud-stat hud-buff" data-buff="range" style="display:none"><span class="hud-icon">📏</span><span class="hud-count">0</span></div>
-    <div class="hud-stat hud-buff" data-buff="speed" style="display:none"><span class="hud-icon">⚡</span><span class="hud-count">0</span></div>
-    <div class="hud-stat hud-buff" data-buff="crit" style="display:none"><span class="hud-icon">💥</span><span class="hud-count">0</span></div>
-    <div class="hud-stat hud-buff" data-buff="attack" style="display:none"><span class="hud-icon">🗡</span><span class="hud-count">0</span></div>
-    <div class="hud-stat" id="hud-soulshot"><span class="hud-icon">⚡</span><span class="hud-count" id="soulshot-count">0</span></div>
-    <div class="hud-stat" id="hud-offline" style="display:none">
-  <span class="hud-icon">💤</span>
-  <span class="hud-count">Офлайн</span>
-</div>
+    <button class="skill-btn" data-skill-slot="0"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="1"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="2"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="3"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="4"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="5"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="6"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
+    <button class="skill-btn" data-skill-slot="7"><span class="skill-icon">·</span><span class="skill-cd-overlay"><span class="skill-cd-num"></span></span><span class="skill-mana"></span></button>
   </div>
 
-<div id="city-screen" class="hidden">
-  <div class="city-header">
-    <div id="city-name">Talking Island</div>
-    <div id="city-sub">Стартовый остров</div>
-    <div id="city-grade">No-Grade</div>
-  </div>
-  <div id="last-session" class="last-session hidden">
-    <div class="ls-title">📦 Последняя сессия · <span id="ls-zone">—</span></div>
-    <div class="ls-grid">
-      <div class="ls-cell"><div class="ls-ico">💰</div><div class="ls-val" id="ls-gold">0</div></div>
-      <div class="ls-cell"><div class="ls-ico">⭐</div><div class="ls-val" id="ls-xp">0</div></div>
-      <div class="ls-cell"><div class="ls-ico">👹</div><div class="ls-val" id="ls-kills">0</div></div>
-      <div class="ls-cell"><div class="ls-ico">⚔</div><div class="ls-val" id="ls-items">0</div></div>
-      <div class="ls-cell"><div class="ls-ico">📜</div><div class="ls-val" id="ls-scrolls">0</div></div>
-      <div class="ls-cell"><div class="ls-ico">✨</div><div class="ls-val" id="ls-blessed">0</div></div>
+
+
+  <div id="city-screen" class="hidden">
+    <div class="city-header">
+      <div id="city-name">Talking Island</div>
+      <div id="city-sub">Стартовый остров</div>
+      <div id="city-grade">No-Grade</div>
+    </div>
+    <div id="last-session" class="last-session hidden">
+      <div class="ls-title"><span>📦</span> Последняя сессия · <span id="ls-zone">—</span></div>
+      <div class="ls-grid">
+        <div class="ls-cell"><div class="ls-ico">💰</div><div class="ls-val" id="ls-gold">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">⭐</div><div class="ls-val" id="ls-xp">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">👹</div><div class="ls-val" id="ls-kills">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">⚔</div><div class="ls-val" id="ls-items">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">📜</div><div class="ls-val" id="ls-scrolls">0</div></div>
+        <div class="ls-cell"><div class="ls-ico">✨</div><div class="ls-val" id="ls-blessed">0</div></div>
+      </div>
+    </div>
+    <div id="city-zones"></div>
+    <button id="btn-open-teleport" class="city-btn"><span>🌍</span> Телепорт в другой город</button>
+    <div id="dev-codes">
+      <input id="dev-code-input" type="text" placeholder="dev-код" autocomplete="off">
+      <button id="dev-code-apply">Активировать</button>
     </div>
   </div>
-  <div id="city-zones"></div>
-  <button id="btn-open-teleport" class="city-btn">🌍 Телепорт в другой город</button>
-
-  <div id="dev-codes">
-    <input id="dev-code-input" type="text" placeholder="dev-код" autocomplete="off">
-    <button id="dev-code-apply">Активировать</button>
-  </div>
-</div>
 
   <div id="bottom-panel" class="hidden">
     <button data-panel="city"><span class="bp-icon">🏙</span><span class="bp-label">Город</span></button>
-    <button data-panel="hero"><span class="bp-icon">🧙</span><span class="bp-label">Герой</span><span class="bp-badge" id="bp-hero-badge">0</span></button>
+    <button data-panel="hero"><span class="bp-icon">🎒</span><span class="bp-label">Инв.</span><span class="bp-badge" id="bp-hero-badge">0</span></button>
     <button data-panel="enhance"><span class="bp-icon">⚒</span><span class="bp-label">Заточка</span></button>
     <button data-panel="shop"><span class="bp-icon">🏪</span><span class="bp-label">Магазин</span></button>
     <button data-panel="auction"><span class="bp-icon">⚖</span><span class="bp-label">Аукцион</span><span class="bp-badge" id="bp-auction-badge">0</span></button>
     <button data-panel="arena"><span class="bp-icon">🏟️</span><span class="bp-label">Арена</span></button>
   </div>
 
+  <!-- ============== ИНВЕНТАРЬ ============== -->
   <div id="modal-hero" class="modal hidden">
-    <div class="modal-window">
-         <div class="modal-header">
-        <h2>🧙 Герой</h2>
+    <div class="modal-window l2-window">
+      <div class="modal-header">
+        <h2>Inventory</h2>
         <button class="modal-close" data-modal="hero">✕</button>
       </div>
       <div class="modal-body">
-
         <div id="hero-block">
-          <div class="hero-layout">
-            <div class="mannequin" id="mannequin"></div>
-            <div class="hero-stats" id="hero-stats"></div>
+
+          <div class="tab-bar l2-tab-bar" id="hero-tabs">
+            <button class="tab-btn active" data-hero-tab="backpack">General</button>
+            <button class="tab-btn" data-hero-tab="skills">Skills</button>
+            <button class="tab-btn" data-hero-tab="scrolls">Scrolls</button>
+            <button class="tab-btn" data-hero-tab="potions">Potions</button>
+            <button class="tab-btn" data-hero-tab="soulshots">Shots</button>
+            <div class="l2-inv-counter">(<span id="inv-count">0</span>/80)</div>
           </div>
-          <div id="hero-bonuses" class="hero-bonuses"></div>
-                <div class="tab-bar" id="hero-tabs">
-            <button class="tab-btn active" data-hero-tab="backpack">Рюкзак</button>
-            <button class="tab-btn" data-hero-tab="skills">Скиллы</button>
-            <button class="tab-btn" data-hero-tab="scrolls">Свитки</button>
-            <button class="tab-btn" data-hero-tab="potions">Зелья</button>
-            <button class="tab-btn" data-hero-tab="soulshots">Соски</button>
+
+          <div class="l2-hero-body">
+                      <aside class="l2-pd-wrap">
+              <div class="mannequin" id="mannequin"></div>
+              <div class="hero-stats l2-hero-stats" id="hero-stats"></div>
+            </aside>
+
+            <div class="l2-content-wrap">
+              <div id="hero-tab-backpack" class="hero-tab-content">
+                <div class="tab-tools">
+                  <button id="btn-sort" class="tool-btn" title="Сортировать: оружие → броня → свитки → зелья → соски">⇅ Сортировать</button>
+                </div>
+                <div class="backpack-grid" id="backpack-grid"></div>
+              </div>
+                       <div id="hero-tab-skills" class="hero-tab-content hidden">
+                <div class="section-title">Изучено</div>
+                <div class="learned-skills" id="learned-skills"></div>
+              </div>
+              <div id="hero-tab-scrolls" class="hero-tab-content hidden">
+                <div class="scrolls-list" id="scrolls-list"></div>
+              </div>
+              <div id="hero-tab-potions" class="hero-tab-content hidden">
+                <div class="potions-list" id="potions-list"></div>
+              </div>
+                        <div id="hero-tab-soulshots" class="hero-tab-content hidden">
+                <div class="soulshots-list" id="soulshots-list"></div>
+              </div>
+              <div id="hero-bonuses" class="hero-bonuses l2-hero-bonuses"></div>
+            </div>
           </div>
-          <div id="hero-tab-backpack" class="hero-tab-content"><div class="backpack-grid" id="backpack-grid"></div></div>
-          <div id="hero-tab-skills" class="hero-tab-content hidden">
-            <div class="section-title">⚔ Боевые слоты (3)</div>
+
+               <div class="hero-slots-bar">
             <div class="skill-slots-row" id="skill-slots-row"></div>
-            <div class="section-title">📚 Изученные скиллы</div>
-            <div class="learned-skills" id="learned-skills"></div>
-            <div class="skills-hint">💡 Открой книжку скилла из рюкзака, чтобы изучить его. Затем клик по изученному — поставит его в свободный слот.</div>
-          </div>          <div id="hero-tab-scrolls" class="hero-tab-content hidden"><div class="scrolls-list" id="scrolls-list"></div></div>
-          <div id="hero-tab-potions" class="hero-tab-content hidden"><div class="potions-list" id="potions-list"></div></div>
-          <div id="hero-tab-soulshots" class="hero-tab-content hidden"><div class="soulshots-list" id="soulshots-list"></div></div>
+          </div>
+
         </div>
-
-
-
       </div>
     </div>
   </div>
 
   <div id="modal-arena" class="modal hidden">
-    <div class="modal-window arena-window">
+    <div class="modal-window l2-window arena-window">
       <div class="modal-header arena-header">
-        <h2>🏟️ Арена</h2>
+        <h2>Арена</h2>
         <div id="arena-profile" class="arena-profile"></div>
         <button class="modal-close" data-modal="arena">✕</button>
       </div>
       <div class="modal-body arena-body">
-        <div class="tab-bar" id="arena-tabs">
+        <div class="tab-bar l2-tab-bar" id="arena-tabs">
           <button class="tab-btn active" data-arena-tab="list">Рейтинг</button>
           <button class="tab-btn" data-arena-tab="chests">Сундуки</button>
           <button class="tab-btn" data-arena-tab="history">История</button>
         </div>
-        <div class="arena-tab-content" id="arena-tab-list">
-          <div id="arena-list" class="arena-list"></div>
-        </div>
-        <div class="arena-tab-content hidden" id="arena-tab-chests">
-          <div id="arena-chests" class="arena-chests"></div>
-        </div>
-        <div class="arena-tab-content hidden" id="arena-tab-history">
-          <div id="arena-history" class="arena-history"></div>
-        </div>
-        <div class="arena-tab-content hidden" id="arena-tab-result">
-          <div id="arena-result" class="arena-result"></div>
-        </div>
+        <div class="arena-tab-content" id="arena-tab-list"><div id="arena-list" class="arena-list"></div></div>
+        <div class="arena-tab-content hidden" id="arena-tab-chests"><div id="arena-chests" class="arena-chests"></div></div>
+        <div class="arena-tab-content hidden" id="arena-tab-history"><div id="arena-history" class="arena-history"></div></div>
+        <div class="arena-tab-content hidden" id="arena-tab-result"><div id="arena-result" class="arena-result"></div></div>
       </div>
     </div>
   </div>
-<div id="modal-compare" class="modal hidden">
-  <div class="modal-window compare-window">
-    <div class="modal-header">
-      <h2>⚔ Сравнение</h2>
-      <button class="modal-close" data-modal="compare">✕</button>
+
+  <div id="modal-compare" class="modal hidden">
+    <div class="modal-window l2-window compare-window">
+      <div class="modal-header"><h2>Сравнение</h2><button class="modal-close" data-modal="compare">✕</button></div>
+      <div class="modal-body" id="compare-body"></div>
     </div>
-    <div class="modal-body" id="compare-body"></div>
   </div>
-</div>
+
   <div id="modal-enhance" class="modal hidden">
-    <div class="modal-window">
-      <div class="modal-header"><h2>⚒ Заточка</h2><button class="modal-close" data-modal="enhance">✕</button></div>
+    <div class="modal-window l2-window">
+      <div class="modal-header"><h2>Enchant</h2><button class="modal-close" data-modal="enhance">✕</button></div>
       <div class="modal-body">
         <div id="enhance-hero-stats" class="enhance-hero-stats"></div>
         <div class="section-title">Надето</div>
@@ -278,26 +232,26 @@
   </div>
 
   <div id="modal-shop" class="modal hidden">
-    <div class="modal-window">
-      <div class="modal-header"><h2>🏪 Магазин</h2><button class="modal-close" data-modal="shop">✕</button></div>
+    <div class="modal-window l2-window">
+      <div class="modal-header"><h2>Shop</h2><button class="modal-close" data-modal="shop">✕</button></div>
       <div class="modal-body">
-        <div id="shop-grade-info" class="muted" style="margin-bottom:10px"></div>
-        <div class="tab-bar" id="shop-cat-tabs">
+        <div id="shop-grade-info" class="muted" style="margin-bottom:4px"></div>
+        <div class="tab-bar l2-tab-bar" id="shop-cat-tabs">
           <button class="tab-btn active" data-shop-cat="equipment">Экип.</button>
           <button class="tab-btn" data-shop-cat="scrolls">Свитки</button>
           <button class="tab-btn" data-shop-cat="potions">Зелья</button>
           <button class="tab-btn" data-shop-cat="soulshots">Соски</button>
         </div>
-        <div id="shop-content"></div>
+        <div id="shop-content" class="shop-content"></div>
       </div>
     </div>
   </div>
 
   <div id="modal-auction" class="modal hidden">
-    <div class="modal-window">
-      <div class="modal-header"><h2>⚖ Аукцион</h2><button class="modal-close" data-modal="auction">✕</button></div>
+    <div class="modal-window l2-window">
+      <div class="modal-header"><h2>Auction</h2><button class="modal-close" data-modal="auction">✕</button></div>
       <div class="modal-body">
-        <div class="tab-bar">
+        <div class="tab-bar l2-tab-bar">
           <button class="tab-btn active" data-tab="buy">Купить</button>
           <button class="tab-btn" data-tab="sell">Продать</button>
           <button class="tab-btn" data-tab="my">Мои лоты</button>
@@ -310,20 +264,42 @@
   </div>
 
   <div id="modal-teleport" class="modal hidden">
-    <div class="modal-window">
-      <div class="modal-header"><h2>🌍 Телепорт</h2><button class="modal-close" data-modal="teleport">✕</button></div>
+    <div class="modal-window l2-window">
+      <div class="modal-header"><h2>Teleport</h2><button class="modal-close" data-modal="teleport">✕</button></div>
       <div class="modal-body"><div id="teleport-list"></div></div>
     </div>
   </div>
 
   <div id="item-popup" class="popup hidden">
-    <div class="popup-window"><div id="item-popup-body"></div></div>
+    <div class="popup-window l2-window"><div id="item-popup-body"></div></div>
   </div>
 
   <div id="toast-container"></div>
 
-<div id="auth-screen" class="overlay hidden"></div>
-
+  <div id="auth-screen" class="overlay hidden"></div>
+<div id="class-select" class="overlay hidden">
+  <h1>Auto L2</h1>
+  <p>Выбери класс</p>
+  <div class="class-buttons">
+    <button class="class-btn" data-class="archer">
+      <div class="class-icon">🏹</div>
+      <div class="class-name">Лучник</div>
+      <div class="class-desc">Быстрые дальние атаки</div>
+      <div class="class-skills-preview" style="font-size:10px;color:#94a3b8;margin-top:6px;text-align:left;padding:0 8px">
+        <b style="color:#c9a961">Скиллы:</b> Мультивыстрел, Мощный, Двойной, Точный, Смертельный, Оглушающий, Замедляющий, Ядовитый, Дождь стрел, Соколиный глаз, <b>Пантера</b>
+      </div>
+    </button>
+    <button class="class-btn" data-class="mage">
+      <div class="class-icon">🔮</div>
+      <div class="class-name">Маг</div>
+      <div class="class-desc">Мощные AoE заклинания</div>
+      <div class="class-skills-preview" style="font-size:10px;color:#94a3b8;margin-top:6px;text-align:left;padding:0 8px">
+        <b style="color:#c9a961">Скиллы:</b> Огненный шар, Ледяная стрела, Молния, Цепная молния, Метеор, Ледяная новая, Немота, Сон, Щит, <b>Тень</b>
+      </div>
+    </button>
+  </div>
+  <p style="margin-top:16px;font-size:10px;color:#7a6a4a;">Общие скиллы (Хил, Очищение, Уворот и др.) доступны всем</p>
+</div>
   <div id="class-select" class="overlay hidden">
     <h1>Auto L2</h1>
     <p>Выбери класс</p>
@@ -339,94 +315,315 @@
         <div class="class-desc">Мощные AoE заклинания</div>
       </button>
     </div>
-    <p style="margin-top:24px;font-size:11px;color:#64748b;">WASD или джойстик для движения</p>
+    <p style="margin-top:16px;font-size:10px;color:#7a6a4a;">WASD или джойстик для движения</p>
   </div>
 
   <div id="death-screen" class="overlay hidden">
-    <h2>💀 Ты погиб</h2>
+    <h2><span>💀</span> Ты погиб</h2>
     <p>Потеряно опыта: <span id="lost-xp">0</span></p>
     <div class="session-report">
-      <div class="session-title">📦 Добыча за сессию</div>
-      <div class="sr-row"><span>💰 Золото</span><span id="sr-gold">0</span></div>
-      <div class="sr-row"><span>⭐ Опыт</span><span id="sr-xp">0</span></div>
-      <div class="sr-row"><span>👹 Убито мобов</span><span id="sr-kills">0</span></div>
-      <div class="sr-row"><span>⚔ Предметы</span><span id="sr-items">0</span></div>
-      <div class="sr-row"><span>📜 Свитки</span><span id="sr-scrolls">0</span></div>
-      <div class="sr-row"><span>✨ Blessed</span><span id="sr-blessed">0</span></div>
+      <div class="session-title"><span>📦</span> Добыча за сессию</div>
+      <div class="sr-row"><span><span>💰</span> Золото</span><span id="sr-gold">0</span></div>
+      <div class="sr-row"><span><span>⭐</span> Опыт</span><span id="sr-xp">0</span></div>
+      <div class="sr-row"><span><span>👹</span> Убито мобов</span><span id="sr-kills">0</span></div>
+      <div class="sr-row"><span><span>⚔</span> Предметы</span><span id="sr-items">0</span></div>
+      <div class="sr-row"><span><span>📜</span> Свитки</span><span id="sr-scrolls">0</span></div>
+      <div class="sr-row"><span><span>✨</span> Blessed</span><span id="sr-blessed">0</span></div>
     </div>
-    <button id="btn-death-to-city" class="city-btn">🏙 Вернуться в город</button>
-    <p style="font-size:11px;margin-top:10px">Авто-возврат через <span id="respawn-timer">10</span>...</p>
+    <button id="btn-death-to-city" class="city-btn"><span>🏙</span> Вернуться в город</button>
+    <p style="font-size:10px;margin-top:8px">Авто-возврат через <span id="respawn-timer">10</span>...</p>
   </div>
 
   <div id="teleport-anim" class="teleport-anim hidden">
     <div class="tp-ring"></div>
     <div class="tp-icon">🌍</div>
   </div>
-<div id="offline-overlay" class="offline-overlay hidden">
-  <div class="offline-panel">
-    <div class="offline-header">
-      <span class="offline-icon">💤</span>
-      <span class="offline-title">Офлайн-фарм</span>
+
+  <div id="offline-overlay" class="offline-overlay hidden">
+    <div class="offline-panel l2-window">
+      <div class="offline-header">
+        <span class="offline-icon">💤</span>
+        <span class="offline-title">Офлайн-фарм</span>
+      </div>
+      <div class="offline-zone" id="offline-zone">Зона: —</div>
+      <div class="offline-timer" id="offline-timer">0:00:00</div>
+      <div class="offline-progress"><div class="offline-progress-fill" id="offline-progress" style="width:0%"></div></div>
+      <div class="offline-stats">
+        <div class="offline-stat"><span class="os-label"><span>💰</span> Золото</span><span class="os-val" id="offline-gold">0</span></div>
+        <div class="offline-stat"><span class="os-label"><span>⭐</span> Опыт</span><span class="os-val" id="offline-xp">0</span></div>
+        <div class="offline-stat"><span class="os-label"><span>⚔</span> Убито</span><span class="os-val" id="offline-kills">0</span></div>
+        <div class="offline-stat"><span class="os-label"><span>📦</span> Дроп</span><span class="os-val" id="offline-drops">0</span></div>
+      </div>
+      <div class="offline-res">
+        <div class="or-row" id="offline-res-ss"><span><span>⚡</span> Соски:</span><span id="offline-soulshots">0</span></div>
+        <div class="or-row" id="offline-res-pot"><span><span>🧪</span> Зелья:</span><span id="offline-potions">0</span></div>
+      </div>
+      <div class="offline-forecast" id="offline-forecast">Сосок хватит на: —</div>
+      <div class="offline-log" id="offline-log"></div>
+      <button class="offline-btn" id="offline-return"><span>🏃</span> Вернуться в игру</button>
     </div>
-
-    <div class="offline-zone" id="offline-zone">Зона: —</div>
-
-    <div class="offline-timer" id="offline-timer">0:00:00</div>
-
-    <div class="offline-progress">
-      <div class="offline-progress-fill" id="offline-progress" style="width:0%"></div>
-    </div>
-
-    <div class="offline-stats">
-      <div class="offline-stat">
-        <span class="os-label">💰 Золото</span>
-        <span class="os-val" id="offline-gold">0</span>
-      </div>
-      <div class="offline-stat">
-        <span class="os-label">⭐ Опыт</span>
-        <span class="os-val" id="offline-xp">0</span>
-      </div>
-      <div class="offline-stat">
-        <span class="os-label">⚔ Убито</span>
-        <span class="os-val" id="offline-kills">0</span>
-      </div>
-      <div class="offline-stat">
-        <span class="os-label">📦 Дроп</span>
-        <span class="os-val" id="offline-drops">0</span>
-      </div>
-    </div>
-
-    <div class="offline-res">
-      <div class="or-row" id="offline-res-ss">
-        <span>⚡ Соски:</span>
-        <span id="offline-soulshots">0</span>
-      </div>
-      <div class="or-row" id="offline-res-pot">
-        <span>🧪 Зелья:</span>
-        <span id="offline-potions">0</span>
-      </div>
-    </div>
-
-    <div class="offline-forecast" id="offline-forecast">
-      Сосок хватит на: —
-    </div>
-
-    <div class="offline-log" id="offline-log"></div>
-
-    <button class="offline-btn" id="offline-return">🏃 Вернуться в игру</button>
   </div>
-</div>
 
-<div id="offline-report" class="offline-overlay hidden">
-  <div class="offline-panel">
-    <div class="offline-header">
-      <span class="offline-icon" id="report-icon">✅</span>
-      <span class="offline-title" id="report-title">Отчёт офлайн-фарма</span>
+  <div id="offline-report" class="offline-overlay hidden">
+    <div class="offline-panel l2-window">
+      <div class="offline-header">
+        <span class="offline-icon" id="report-icon">✅</span>
+        <span class="offline-title" id="report-title">Отчёт</span>
+      </div>
+      <div id="report-body"></div>
+      <button class="offline-btn" id="report-close">Закрыть</button>
     </div>
-    <div id="report-body"></div>
-    <button class="offline-btn" id="report-close">Закрыть</button>
   </div>
-</div>
+
   <script type="module" src="main.js"></script>
+
+  <script>
+  (function () {
+    /* ============================================================
+       AUTO L2 — HERO UI SCRIPT
+       Все попапы, сортировка, сокет скиллов.
+       Работает через window.__ui из ui.js
+       ============================================================ */
+
+    // ---------- Хелперы ----------
+    function fmt(n) {
+      try { return Math.floor(n).toLocaleString('ru-RU'); }
+      catch (e) { return String(Math.floor(n)); }
+    }
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function $(sel, root) { return (root || document).querySelector(sel); }
+    function $$(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+    // ---------- Периодический апдейт плашек адэны/веса/инвентаря ----------
+    function tickHeroPanel() {
+      const s = window.state;
+      if (!s || !s.hero) return;
+      const a = document.getElementById('hero-adena');
+      if (a && s.gold != null) a.textContent = fmt(s.gold);
+      const wEl = document.getElementById('hero-weight-val');
+      const wFill = document.getElementById('hero-weight-fill');
+      if (wEl && s.hero.backpack) {
+        const items = s.hero.backpack.reduce((sum, it) => sum + (it.count || 1), 0);
+        const pct = Math.min(99.9, (items / 80) * 100);
+        wEl.textContent = pct.toFixed(2) + '%';
+        if (wFill) wFill.style.width = pct + '%';
+      }
+      const c = document.getElementById('inv-count');
+      if (c && s.hero.backpack) c.textContent = String(s.hero.backpack.length);
+    }
+    setInterval(() => {
+      const modal = document.getElementById('modal-hero');
+      if (modal && !modal.classList.contains('hidden')) tickHeroPanel();
+    }, 600);
+
+    // ---------- Открытие попапа ----------
+    function openPopup(html) {
+      const popup = document.getElementById('item-popup');
+      const body = document.getElementById('item-popup-body');
+      body.innerHTML = html;
+      popup.classList.remove('hidden');
+    }
+    function closePopup() {
+      document.getElementById('item-popup').classList.add('hidden');
+    }
+    document.getElementById('item-popup').addEventListener('click', (e) => {
+      if (e.target.id === 'item-popup') closePopup();
+    });
+    window.__popup = { open: openPopup, close: closePopup };
+
+ // ---------- Popup скилла ----------
+    function openSkillPopup(skillId) {
+      const api = window.__ui;
+      if (!api || !api.getSkillInfo) return;
+      const info = api.getSkillInfo(skillId);
+      if (!info) return;
+
+      const isMax = info.level >= info.maxLevel;
+      const freeSlot = info.freeSlot;
+      const inSlot = info.inSlot;
+      const canSocket = freeSlot >= 0;
+      const canLearn = !isMax && info.bookCount > 0;
+
+      // Milestones — активные подсвечены зелёным
+      const milestones = info.milestones || [];
+      const msHtml = milestones.map(ms => `
+        <div class="sp-ms ${ms.active ? 'active' : ''}">
+          <span class="sp-ms-lvl">${ms.lvl}</span>
+          <span class="sp-ms-desc">${ms.desc}</span>
+        </div>
+      `).join('');
+
+      const html = `
+        <div class="item-icon-big">${info.icon}</div>
+        <h3>${esc(info.name)}</h3>
+
+        <div class="sp-progress-wrap">
+          <div class="sp-row" style="border-bottom:none;padding:2px 0">
+            <span>Уровень</span>
+            <b>${info.level} / 100${isMax ? ' (MAX)' : ''}</b>
+          </div>
+          <div class="sp-progress-bar">
+            <div class="sp-progress-fill" style="width:${info.level}%"></div>
+          </div>
+        </div>
+
+        <div class="sp-row"><span>Мана</span><b>${info.manaCost}</b></div>
+        <div class="sp-row"><span>Перезарядка</span><b>${info.cooldown.toFixed(1)}с</b></div>
+        ${info.castTime > 0 ? `<div class="sp-row"><span>Каст</span><b>${info.castTime.toFixed(1)}с</b></div>` : ''}
+        ${info.duration ? `<div class="sp-row"><span>Длительность</span><b>${info.duration.toFixed(1)}с</b></div>` : ''}
+    
+
+
+        <div class="sp-section-title">Описание</div>
+        <div class="sp-effect">${esc(info.baseDesc || '')}</div>
+
+        <div class="sp-section-title">Вехи уровня</div>
+        <div class="sp-milestones">${msHtml}</div>
+
+        <div class="sp-actions">
+          ${inSlot >= 0
+            ? `<button class="sp-btn sp-btn-secondary" data-act="unsocket">Снять со слота ${inSlot + 1}</button>`
+            : (canSocket
+                ? `<button class="sp-btn sp-btn-primary" data-act="socket">В слот ${freeSlot + 1}</button>`
+                : `<button class="sp-btn" disabled>Все слоты заняты</button>`)}
+          ${canLearn
+            ? `<button class="sp-btn sp-btn-secondary" data-act="learn">📖 Изучить (${info.bookCount})</button>`
+            : ''}
+          <button class="sp-btn sp-btn-cancel" data-act="close">Закрыть</button>
+        </div>
+      `;
+
+      openPopup(html);
+
+      $$('#item-popup-body button[data-act]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const act = btn.dataset.act;
+          try {
+            if (act === 'socket')   api.setSkillSlot(freeSlot, skillId);
+            if (act === 'unsocket') api.setSkillSlot(inSlot, null);
+            if (act === 'learn')    api.learnSkill(skillId);
+          } catch (err) {
+            console.error('skill action error:', err);
+          }
+          closePopup();
+        });
+      });
+    }
+    // ---------- Popup скалярных ресурсов (scroll/potion/soulshot) ----------
+    function openCounterPopup(el) {
+      const cat = el.dataset.cat;
+      const count = el.dataset.count;
+      const grade = el.dataset.grade || '';
+      const scrollType = el.dataset.scrollType || '';
+      const potionType = el.dataset.potionType || '';
+      const buffType = el.dataset.buffType || '';
+
+      let icon = '📜', name = '', desc = '', kind = '', id = '';
+      if (cat === 'scroll') {
+        icon = el.querySelector('.scroll-icon')?.textContent || '📜';
+        name = scrollType === 'weapon' ? `Свиток заточки оружия` : `Свиток заточки брони`;
+        desc = 'Используется в окне «Заточка». Улучшает экипировку соответствующего грейда.';
+      } else if (cat === 'potion') {
+        icon = el.querySelector('.potion-icon')?.textContent || '🧪';
+        name = el.querySelector('.scroll-name')?.textContent?.trim() || 'Зелье';
+        desc = 'Восстанавливает HP. В слоте — клик активирует зелье.';
+        kind = 'potion'; id = potionType;
+      } else if (cat === 'soulshot') {
+        icon = '⚡';
+        name = `Соски ${grade.toUpperCase()}`;
+        desc = 'Удваивают урон автоатаки. В слоте — работают авто.';
+        kind = 'soulshot'; id = grade;
+      } else if (cat === 'buff') {
+        const def = (typeof BUFF_SCROLLS !== 'undefined') ? BUFF_SCROLLS[buffType] : null;
+        icon = def?.icon || '📜';
+        name = def?.name || 'Свиток';
+        desc = def?.desc ? (def.desc + '. В слоте — клик применяет. КД 5 мин.') : 'Баф-свиток.';
+        kind = 'buff'; id = buffType;
+      }
+
+      // Ряд кнопок 1..8
+       const hero = window.state?.hero;
+      const freeSlot = hero?.skillSlots?.indexOf(null) ?? -1;
+      const allFull = freeSlot === -1;
+
+      const html = `
+        <div class="item-icon-big">${icon}</div>
+        <h3>${esc(name)}</h3>
+        ${grade ? `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val">${esc(grade.toUpperCase())}</span></div>` : ''}
+        <div class="stat-row"><span class="stat-name">В наличии</span><span class="stat-val">×${count}</span></div>
+        <div class="sp-effect" style="margin-top:8px">${esc(desc)}</div>
+        ${kind ? (allFull
+          ? `<button class="popup-close" disabled style="margin-top:10px;opacity:.5">Все слоты заняты</button>`
+          : `<button class="popup-close" data-act="socket" style="margin-top:10px;border-color:#4ade80;color:#b9f5c8">🎯 В слот ${freeSlot + 1}</button>`
+        ) : ''}
+        <button class="popup-close" data-act="close" style="margin-top:6px">Закрыть</button>
+      `;
+      openPopup(html);
+
+      // В слот
+      $$('#item-popup-body button[data-act="socket"]').forEach(b => {
+        b.addEventListener('click', () => {
+          const api = window.__ui;
+          if (api && api.setSlotAction && kind) {
+            const r = api.setSlotAction(freeSlot, kind, id);
+            if (r.ok) {
+              const names = { potion: 'Зелье', soulshot: 'Соски', buff: 'Свиток' };
+              window.toast && window.toast(`✓ ${names[kind] || 'Предмет'} → слот ${freeSlot + 1}`, 'legendary');
+            } else {
+              window.toast && window.toast('Не удалось: ' + (r.reason || ''), 'epic');
+            }
+          }
+          closePopup();
+        });
+      });
+
+      // Закрыть
+      $$('#item-popup-body button[data-act="close"]').forEach(b => {
+        b.addEventListener('click', closePopup);
+      });
+    }
+    document.addEventListener('click', (e) => {
+      // скилл
+      const skillCard = e.target.closest('.skill-card');
+      if (skillCard) {
+        const id = skillCard.dataset.skillId;
+        if (id) { e.preventDefault(); e.stopPropagation(); openSkillPopup(id); }
+        return;
+      }
+      // слот скилла (клик по слоту — снять/поставить)
+      const skillSlot = e.target.closest('.skill-slot.filled');
+      if (skillSlot && skillSlot.dataset.skillId) {
+        const id = skillSlot.dataset.skillId;
+        e.preventDefault(); e.stopPropagation();
+        openSkillPopup(id);
+        return;
+      }
+      // счётчики
+      const counter = e.target.closest('.scroll-item, .potion-item, .soulshot-item');
+      if (counter && counter.dataset.cat) {
+        e.preventDefault(); e.stopPropagation();
+        openCounterPopup(counter);
+        return;
+      }
+    }, true);
+
+    // ---------- Сортировка ----------
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'btn-sort' || e.target.closest('#btn-sort')) {
+        e.preventDefault();
+        const api = window.__ui;
+        if (api && api.sortBackpack) api.sortBackpack();
+      }
+    });
+
+    // ---------- Авто-обновление hero после изменений из попапа ----------
+    window.addEventListener('hero-refresh', () => {
+      const api = window.__ui;
+      if (api && api.renderHero) api.renderHero();
+    });
+  })();
+  </script>
 </body>
 </html>

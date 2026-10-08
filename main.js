@@ -1,7 +1,8 @@
-import { CONFIG, GRADE_ORDER, BUFF_SCROLLS, BUFF_ORDER, BUFF_DROP_CHANCE, MOBS, POTIONS } from './config.js';
+import { CONFIG, GRADE_ORDER, BUFF_SCROLLS, BUFF_ORDER, BUFF_DROP_CHANCE, MOBS, POTIONS, SKILLS, SKILL_COLORS, STAT_RU, MAX_SKILL_LEVEL, SKILL_ORDER } from './config.js';
 import { createMob, createGroupId, pickMobDefFromZone, updateMob, aggroGroup } from './mobs.js';
+import { createBoss } from './bosses.js';
 import { spawnPortalInZone, updatePortal, getPortalCooldown, createDungeon, spawnGuard } from './dungeon.js';
-import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets, calcHitChance, calcEffectiveDefense, gainManaOnKill, tryUseSkill, learnSkill } from './hero.js';
+import { createHero, updateHero, addXp, damageHero, autoUsePotion, recalcStats, addToBackpack, mobDamageFor, bossDamageFor, bossAoeDamageFor, getChainTargets, calcHitChance, calcEffectiveDefense, gainManaOnKill, tryUseSkill, learnSkill, setSkillSlot, setSlotAction, parseSlotAction, syncSoulshotFromSlots, useBuffScroll } from './hero.js';
 import { createAuction, tickAuction, collectSold } from './auction.js';
 import { createShop, buildStock } from './shop.js';
 import { CITIES, CITY_ORDER, findZone, cityTeleportCost } from './cities.js';
@@ -11,9 +12,8 @@ import { gradeName, createItem, createBlessedScroll, createBuffScroll, createAre
 import { castBossAoe, checkAoeHit, checkFireHit, GUARD_CALL, BOSS_AOE, BOSSES } from './bosses.js';
 import { createArena, ratingChange } from './arena.js';
 import { createBots, tickBots, botToArenaHero } from './bots.js';
-import { createTestBots } from './test-bots.js';import {
-  initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie
-} from './audio.js';
+import { createTestBots, createTrainingDummy } from './test-bots.js';
+import { initAudio, sfxShoot, sfxHit, sfxDeath, sfxHeroHit, sfxLevelUp, sfxHeroDie } from './audio.js';
 import { initAuth, getAuthUser } from './auth-ui.js';
 import { saveProgress, saveLocalBackup } from './save.js';
 import { startOfflineFarm, getOfflineStatus, stopOffline, saveOfflineLocal, setOfflineUid, OFFLINE_MAX_HOURS } from './offline.js';
@@ -21,7 +21,20 @@ import { rollDrops, applyDrops } from './loot.js';
 import { updateBattle } from './battle.js';// === ПРОГРЕВ SUPABASE ===
 
 import { supabase } from './supabase.js';
-
+// --- ISO helpers для кликов ---
+const ISO_TW = 56, ISO_TH = 28;
+function screenToWorld(clientX, clientY) {
+  const cx = state.hero?.x ?? 0;
+  const cy = state.hero?.y ?? 0;
+  const fp = { sx: (cx - cy) * (ISO_TW / 2), sy: (cx + cy) * (ISO_TH / 2) };
+  const camX = fp.sx - canvas.width / 2;
+  const camY = fp.sy - canvas.height / 2;
+  const dx = clientX + camX;
+  const dy = clientY + camY;
+  const wx = (dx / (ISO_TW / 2) + dy / (ISO_TH / 2)) / 2;
+  const wy = (dy / (ISO_TH / 2) - dx / (ISO_TW / 2)) / 2;
+  return { x: wx, y: wy };
+}
 async function warmupSupabase() {
   const t0 = Date.now();
   try {
@@ -36,12 +49,23 @@ warmupSupabase();
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-let COLS = 24, ROWS = 36;
+let COLS = 50, ROWS = 50;
+
 const layout = { COLS, ROWS, cellPx: 36, offsetX: 0, offsetY: 0 };
+
+// Устанавливает эмодзи-иконку сложности зоны
+function setZoneIcon(id, diff) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = diff === 'easy' ? '🟢'
+    : diff === 'medium' ? '🟡'
+    : diff === 'hard' ? '🔴'
+    : '💀';
+}
 const camera = { x: 0, y: 0, w: 0, h: 0 };
 
 const state = {
-    
+
   hero: null, mobs: [], projectiles: [], effects: [],
   gold: 3000,
   currentCity: 'talking_island',
@@ -54,9 +78,10 @@ const state = {
   sessionStats: { gold: 0, xp: 0, kills: 0, items: 0, scrolls: 0, blessed: 0 },
   lastSession: null,
 
-  autoBattle: false,
+  autoBattle: true,
 
   arenaMode: false,
+  target: null,
   arenaEnemy: null,
   arenaBot: null,
   arenaTime: 0,
@@ -81,15 +106,22 @@ const input = {
 };
 
 function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  // Ограничиваем DPR — на мобиле рисуем в 1x вместо 3x.
+  // Визуально почти не заметно, FPS вырастает в 2-3 раза.
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  const ctx2 = canvas.getContext('2d');
+  ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+
   layout.COLS = COLS; layout.ROWS = ROWS;
   layout.cellPx = CONFIG.map.cellPx;
   layout.offsetX = 0; layout.offsetY = 0;
-  camera.w = canvas.width / layout.cellPx;
-  camera.h = canvas.height / layout.cellPx;
+  camera.w = window.innerWidth / layout.cellPx;
+  camera.h = window.innerHeight / layout.cellPx;
 }
-
 function updateCamera(hero) {
   const targetX = hero.x + 0.5 - camera.w / 2;
   const targetY = hero.y + 0.5 - camera.h / 2;
@@ -231,15 +263,20 @@ function bindHudActions() {
       updateHudActions();
     });
   });
-  // Кнопка АВТО
-  const autoBtn = document.getElementById('btn-auto');
-  if (autoBtn) {
-    autoBtn.addEventListener('click', () => {
+   // Кнопка АВТО
+   // Кнопка АВТО — клонируем узел, чтобы убить ВСЕ старые addEventListener,
+  // которые могли накопиться от предыдущих bindHudActions.
+  let autoBtn = document.getElementById('btn-auto');
+  if (autoBtn && autoBtn.parentNode) {
+    const fresh = autoBtn.cloneNode(true);
+    autoBtn.parentNode.replaceChild(fresh, autoBtn);
+    autoBtn = fresh;
+    autoBtn.onclick = () => {
       state.autoBattle = !state.autoBattle;
       autoBtn.classList.toggle('on', state.autoBattle);
       autoBtn.textContent = state.autoBattle ? 'АВТО ✓' : 'АВТО';
-      toast(state.autoBattle ? '🤖 Автобой включён' : '🤖 Автобой выключен', 'legendary');
-    });
+      if (window.toast) window.toast(state.autoBattle ? '🤖 Авто включено' : '🤖 Авто выключено', 'legendary');
+    };
   }
 
   // Кнопка офлайн-фарма
@@ -291,6 +328,7 @@ function startGame(classType) {
 
   arena.bots = createBots(100);
   arena.bots.push(...createTestBots());
+  arena.bots.push(createTrainingDummy());
   document.getElementById('class-select').classList.add('hidden');
   document.getElementById('bottom-panel').classList.remove('hidden');
 
@@ -333,13 +371,15 @@ function enterZone(zoneId) {
       if (!state.hero.dead && !state.portal) state.portal = spawnPortalInZone(zone);
       document.getElementById('bottom-panel').classList.remove('hidden');
       document.getElementById('zone-name').textContent = zone.name;
-      document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
+      setZoneIcon('zone-diff', zone.diff);
       hideCityScreen();
       updateHUD();
     }
     return;
   }
   if (!zone) return;
+    // Сброс кэша фона — пересоберётся при первом кадре
+  if (typeof window !== 'undefined') window._bgOffscreenKey = '';
   if (state.gold < zone.teleportCost) { toast('Недостаточно золота', 'epic'); return; }
 
   state.gold -= zone.teleportCost;
@@ -362,7 +402,7 @@ function enterZone(zoneId) {
   state.aliveTime = 0;
 
   document.getElementById('zone-name').textContent = zone.name;
-  document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
+  setZoneIcon('zone-diff', zone.diff);
 
   hideCityScreen();
   updateHUD();
@@ -383,7 +423,7 @@ function enterDungeon() {
 
   toast('🏛 Данж открыт!', 'legendary');
   document.getElementById('zone-name').textContent = 'Данж: ' + zone.name;
-  document.getElementById('zone-diff').textContent = '💀';
+  setZoneIcon('zone-diff', 'dead');
 }
 
 function exitDungeon(won) {
@@ -401,7 +441,7 @@ function exitDungeon(won) {
     state.hero.x = COLS/2; state.hero.y = ROWS/2;
     toast('🏆 Данж зачищен!', 'legendary');
     document.getElementById('zone-name').textContent = state.currentZone.name;
-    document.getElementById('zone-diff').textContent = state.currentZone.diff === 'easy' ? '🟢' : state.currentZone.diff === 'medium' ? '🟡' : '🔴';
+    setZoneIcon('zone-diff', state.currentZone.diff);
   } else {
     state.inBattle = false;
     state.currentZone = null;
@@ -446,6 +486,7 @@ function travelToCity(cityId, cost) {
   playTeleportAnim(() => {
     showCityScreen();
     updateHUD();
+      if (typeof window !== 'undefined') window._bgOffscreenKey = '';
     toast(`Телепорт: ${CITIES[cityId].name}`, 'legendary');
   });
 }
@@ -454,32 +495,65 @@ function updateHUD() {
   if (window._offlineSim) return;
   const h = state.hero; if (!h) return;
 
-  // HP-бар (текст внутри)
-  document.getElementById('hp').textContent = `${Math.ceil(h.hp)}/${h.maxHp}`;
-  document.getElementById('hp-fill').style.width = Math.max(0, Math.min(100, (h.hp / h.maxHp) * 100)) + '%';
+  // HP/MP полоски шапки удалены — теперь они в плашках #hud-plate-me / #hud-plate-target.
+  // Обновляем плашку игрока и (если есть) плашку таргета.
 
-  // Мана-бар (текст внутри)
-  const manaText = document.getElementById('mana');
-  const manaFill = document.getElementById('mana-fill');
-  if (manaText && manaFill && h.maxMana > 0) {
-    manaText.textContent = `${Math.floor(h.mana)}/${h.maxMana}`;
-    manaFill.style.width = Math.max(0, Math.min(100, (h.mana / h.maxMana) * 100)) + '%';
+  // ── Плашка игрока ─────────────────────────────
+  const meHpFill = document.getElementById('as-me-hp-fill');
+  const meHpText = document.getElementById('as-me-hp-text');
+  const meMpFill = document.getElementById('as-me-mana-fill');
+  const meMpText = document.getElementById('as-me-mana-text');
+  if (meHpFill && h.maxHp > 0) {
+    meHpFill.style.width = Math.max(0, Math.min(100, (h.hp / h.maxHp) * 100)) + '%';
   }
+  if (meHpText) meHpText.textContent = `${Math.ceil(h.hp)}/${h.maxHp}`;
+  if (meMpFill && h.maxMana > 0) {
+    meMpFill.style.width = Math.max(0, Math.min(100, (h.mana / h.maxMana) * 100)) + '%';
+  }
+  if (meMpText) meMpText.textContent = `${Math.floor(h.mana)}/${h.maxMana}`;
 
-  document.getElementById('gold').textContent = state.gold;
-  document.getElementById('level').textContent = h.level;
-  document.getElementById('xp-fill').style.width = Math.min(100, (h.xp/h.xpToNext)*100) + '%';
+  // ── Плашка таргета ────────────────────────────
+  const tgtPlate = document.getElementById('hud-plate-target');
+  const target = state.target;
+  if (tgtPlate && target && !target.dead && state.inBattle) {
+    tgtPlate.classList.remove('hidden');
+    const oHpFill = document.getElementById('as-opp-hp-fill');
+    const oHpText = document.getElementById('as-opp-hp-text');
+    const oMpFill = document.getElementById('as-opp-mana-fill');
+    const oMpText = document.getElementById('as-opp-mana-text');
+    if (oHpFill && target.maxHp > 0) {
+      oHpFill.style.width = Math.max(0, Math.min(100, (target.hp / target.maxHp) * 100)) + '%';
+    }
+    if (oHpText) oHpText.textContent = `${Math.ceil(target.hp)}/${target.maxHp}`;
+    if (oMpFill && target.maxMana > 0) {
+      oMpFill.style.width = Math.max(0, Math.min(100, (target.mana / target.maxMana) * 100)) + '%';
+    }
+    if (oMpText) oMpText.textContent = target.maxMana > 0
+      ? `${Math.floor(target.mana)}/${target.maxMana}`
+      : '0/0';
+  } else if (tgtPlate) {
+    tgtPlate.classList.add('hidden');
+  }
+  // ── Баффы под плашками ─────────────────────────
+  _renderPlateBuffs('as-me-buffs', h);
+  _renderPlateBuffs('as-opp-buffs', state.target);
+  // ── Золото / уровень / XP ─────────────────────
+  const gEl = document.getElementById('gold');
+  if (gEl) gEl.textContent = state.gold;
+  const lEl = document.getElementById('level');
+  if (lEl) lEl.textContent = h.level;
+  const xEl = document.getElementById('xp-fill');
+  if (xEl) xEl.style.width = Math.min(100, (h.xp / h.xpToNext) * 100) + '%';
 
+  // ── Статы (строка под шапкой) ──────────────────
   const sAtk = document.getElementById('stat-atk');
-
-
   if (sAtk) {
     sAtk.textContent = Math.round(h.attack);
-    document.getElementById('stat-def').textContent = Math.round(h.defense);
-    document.getElementById('stat-range').textContent = h.range.toFixed(1);
-    document.getElementById('stat-crit').textContent = h.critChance.toFixed(0);
-    document.getElementById('stat-dodge').textContent = h.dodge.toFixed(0);
-    document.getElementById('stat-ls').textContent = h.lifesteal.toFixed(0);
+    const sDef = document.getElementById('stat-def');   if (sDef) sDef.textContent = Math.round(h.defense);
+    const sRng = document.getElementById('stat-range'); if (sRng) sRng.textContent = h.range.toFixed(1);
+    const sCrit = document.getElementById('stat-crit'); if (sCrit) sCrit.textContent = h.critChance.toFixed(0);
+    const sDodge = document.getElementById('stat-dodge'); if (sDodge) sDodge.textContent = h.dodge.toFixed(0);
+    const sLs = document.getElementById('stat-ls');     if (sLs) sLs.textContent = h.lifesteal.toFixed(0);
   }
 
   updateHudActions();
@@ -489,47 +563,16 @@ function updateHUD() {
 function updateHudActions() {
   const h = state.hero; if (!h) return;
 
-  const potMap = { small: h.potions.small, medium: h.potions.medium, large: h.potions.large, epic: h.potions.epic };
-  for (const [type, count] of Object.entries(potMap)) {
-    document.getElementById('pot-' + type).textContent = count || 0;
-    const el = document.querySelector(`.hud-potion[data-potion="${type}"]`);
-    if (!el) continue;
-    el.style.display = count > 0 ? '' : 'none';
-    el.classList.toggle('active', h.activePotion === type);
-  }
-
-  const ssGrade = h.equipment.weapon?.grade;
-  const ssCount = ssGrade ? (h.soulshots[ssGrade] || 0) : 0;
-  document.getElementById('soulshot-count').textContent = ssCount;
-  const ssEl = document.getElementById('hud-soulshot');
-  if (ssEl) {
-    ssEl.style.display = ssCount > 0 ? '' : 'none';
-    ssEl.classList.toggle('active', h.soulshotActive);
-  }
-
-  const now = Date.now();
-  for (const type of BUFF_ORDER) {
-    const el = document.querySelector(`.hud-buff[data-buff="${type}"]`);
-    if (!el) continue;
-    const have = h.backpack.some(x => x.kind === 'buff' && x.buffType === type);
-    const active = h.activeBuffs[type] && h.activeBuffs[type] > now;
-    if (!have && !active) {
-      el.style.display = 'none';
+  // Все элементы расходников удалены из HUD — расходники теперь в слотах героя.
+  // Оставляем только обновление офлайн-кнопки, если она есть.
+  const offBtn = document.getElementById('hud-offline');
+  if (offBtn) {
+    if (h.offlineActive) {
+      offBtn.style.display = '';
+      offBtn.classList.add('active');
     } else {
-      el.style.display = '';
-      el.classList.toggle('active', !!active);
-      if (active) {
-        const sec = Math.ceil((h.activeBuffs[type] - now) / 1000);
-        const m = Math.floor(sec / 60);
-        const s = sec % 60;
-        el.querySelector('.hud-count').textContent = m + ':' + (s < 10 ? '0' : '') + s;
-      } else {
-        let count = 0;
-        for (const x of h.backpack) {
-          if (x.kind === 'buff' && x.buffType === type) count += (x.count || 1);
-        }
-        el.querySelector('.hud-count').textContent = count;
-      }
+      offBtn.style.display = 'none';
+      offBtn.classList.remove('active');
     }
   }
 }
@@ -546,55 +589,178 @@ function log(msg, color) {
 
 function findSpawnPoint() {
   const hero = state.hero;
-  let x, y, tries = 0;
-  do {
-    x = 1 + Math.random() * (COLS - 2);
-    y = 1 + Math.random() * (ROWS - 2);
-    tries++;
-    if (tries > 30) break;
-    const distHero = Math.hypot(x - hero.x, y - hero.y);
-        const minSpawnDist = state.currentZone?.spawn?.minSpawnDist ?? 8;
-    if (distHero < minSpawnDist) continue;
+  const sp = state.currentZone?.spawn || {};
+  const minD = sp.minSpawnDist ?? 6;
+  const maxD = sp.maxSpawnDist ?? 14;   // кольцо спавна вокруг героя
+
+  // Пытаемся до 15 раз найти точку в кольце, не пересекающуюся с другими мобами
+  for (let t = 0; t < 15; t++) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = minD + Math.random() * (maxD - minD);
+    let x = hero.x + Math.cos(ang) * dist;
+    let y = hero.y + Math.sin(ang) * dist;
+    x = Math.max(1, Math.min(COLS - 2, x));
+    y = Math.max(1, Math.min(ROWS - 2, y));
+
     let tooClose = false;
     for (const m of state.mobs) {
       if (Math.hypot(x - m.x, y - m.y) < 1.2) { tooClose = true; break; }
     }
-    if (tooClose) continue;
-    return { x, y };
-  } while (true);
-  return { x, y };
+    if (!tooClose) return { x, y };
+  }
+  // Fallback — просто в кольце
+  const ang = Math.random() * Math.PI * 2;
+  const dist = minD + Math.random() * (maxD - minD);
+  return {
+    x: Math.max(1, Math.min(COLS - 2, hero.x + Math.cos(ang) * dist)),
+    y: Math.max(1, Math.min(ROWS - 2, hero.y + Math.sin(ang) * dist)),
+  };
 }
 
 function trySpawnMob() {
-  if (!state.currentZone) return;
-  if (state.dungeon) return;
-  const sp = state.currentZone.spawn;
-  if (state.mobs.length >= sp.maxMobs) return;
+  if (!state.currentZone || state.dungeon) return;
+  const zone = state.currentZone;
+  const lairs = zone.lairs;
+  if (!lairs || lairs.length === 0) return;
 
-  const def = pickMobDefFromZone(state.currentZone);
-  const mult = state.currentZone.mult;
-  const pos = findSpawnPoint();
+  const now = Date.now();
 
-  const isChampion = Math.random() < sp.champChance;
-  const mobOpts = { aggroRange: sp.aggroRange, wander: sp.wander, champion: isChampion };
-
-  if (Math.random() < sp.groupChance) {
-    const count = 3 + Math.floor(Math.random() * 3);
-    const groupId = createGroupId();
-    for (let i = 0; i < count; i++) {
-      const gx = Math.max(0.5, Math.min(COLS - 0.5, pos.x + (Math.random() - 0.5) * 2));
-      const gy = Math.max(0.5, Math.min(ROWS - 0.5, pos.y + (Math.random() - 0.5) * 2));
-      state.mobs.push(createMob(def, gx, gy, mult, { ...mobOpts, groupId }));
+  for (const lair of lairs) {
+    // Считаем живых мобов в этом лаире
+    let count = 0;
+    for (const m of state.mobs) {
+      if (m.lairId === lair.id && !m.dead) count++;
     }
-  } else {
-    state.mobs.push(createMob(def, pos.x, pos.y, mult, mobOpts));
+
+    // ── Босс-лаир: респавн по таймерам (может быть НЕСКОЛЬКО боссов) ──
+    if (lair.bosses && lair.bosses.length > 0) {
+      for (const bossCfg of lair.bosses) {
+        const bossId = bossCfg.id;
+        if (!bossId) continue;
+
+        const bossAlive = state.mobs.some(m =>
+          m.lairId === lair.id && m.boss && m.defId === bossId && !m.dead
+        );
+
+        const respawnKey = '_respawnAt_' + bossId;
+        if (bossAlive || now < (lair[respawnKey] || 0)) continue;
+
+        // Позиция: точные x/y → offset → центр лаира
+        let bx = lair.cx, by = lair.cy;
+        if (bossCfg.x !== undefined && bossCfg.y !== undefined) {
+          bx = bossCfg.x; by = bossCfg.y;
+        } else if (bossCfg.offset) {
+          bx += bossCfg.offset.x || 0;
+          by += bossCfg.offset.y || 0;
+        }
+        bx = Math.max(1, Math.min(COLS - 2, bx));
+        by = Math.max(1, Math.min(ROWS - 2, by));
+
+        const boss = createBoss(bossId, bx, by, zone.mult);
+        if (!boss) {
+          console.warn('[main] createBoss вернул null для id:', bossId);
+          continue;
+        }
+        boss.lairId = lair.id;
+        state.mobs.push(boss);
+
+        // respawn в СЕКУНДАХ
+        lair[respawnKey] = now + (bossCfg.respawn || 300) * 1000;
+
+        // Охрана: из bosses.js → guards, иначе дефолт
+        const guards = boss._guardsConfig || { mobs: lair.mobs, count: 5 };
+        const count = guards.count || 5;
+        for (let i = 0; i < count; i++) {
+          spawnGuardForBoss(lair, zone, boss, guards.mobs || lair.mobs);
+        }
+
+        toast(`⚠️ ${lair.name}: пробудился ${boss.name}`, 'epic');
+      }
+      continue;
+    }
+
+    // ── Обычный лаир ──
+    if (count >= lair.maxMobs) continue;
+    const last = lair._lastSpawn || 0;
+    if (now < last + (lair.interval || 2.0) * 1000) continue;
+    lair._lastSpawn = now;
+
+    if (Math.random() < (lair.groupChance || 0.2)) {
+      const gs = 3 + Math.floor(Math.random() * 3);
+      const gid = createGroupId();
+      for (let i = 0; i < gs; i++) spawnMobInLair(lair, zone, gid);
+    } else {
+      spawnMobInLair(lair, zone);
+    }
   }
 }
+function spawnMobInLair(lair, zone, groupId) {
+  const ang = Math.random() * Math.PI * 2;
+  const dist = Math.random() * lair.radius;
+  const x = Math.max(1, Math.min(COLS - 2, lair.cx + Math.cos(ang) * dist));
+  const y = Math.max(1, Math.min(ROWS - 2, lair.cy + Math.sin(ang) * dist));
 
+  const defId = lair.mobs[Math.floor(Math.random() * lair.mobs.length)];
+  const def = MOBS[defId] || MOBS.gremlin;
+  const isChamp = Math.random() < (lair.champChance || 0.05);
+
+  const m = createMob(def, x, y, zone.mult, {
+    aggroRange: 0,           // не агрится пока не ударят
+    wander: 3,
+    champion: isChamp,
+    groupId,
+  });
+  // Просыпается через 2 сек после спавна — тогда начнёт агриться по дистанции
+  m._aggroWakeAt = Date.now() + 2000;
+  m._wakeAggroRange = lair.aggroRange || 7;
+  m.lairId = lair.id;
+  m.lairCx = lair.cx;
+  m.lairCy = lair.cy;
+  m.lairRadius = lair.radius;
+  state.mobs.push(m);
+}
+// Спавнит одного моба-охранника вокруг босса.
+// Использует пул mobs из BOSSES[id].guards.mobs (или из lair.mobs).
+function spawnGuardForBoss(lair, zone, boss, mobPool) {
+  const ang = Math.random() * Math.PI * 2;
+  const dist = 2 + Math.random() * 3;
+  const x = Math.max(1, Math.min(COLS - 2, boss.x + Math.cos(ang) * dist));
+  const y = Math.max(1, Math.min(ROWS - 2, boss.y + Math.sin(ang) * dist));
+
+  const pool = (mobPool && mobPool.length) ? mobPool : (lair.mobs || ['gremlin']);
+  const defId = pool[Math.floor(Math.random() * pool.length)];
+  const def = MOBS[defId] || MOBS.gremlin;
+  const m = createMob(def, x, y, zone.mult, {
+    aggroRange: 0,
+    wander: 3,
+    champion: false,
+    groupId: null,
+  });
+  m._aggroWakeAt = Date.now() + 1000;
+  m._wakeAggroRange = lair.aggroRange || 7;
+  m.lairId = lair.id;
+  m.lairCx = lair.cx;
+  m.lairCy = lair.cy;
+  m.lairRadius = lair.radius;
+  m.dungeonGuard = true;
+  state.mobs.push(m);
+}
 function heroDie() {
   const h = state.hero;
   const lost = Math.floor(h.xp * (CONFIG.death?.xpLossPercent ?? 0.10));
   sfxHeroDie();
+
+  // Смерть снимает все положительные бафф-эффекты и ставит КД на свитки,
+  // чтобы после респавна нельзя было сразу наложить их заново.
+  const nowDeath = Date.now();
+  const cdDeath = nowDeath + 5 * 60 * 1000;
+  h.activeBuffs = {};
+  if (!h.buffScrollCooldowns) h.buffScrollCooldowns = {};
+  for (const type of ['attack','crit','speed','range']) {
+    h.buffScrollCooldowns[type] = cdDeath;
+  }
+  recalcStats(h);
+  updateHudActions && updateHudActions();
 
   // Во время офлайн-досчёта не трогаем death-screen/combat-log — плашка
   // офлайна сама покажет смерть. Смерть сразу персистим, иначе после
@@ -680,9 +846,15 @@ function loop(now) {
   if (hero && !state.inBattle && !hero.offlineActive) tickBots(arena.bots, dt);
   // В офлайне канвас НЕ рендерим вообще: плашка заменяет собой вид фарм-зоны,
   // отрисовка идущего за ней боя только лагает и жрёт бюджет
-  if (state.inBattle && !hero?.offlineActive && !window._offlineCatchup) {
+if (state.inBattle && !hero?.offlineActive && !window._offlineCatchup) {
+  // Скип рендера, если открыта модалка/попап/город — иначе тратится GPU зря
+  const anyModal = document.querySelector('.modal:not(.hidden)');
+  const anyPopup = document.querySelector('.popup:not(.hidden)');
+  const cityOpen = document.getElementById('city-screen') && !document.getElementById('city-screen').classList.contains('hidden');
+  if (!anyModal && !anyPopup && !cityOpen) {
     render(ctx, canvas, state, layout, camera);
   }
+}
 
   // Плашка офлайна — компактная, видна только в своей фарм-зоне
   // (не в данже, не в городе); класс меняем только при смене признака
@@ -912,47 +1084,101 @@ function applySkillEffect(hero, result) {
       const count = fx.count || 3;
       const interval = fx.interval || 1.0;
       const baseAng = Math.atan2(target.y - hero.y, target.x - hero.x);
-      const colors = ['#fbbf24', '#f97316', '#ef4444'];
+      const projColor = SKILL_COLORS[result.skillId] || '#fbbf24';
+      const skillIcon = SKILLS[result.skillId]?.icon || '🏹';
+      const skillName = (SKILLS[result.skillId]?.name || 'СКИЛЛ').toUpperCase();
       for (let i = 0; i < count; i++) {
-        const ang = baseAng; // все три по прямой
         state.projectiles.push({
           x: hero.x, y: hero.y,
-          vx: Math.cos(ang) * base.projectileSpeed,
-          vy: Math.sin(ang) * base.projectileSpeed,
+          vx: Math.cos(baseAng) * base.projectileSpeed,
+          vy: Math.sin(baseAng) * base.projectileSpeed,
           damage: hero.attack * fx.value,
-          aoe: 0, color: colors[i % colors.length],
+          aoe: fx.aoe || 0,
+          color: projColor,
           weaponType: hero.weaponType,
           life: 3, trail: [],
-          isCrit: false, isExecute: false, doubleStrike: false,
-          isSkill: true, owner: hero,
+          isCrit: false,
+          isExecute: false,
+          doubleStrike: false,
+          isSkill: true,
+          owner: hero,
           delay: i * interval,
+          critBonus: fx.critBonus || 0,
+          pierce: fx.pierce || 0,
+          skillId: result.skillId,
         });
       }
-      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.0, maxLife: 1.0, color: '#fbbf24', text: '🏹 МУЛЬТИ x' + count, big: true });
+      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.0, maxLife: 1.0, color: projColor, text: `${skillIcon} ${skillName} x${count}`, big: true });
+      if (count >= 5 && target) {
+        state.effects.push({ kind: 'arrow_rain_marker', x: target.x, y: target.y, life: 1.2, maxLife: 1.2, color: projColor, radius: fx.aoe || 2 });
+
+        // ── Поле дождя: lingering DoT на все цели в радиусе aoe ──
+        if (fx.dotDuration > 0 && fx.aoe > 0) {
+          const dmgPerTick = Math.max(1, Math.floor(hero.attack * (fx.dotValue || 0.4)));
+          const ticks = Math.max(1, Math.floor(fx.dotDuration));
+          const aoeR = fx.aoe;
+          // На арене враг один, в фарме — все мобы в радиусе
+          const victims = state.arenaMode
+            ? [state.arenaEnemy].filter(e => e && !e.dead && Math.hypot(e.x - target.x, e.y - target.y) <= aoeR + 1)
+            : state.mobs.filter(m => !m.dead && Math.hypot(m.x - target.x, m.y - target.y) <= aoeR);
+          const now = Date.now();
+          for (const v of victims) {
+            if (!v.dots) v.dots = [];
+            v.dots.push({
+              damage: dmgPerTick,
+              ticksLeft: ticks,
+              nextTick: now + 1000,
+              tickInterval: 1,
+              sourceName: hero.name,
+              sourceTeam: hero.team || 'ally',
+            });
+          }
+          // Визуал: зелёное кольцо дождя на время DoT
+          state.effects.push({ kind: 'arrow_rain_marker', x: target.x, y: target.y, life: fx.dotDuration, maxLife: fx.dotDuration, color: projColor, radius: aoeR });
+        }
+      }
       break;
     }
+
     case 'damage': {
       const target = findNearestMob(hero, hero.range + 3);
       if (!target) return;
       const tx = target.x - hero.x, ty = target.y - hero.y;
       const dist = Math.hypot(tx, ty) || 1;
       const speed = base.projectileSpeed * (fx.slowProjectile ? 0.5 : 1);
+      const projColor = SKILL_COLORS[result.skillId] || (fx.chain ? '#a855f7' : '#f97316');
       state.projectiles.push({
         x: hero.x, y: hero.y,
         vx: tx / dist * speed,
         vy: ty / dist * speed,
         damage: hero.attack * fx.value,
         aoe: fx.aoe || 0,
-        color: '#f97316', weaponType: hero.weaponType,
+        color: projColor,
+        weaponType: hero.weaponType,
         life: 4, trail: [],
-        isCrit: false, isExecute: false, doubleStrike: false,
-        isSkill: true, owner: hero,
+        isCrit: false,
+        isExecute: false,
+        doubleStrike: false,
+        isSkill: true,
+        owner: hero,
         bigProjectile: !!fx.slowProjectile,
+        critBonus: fx.critBonus || 0,
+        pierce: fx.pierce || 0,
+        executeBonus: fx.executeBonus || 0,
+        chain: fx.chain || 0,
+        chainDecay: fx.chainDecay || 0.7,
+        onHitDebuff: fx.debuff || null,
+        skillId: result.skillId,
       });
-      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.0, maxLife: 1.0, color: '#f97316', text: '🔥 ОГНЕННЫЙ ШАР', big: true });
-      state.effects.push({ kind: 'flash', x: hero.x, y: hero.y, life: 0.4, maxLife: 0.4, color: '#f97316', radius: 1.4 });
+      const skillIcon = SKILLS[result.skillId]?.icon || '💥';
+      const skillName = (SKILLS[result.skillId]?.name || 'ВЫСТРЕЛ').toUpperCase();
+      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.0, maxLife: 1.0, color: projColor, text: `${skillIcon} ${skillName}`, big: true });
+      if (fx.slowProjectile || fx.chain) {
+        state.effects.push({ kind: 'flash', x: hero.x, y: hero.y, life: 0.4, maxLife: 0.4, color: projColor, radius: 1.4 });
+      }
       break;
     }
+
     case 'dot': {
       const target = findNearestMob(hero, hero.range + 3);
       if (!target) return;
@@ -969,10 +1195,11 @@ function applySkillEffect(hero, result) {
         sourceName: hero.name,
         sourceTeam: hero.team || 'ally',
       });
-      state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#22c55e', text: '☠️ ЯД', big: true });
+      state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#22c55e', text: '🧪 ЯД', big: true });
       break;
     }
-      case 'heal': {
+
+    case 'heal': {
       const v = (typeof fx?.value === 'number' && fx.value > 0) ? fx.value : 0.20;
       const hpMax = hero.maxHp || 1;
       const heal = Math.floor(hpMax * v);
@@ -982,62 +1209,69 @@ function applySkillEffect(hero, result) {
       const shown = Math.floor(actual);
       state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.2, maxLife: 1.2, color: '#4ade80', text: '+' + shown, big: true });
       state.effects.push({ kind: 'heal_ring', x: hero.x, y: hero.y, life: 1.2, maxLife: 1.2, color: '#4ade80' });
+      // Milestone 100: heal снимает 1 дебафф
+      const lvl = hero.skills?.[result.skillId]?.level || 1;
+      if (lvl >= 100) {
+        if (hero.dots && hero.dots.length > 0) hero.dots.shift();
+        else if (hero.slowUntil) hero.slowUntil = 0;
+        else if (hero.silenceUntil) hero.silenceUntil = 0;
+        state.effects.push({ x: hero.x, y: hero.y - 1.6, life: 1.0, maxLife: 1.0, color: '#fef3c7', text: '✨ −дебафф', big: false });
+      }
       break;
     }
+
     case 'buff': {
-      if (fx.stat === 'dodge') {
-        if (!hero.skillBuffs) hero.skillBuffs = {};
-        hero.skillBuffs.dodge = { value: fx.value, until: now + fx.duration * 1000 };
-        recalcStats(hero);
-        state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.2, maxLife: 1.2, color: '#80d4e0', text: '💨 DODGE', big: true });
-        state.effects.push({ kind: 'spin', x: hero.x, y: hero.y, life: fx.duration, maxLife: fx.duration, color: '#80d4e0', owner: hero });
-      }
+      applyBuffByStat(hero, fx, now, result.skillId);
       break;
     }
+
     case 'debuff': {
-      const target = findNearestMob(hero, hero.range + 4);
-      if (!target) return;
-      if (fx.stat === 'stun') {
-        if (Math.random() < (fx.chance || 1)) {
-          target.stunUntil = now + fx.duration * 1000;
-          state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#fbbf24', text: '💫 STUN', big: true });
-          state.effects.push({ kind: 'stun_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#fbbf24', owner: target });
-        } else {
-          state.effects.push({ x: target.x, y: target.y - 1.2, life: 0.9, maxLife: 0.9, color: '#94a3b8', text: 'MISS', big: false });
+      const range = fx.aoe ? hero.range + fx.aoe + 2 : hero.range + 4;
+      if (fx.aoe) {
+        // AoE-дебафф (frost_nova)
+        let applied = 0;
+        for (const m of state.mobs) {
+          if (m.dead) continue;
+          const d = Math.hypot(m.x - hero.x, m.y - hero.y);
+          if (d > range) continue;
+          applyDebuffOnTarget(m, fx, now);
+          applied++;
         }
-      } else if (fx.stat === 'attackSpeed') {
-        const mult = Math.max(0.1, 1 + (fx.value / 100));
-        target.attackSpeedDebuff = { mult, until: now + fx.duration * 1000 };
-        state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#67e8f9', text: '❄️ ЗАМЕДЛЕНИЕ', big: true });
-        state.effects.push({ kind: 'frost_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#67e8f9', owner: target });
-         } else if (fx.stat === 'silence') {
-        target.silenceUntil = now + fx.duration * 1000;
-        if (target.casting) target.casting = null;  // мгновенно прерываем
-        state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#3b82f6', text: '🤐 НЕМОТА', big: true });
-        state.effects.push({ kind: 'silence_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#3b82f6', owner: target });
+        state.effects.push({ kind: 'flash', x: hero.x, y: hero.y, life: 0.6, maxLife: 0.6, color: fx.color || '#67e8f9', radius: fx.aoe });
+        state.effects.push({ kind: 'nova_wave', x: hero.x, y: hero.y, life: 0.7, maxLife: 0.7, color: fx.color || '#67e8f9', radius: fx.aoe });
+        state.effects.push({ x: hero.x, y: hero.y - 1.8, life: 1.2, maxLife: 1.2, color: '#67e8f9', text: '🌨 НОВА x' + applied, big: true });
+      } else {
+        const target = findNearestMob(hero, range);
+        if (!target) return;
+        applyDebuffOnTarget(target, fx, now);
       }
       break;
     }
+
     case 'cleanse': {
-      if (hero.stunUntil) hero.stunUntil = 0;
-      if (hero.slowUntil) hero.slowUntil = 0;
-      if (hero.silenceUntil) hero.silenceUntil = 0;
-      if (hero.dots) hero.dots = [];
-      if (hero.attackSpeedDebuff) hero.attackSpeedDebuff = null;
+      const removed = [];
+      if (hero.stunUntil) { hero.stunUntil = 0; removed.push('стан'); }
+      if (hero.slowUntil) { hero.slowUntil = 0; removed.push('замедл.'); }
+      if (hero.silenceUntil) { hero.silenceUntil = 0; removed.push('немота'); }
+      if (hero.dots && hero.dots.length) { hero.dots = []; removed.push('яд'); }
+      if (hero.attackSpeedDebuff) { hero.attackSpeedDebuff = null; removed.push('зам.атк'); }
       state.effects.push({ kind: 'cleanse_ring', x: hero.x, y: hero.y, life: 0.8, maxLife: 0.8, color: '#fef3c7' });
-      state.effects.push({ x: hero.x, y: hero.y - 1.2, life: 1.2, maxLife: 1.2, color: '#fef3c7', text: '✨ ОЧИЩЕН', big: true });
+      const label = removed.length ? `✨ −${removed.join(', ')}` : '✨ ОЧИЩЕН';
+      state.effects.push({ x: hero.x, y: hero.y - 1.2, life: 1.4, maxLife: 1.4, color: '#fef3c7', text: label, big: true });
       break;
     }
+
     case 'summon': {
       const lvl = result.level || 1;
       const perLevels = fx.shadowPerLevels || 10;
-      // На 10/20/30 уровне — +1 тень. На 10м их 2, на 20м — 3, и т.д.
-      const count = 1 + Math.floor(lvl / perLevels);
+      // Milestone 100: +1 призыв
+      let count = 1 + Math.floor(lvl / perLevels);
+      if (lvl >= 100) count += 1;
       const duration = fx.duration || 20;
-      const damagePercent = fx.damagePercent || 10;
-         if (!state.shadows) state.shadows = [];
+      const damagePercent = fx.damagePercent || 15;
 
-      // Направление на ближайшего врага
+      if (!state.shadows) state.shadows = [];
+
       const enemyTeam = (hero.team === 'enemy') ? (state.hero ? [state.hero] : []) : state.mobs;
       const nearestEnemy = enemyTeam.find(e => e && !e.dead) || null;
       let dirX = 0, dirY = -1;
@@ -1049,59 +1283,215 @@ function applySkillEffect(hero, result) {
         dirY = dy / d;
       }
 
-      // Разлёт по кругу вокруг точки спавна
       const baseDist = 2.5;
-          for (let i = 0; i < count; i++) {
+      const isPanther = fx.petType === 'panther';
+      const petEmoji = isPanther ? '🐆' : '👤';
+
+      for (let i = 0; i < count; i++) {
         const angle = (i / Math.max(1, count)) * Math.PI * 2;
         const spread = 1.2;
         const ox = Math.cos(angle) * spread;
         const oy = Math.sin(angle) * spread;
-        const shadowPct = (damagePercent || 10) / 100;
+        const shadowPct = (damagePercent || 15) / 100;
         state.shadows.push({
           x: hero.x + dirX * baseDist + ox,
           y: hero.y + dirY * baseDist + oy,
           ownerName: hero.name,
           ownerTeam: hero.team || 'ally',
+          petType: fx.petType || 'shadow',
 
-          // 10% от статов игрока
           attack: Math.max(1, Math.floor((hero.attack || 10) * shadowPct)),
-          hp: Math.max(1, Math.floor((hero.maxHp || 100) * shadowPct)),
-          maxHp: Math.max(1, Math.floor((hero.maxHp || 100) * shadowPct)),
+          hp: Math.max(1, Math.floor((hero.maxHp || 100) * shadowPct * 1.5)),
+          maxHp: Math.max(1, Math.floor((hero.maxHp || 100) * shadowPct * 1.5)),
           defense: Math.floor((hero.defense || 0) * shadowPct),
-          attackSpeed: Math.max(0.4, (hero.attackSpeed || 1) * 0.6),
+          attackSpeed: isPanther ? 1.2 : 1.5,
           critChance: (hero.critChance || 5) * 0.5,
           critDamage: (hero.critDamage || 50),
           accuracy: hero.accuracy || 0,
           armorPen: hero.armorPen || 0,
           lifesteal: 0,
           dodge: 0,
-          range: Math.max(3, (hero.range || 4) * 0.8),
-          moveSpeed: 0.4,
+          range: isPanther ? 1.5 : Math.max(3, (hero.range || 4) * 0.8),
+          moveSpeed: isPanther ? 0.55 : 0.4,
           damage: Math.max(1, Math.floor((hero.attack || 10) * shadowPct)),
 
           cooldown: 0,
           expiresAt: now + duration * 1000,
-          emoji: hero.emoji,
-          name: hero.name,
+          emoji: petEmoji,
+          name: isPanther ? 'Пантера' : 'Тень',
           size: 0.7,
         });
-      
       }
-      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.5, maxLife: 1.5, color: '#a855f7', text: '👤 ТЕНЬ x' + count, big: true });
+      const icon = isPanther ? '🐆' : '👤';
+      const label = isPanther ? 'ПАНТЕРА' : 'ТЕНЬ';
+      state.effects.push({ x: hero.x, y: hero.y - 1.4, life: 1.5, maxLife: 1.5, color: '#a855f7', text: icon + ' ' + label + ' x' + count, big: true });
+      break;
+    }
+
+    case 'shield': {
+      const v = (typeof fx.value === 'number' && fx.value > 0) ? fx.value : 0.4;
+      const duration = fx.duration || 8;
+      hero.shield = {
+        remaining: Math.floor(hero.maxHp * v),
+        max: Math.floor(hero.maxHp * v),
+        until: now + duration * 1000,
+      };
+      state.effects.push({ kind: 'shield_ring', x: hero.x, y: hero.y, life: duration, maxLife: duration, color: '#60a5fa', owner: hero });
+      state.effects.push({ x: hero.x, y: hero.y - 1.6, life: 1.4, maxLife: 1.4, color: '#60a5fa', text: '🔮 ЩИТ ' + Math.floor(hero.maxHp * v), big: true });
       break;
     }
   }
 }
 
-function useSkillFromSlot(slotIndex) {
+// ── Применить бафф по stat ─────────────────────────────────
+function applyBuffByStat(hero, fx, now, skillId) {
+  const stat = fx.stat;
+  const value = fx.value;
+
+  // Emergency-скиллы требуют низкого HP
+  if (fx.requireHpBelow !== undefined) {
+    if (hero.hp / hero.maxHp > fx.requireHpBelow) return;
+  }
+
+  if (!hero.skillBuffs) hero.skillBuffs = {};
+  const until = now + (fx.duration || 5) * 1000;
+
+  // Скилловые баффы храним в skillBuffs
+  if (stat === 'dodge') {
+    hero.skillBuffs.dodge = { value, until };
+  } else if (stat === 'attackSpeed') {
+    hero.skillBuffs.attackSpeed = { value, until };
+  } else if (stat === 'defense') {
+    hero.skillBuffs.defense = { value, until };
+  } else if (stat === 'attack') {
+    hero.skillBuffs.attack = { value, until };
+  } else if (stat === 'critChance') {
+    hero.skillBuffs.critChance = { value, until };
+  } else if (stat === 'lifesteal') {
+    hero.skillBuffs.lifesteal = { value, until };
+  } else if (stat === 'reflect') {
+    hero.skillBuffs.reflect = { value, until };
+  } else if (stat === 'range') {
+    hero.skillBuffs.range = { value, until };
+  }
+
+  // Пересчёт статов (если есть функция)
+  if (typeof recalcStats === 'function') recalcStats(hero);
+
+  // Визуал
+  const icon = SKILLS[skillId]?.icon || '✨';
+  const colorMap = {
+    dodge: '#80d4e0', attackSpeed: '#fde047', defense: '#60a5fa',
+    attack: '#ef4444', critChance: '#f97316', lifesteal: '#e07878',
+    reflect: '#c084fc', range: '#a3e635',
+  };
+  const color = colorMap[stat] || '#fbbf24';
+  const ruName = STAT_RU[stat] || 'Эффект';
+  state.effects.push({ x: hero.x, y: hero.y - 1, life: 1.2, maxLife: 1.2, color, text: `${icon} ${ruName}`, big: true });
+
+  // Уникальная аура под тип баффа
+  const auraKind = ({
+    lifesteal:   'aura_vampiric',
+    reflect:     'aura_reflect',
+    defense:     'aura_stone',
+    attackSpeed: 'aura_haste',
+    attack:      'aura_rage',
+  })[stat] || 'spin';
+
+  state.effects.push({ kind: auraKind, x: hero.x, y: hero.y, life: (fx.duration || 5), maxLife: (fx.duration || 5), color, owner: hero });
+}
+
+// ── Применить дебафф на цель ──────────────────────────────
+function applyDebuffOnTarget(target, fx, now) {
+  if (fx.stat === 'stun') {
+    if (Math.random() < (fx.chance || 1)) {
+      target.stunUntil = now + fx.duration * 1000;
+      state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#fbbf24', text: '💫 STUN', big: true });
+      state.effects.push({ kind: 'stun_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#fbbf24', owner: target });
+    } else {
+      state.effects.push({ x: target.x, y: target.y - 1.2, life: 0.9, maxLife: 0.9, color: '#94a3b8', text: 'MISS', big: false });
+    }
+  } else if (fx.stat === 'attackSpeed') {
+    const mult = Math.max(0.1, 1 + (fx.value / 100));
+    target.attackSpeedDebuff = { mult, until: now + fx.duration * 1000 };
+    state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#67e8f9', text: '❄️ ЗАМЕДЛЕНИЕ', big: true });
+    state.effects.push({ kind: 'frost_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#67e8f9', owner: target });
+  } else if (fx.stat === 'silence') {
+    target.silenceUntil = now + fx.duration * 1000;
+    if (target.casting) target.casting = null;
+    state.effects.push({ x: target.x, y: target.y - 1.2, life: 1.2, maxLife: 1.2, color: '#3b82f6', text: '🤐 НЕМОТА', big: true });
+    state.effects.push({ kind: 'silence_ring', x: target.x, y: target.y, life: fx.duration, maxLife: fx.duration, color: '#3b82f6', owner: target });
+  }
+}
+function useActionFromSlot(slotIndex) {
   const hero = state.hero;
   if (!hero || hero.dead) return;
-  const skillId = hero.skillSlots?.[slotIndex];
-  if (!skillId) return;
-  const r = tryUseSkill(hero, skillId);
-  if (!r.ok) return;
-  applySkillEffect(hero, r);
-  updateSkillBar();
+  const slotStr = hero.skillSlots?.[slotIndex];
+  if (!slotStr) return;
+  const parsed = parseSlotAction(slotStr);
+  if (!parsed) return;
+
+  // ── Скилл ────────────────────────────────────────
+  if (parsed.kind === 'skill') {
+    const r = tryUseSkill(hero, parsed.id);
+    if (!r.ok) return;
+    applySkillEffect(hero, r);
+    updateSkillBar();
+    return;
+  }
+
+  // ── Зелье: toggle активного зелья ────────────────
+  if (parsed.kind === 'potion') {
+    const count = hero.potions[parsed.id] || 0;
+    if (count <= 0) { toast('Нет зелий', 'epic'); return; }
+
+    // Если HP не полный и зелье не на КД — выпить прямо сейчас
+    if (hero.hp < hero.maxHp && (hero.potionCooldown || 0) <= 0) {
+      const p = POTIONS[parsed.id];
+      if (p) {
+        hero.potions[parsed.id]--;
+        const healed = Math.min(p.heal, hero.maxHp - hero.hp);
+        hero.hp = Math.min(hero.maxHp, hero.hp + healed);
+        hero.potionCooldown = 3;
+        toast(`🧪 +${Math.floor(healed)} HP`, 'rare');
+      }
+    }
+
+    // И включаем авто-режим (пока зелья есть)
+    if ((hero.potions[parsed.id] || 0) > 0) {
+      hero.activePotion = parsed.id;
+    }
+    updateSkillBar();
+    updateHUD();
+    return;
+  }
+
+  // ── Соски: всегда авто, если в слоте ─────────────
+  if (parsed.kind === 'soulshot') {
+    if ((hero.soulshots[parsed.id] || 0) <= 0) {
+      toast('Нет сосок', 'epic');
+      return;
+    }
+    // Ничего не делаем — соски всегда активны, если в слоте.
+    // Состояние выставляет syncSoulshotFromSlots.
+    updateSkillBar();
+    return;
+  }
+
+  // ── Бафф-свиток ──────────────────────────────────
+  if (parsed.kind === 'buff') {
+    const r = useBuffScroll(hero, parsed.id);
+    if (!r.ok) {
+      if (r.reason === 'already_active') toast('Эффект уже активен', 'epic');
+      else if (r.reason === 'cooldown')   toast('КД свитка: ' + Math.ceil(r.remain / 1000) + 'с', 'epic');
+      else if (r.reason === 'no_scroll')  toast('Нет свитка', 'epic');
+      return;
+    }
+    const def = BUFF_SCROLLS[parsed.id];
+    if (def) toast(`${def.icon} ${def.name} активирован`, 'legendary');
+    updateSkillBar();
+    return;
+  }
 }
 // ===== АРЕНА =====
 
@@ -1122,10 +1512,10 @@ function enterArena(bot) {
 
     // Позиции: оба чуть выше, чтобы не лезли под HUD на мобиле
   hero.x = COLS / 2;
-  hero.y = 24;
+  hero.y = 28;
   hero.facing = -1;
   state.arenaEnemy.x = COLS / 2;
-  state.arenaEnemy.y = 12;
+  state.arenaEnemy.y = 14;
   state.arenaEnemy.facing = 1;
 
   // HP/мана фулл, кулдауны сброшены
@@ -1141,6 +1531,8 @@ function enterArena(bot) {
   state.arenaEnemy.range = 999;
 
   // Флаги
+    hero.range = 999;
+  state.arenaEnemy.range = 999;
   state.arenaMode = true;
   state.inBattle = true;
   state.mobs = [];
@@ -1168,9 +1560,10 @@ function enterArena(bot) {
   if (_opp) { _opp.classList.remove('hidden'); _opp.style.display = 'flex'; }
   if (_ah) { _ah.classList.remove('hidden'); _ah.style.display = ''; }
   document.body.classList.add('arena-active');
-
+  if (typeof window !== 'undefined') window._bgOffscreenKey = '';
   updateHUD();
   renderSkillBar();
+
   console.log('[enterArena] after show:', document.getElementById('arena-side-me')?.className);
 }
 
@@ -1178,7 +1571,14 @@ function updateArena(dt) {
   const hero = state.hero;
   const enemy = state.arenaEnemy;
   if (!hero || !enemy) { endArena(); return; }
+    // На арене range не учитываем — бьют через всю карту
+  hero.range = 999;
+  enemy.range = 999;
 
+  // Таргет = противник (для баффов под плашкой)
+  state.target = enemy && !enemy.dead ? enemy : null;
+  if (hero && !hero.dead) hero.range = 999;
+  if (enemy && !enemy.dead) enemy.range = 999;
   // ===== ЕДИНОЕ ЯДРО: два героя, без движения =====
   const logArena = (ev) => {
     if (state._arenaLog) {
@@ -1218,11 +1618,19 @@ function updateArena(dt) {
     state.effects[i].life -= dt;
     if (state.effects[i].life <= 0) state.effects.splice(i, 1);
   }
-
+  // Таргет на арене = противник (для отрисовки баффов под плашкой)
+  if (enemy && !enemy.dead) state.target = enemy;
+  else state.target = null;
   // Камера — фиксируем на середину арены
   camera.x = Math.max(0, Math.min(COLS - camera.w, COLS / 2 - camera.w / 2));
   camera.y = Math.max(0, Math.min(ROWS - camera.h, ROWS / 2 - camera.h / 2));
+  // Таргет на арене = противник
+  if (enemy && !enemy.dead) state.target = enemy;
+  else state.target = null;
 
+    // Таргет на арене = противник
+  if (enemy && !enemy.dead) state.target = enemy;
+  else state.target = null;
   updateHUD();
   if (typeof window.updateArenaHud === 'function') window.updateArenaHud();
 
@@ -1274,8 +1682,11 @@ function endArena() {
 
   const won = result === 'win';
   const oldRating = hero.arena.rating;
-  const change = ratingChange(oldRating, bot.rating, won);
-  hero.arena.rating = Math.max(0, oldRating + change);
+  const isDummy = !!bot.isTrainingDummy;
+  const change = isDummy ? 0 : ratingChange(oldRating, bot.rating, won);
+  if (!isDummy) {
+    hero.arena.rating = Math.max(0, oldRating + change);
+  }
   if (won) hero.arena.wins++;
   else if (result === 'loss') hero.arena.losses++;
 
@@ -1299,6 +1710,7 @@ function endArena() {
   state.arenaMode = false;
   state.arenaEnemy = null;
   state.arenaBot = null;
+  state.target = null;
   state.projectiles = [];
   state.effects = [];
   state.shadows = [];
@@ -1371,11 +1783,12 @@ function update(dt) {
 
   // ===== Спавн мобов =====
   if (!state.dungeon && state.currentZone) {
-    const sp = state.currentZone.spawn;
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
       trySpawnMob();
-      state.spawnTimer = sp.interval * (0.7 + Math.random() * 0.6);
+      // Если у зоны есть spawn.interval — используем его, иначе дефолт для лаиров
+      const iv = state.currentZone.spawn?.interval ?? 0.5;
+      state.spawnTimer = iv * (0.7 + Math.random() * 0.6);
     }
   }
   window.__zoneSafeRadius = state.currentZone?.spawn?.safeRadius ?? 4;
@@ -1490,6 +1903,20 @@ function update(dt) {
     if (state.effects[i].life <= 0) state.effects.splice(i, 1);
   }
 
+  // ── Определяем текущий таргет ─────────────────
+  // На арене таргет = arenaEnemy (ставится в updateArena).
+  // В фарме = ближайший агрессивный моб в радиусе 12 клеток.
+  if (!state.arenaMode) {
+    let best = null, bestDist = Infinity;
+    for (const m of state.mobs) {
+      if (m.dead) continue;
+      if (!m.aggro) continue;
+      const d = Math.hypot(m.x - hero.x, m.y - hero.y);
+      if (d < 12 && d < bestDist) { best = m; bestDist = d; }
+    }
+    state.target = best;
+  }
+
   updateCamera(hero);
   updateHUD();
 
@@ -1550,22 +1977,35 @@ function applyDevCode(code) {
     return;
   }
   if (code === 'books') {
-    const all = ['multishot','fireball','poison','stun','frost','silence','heal','dodge','cleanse','summon_shadow'];
+    const all = [
+      // Общие
+      'heal','cleanse','dodge','haste','iron_skin','reflect','vampiric','berserk','focus','last_stand',
+      // Лучник
+      'multishot','power_shot','double_shot','precise_shot','lethal_shot','stun_shot','slow_arrow','poison_arrow','arrow_rain','hawk_eye','panther',
+      // Маг
+      'fireball','ice_bolt','lightning','chain_lightning','meteor','frost_nova','silence','sleep','arcane_shield','shadow',
+    ];
     for (const id of all) {
       addToBackpack(hero, createSkillBook(id, 5));
     }
-    toast('📖 Все 10 книжек ×5', 'unique');
+    toast('📖 Все 31 книжка ×5', 'unique');
     return;
   }
   if (code === 'learnall') {
-    const all = ['multishot','fireball','poison','stun','frost','silence','heal','dodge','cleanse','summon_shadow'];
+    const all = [
+      'heal','cleanse','dodge','haste','iron_skin','reflect','vampiric','berserk','focus','last_stand',
+      'multishot','power_shot','double_shot','precise_shot','lethal_shot','stun_shot','slow_arrow','poison_arrow','arrow_rain','hawk_eye','panther',
+      'fireball','ice_bolt','lightning','chain_lightning','meteor','frost_nova','silence','sleep','arcane_shield','shadow',
+    ];
     for (const id of all) {
-      // 5 уровней для теста
       for (let i = 0; i < 5; i++) learnSkill(hero, id);
     }
-    // Автоматически ставим первые 3 в слоты (или 6 популярных)
-    hero.skillSlots = ['multishot','fireball','heal','dodge','silence'];
+    hero.skillSlots = [
+      'skill:multishot', 'skill:power_shot', 'skill:double_shot',
+      'skill:stun_shot', 'skill:heal', 'skill:dodge', 'skill:haste', 'skill:slow_arrow',
+    ];
     renderSkillBar();
+    toast('📖 Изучены все 31 скилл', 'unique');
     return;
   }
   if (code === 'slot') {
@@ -1588,6 +2028,47 @@ function applyDevCode(code) {
   if (code === 'gold') { state.gold += 1000000; updateHUD(); toast('💰 +1 000 000 золота', 'unique'); return; } 
    if (code === 'arena') { state.hero.arena.rating = 1500; toast('🏟️ Рейтинг = 1500', 'unique'); return; }
   if (code === 'full') { applyDevCode('s20'); return; }
+
+  // ===== skill10 / skill20 / ... / skill100 =====
+  // Учит ВСЕ скиллы (общие + лучник + маг) и ставит им уровень N.
+  // N = 1..100, ограничивается MAX_SKILL_LEVEL.
+  const skillMatch = code.match(/^skill(\d+)$/);
+  if (skillMatch) {
+    const lvl = Math.max(1, Math.min(MAX_SKILL_LEVEL, parseInt(skillMatch[1], 10)));
+    if (!hero.skills) hero.skills = {};
+
+    let learned = 0;
+    let updated = 0;
+    for (const id of SKILL_ORDER) {
+      const def = SKILLS[id];
+      if (!def) continue;
+      const had = !!hero.skills[id];
+      hero.skills[id] = { level: lvl };
+      if (had) updated++;
+      else learned++;
+    }
+
+    // Автослот: если у героя пустые слоты — поставим 3 классовых DD + heal/dodge
+    const isMage = hero.classType === 'mage';
+    const defaults = isMage
+      ? ['fireball', 'ice_bolt', 'lightning', 'heal', 'dodge']
+      : ['multishot', 'power_shot', 'lethal_shot', 'heal', 'dodge'];
+    if (!hero.skillSlots || hero.skillSlots.length === 0) {
+      hero.skillSlots = [null, null, null, null, null, null, null, null];
+    }
+    // Заполняем только если слоты пусты
+    for (let i = 0; i < defaults.length; i++) {
+      if (!hero.skillSlots[i]) hero.skillSlots[i] = 'skill:' + defaults[i];
+    }
+
+    recalcStats(hero);
+    renderSkillBar();
+    updateHUD();
+    refreshUI();
+    toast(`📖 Скиллы Lv.${lvl}: +${learned} новых, ${updated} обновлено`, 'unique');
+    return;
+  }
+
   toast('❌ Неизвестный код', 'epic');
 }
 
@@ -1620,7 +2101,7 @@ initUI(state, auction, shop, arena, {
   onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
   onReturnToCity: () => returnToCity(),
   makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
-  onSkillClick: (slot) => useSkillFromSlot(slot),
+   onSkillClick: (slot) => useActionFromSlot(slot),
 });
 // ===== АВТОРИЗАЦИЯ =====
 // ===== АВТОРИЗАЦИЯ =====
@@ -1786,7 +2267,7 @@ function returnFromOffline() {
       if (!state.portal) state.portal = spawnPortalInZone(state.currentZone);
       document.getElementById('bottom-panel').classList.remove('hidden');
       document.getElementById('zone-name').textContent = state.currentZone.name;
-      document.getElementById('zone-diff').textContent = state.currentZone.diff === 'easy' ? '🟢' : state.currentZone.diff === 'medium' ? '🟡' : '🔴';
+      setZoneIcon('zone-diff', state.currentZone.diff);
     }
     toast('💤 Офлайн завершён. Управление возвращено.', 'legendary');
     updateHUD();
@@ -1822,6 +2303,9 @@ initAuth({
       }
       if (!arena.bots.some(b => b.isTest)) {
         arena.bots.push(...createTestBots());
+      }
+      if (!arena.bots.some(b => b.id === 'training_dummy')) {
+        arena.bots.push(createTrainingDummy());
       }
              // === ВОССТАНОВЛЕНИЕ ОФЛАЙНА из localStorage ===
             // === ВОССТАНОВЛЕНИЕ ОФЛАЙНА из localStorage ===
@@ -1864,13 +2348,28 @@ initAuth({
           state.projectiles = [];
           state.effects = [];
           state.spawnTimer = 0.5;
+  // Сброс таймеров лаиров при входе в зону + предзаполнение
+  if (zone.lairs) {
+    for (const lair of zone.lairs) {
+      lair._lastSpawn = 0;
+      lair._bossRespawnAt = 0;
+    }
+    // Сразу спавним 60% мобов в каждом лаире — не ждём trySpawnMob
+    for (const lair of zone.lairs) {
+      if (lair.boss) continue;
+      const prefill = Math.floor((lair.maxMobs || 15) * 0.6);
+      for (let i = 0; i < prefill; i++) {
+        spawnMobInLair(lair, zone);
+      }
+    }
+  }
           state.hero.x = COLS / 2;
           state.hero.y = ROWS / 2;
           if (!state.hero.dead) state.portal = spawnPortalInZone(offZone);
           state.dungeon = null;
           state.aoeList = [];
           document.getElementById('zone-name').textContent = offZone.name;
-          document.getElementById('zone-diff').textContent = offZone.diff === 'easy' ? '🟢' : offZone.diff === 'medium' ? '🟡' : '🔴';
+          setZoneIcon('zone-diff', offZone.diff);
           document.getElementById('bottom-panel').classList.remove('hidden');
           rebuildShopStock();
           hideCityScreen();
@@ -1995,7 +2494,7 @@ initAuth({
           state.dungeon = null;
           state.aoeList = [];
           document.getElementById('zone-name').textContent = zone.name;
-          document.getElementById('zone-diff').textContent = zone.diff === 'easy' ? '🟢' : zone.diff === 'medium' ? '🟡' : '🔴';
+          setZoneIcon('zone-diff', zone.diff);
           hideCityScreen();
         } else {
           showCityScreen();
@@ -2035,7 +2534,58 @@ setTimeout(() => {
     if (state.hero?.offlineActive) updateOfflinePanel();
   }, 1000);
 }, 200);
+// Рендер баффов/дебаффов под плашкой HP/MP
+function _renderPlateBuffs(containerId, unit) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  box.innerHTML = '';
+  if (!unit || unit.dead) return;
 
+  const now = Date.now();
+  const items = [];
+
+  // Скилловые баффы (dodge)
+  if (unit.skillBuffs?.dodge && unit.skillBuffs.dodge.until > now) {
+    items.push({ icon: '💨', time: Math.ceil((unit.skillBuffs.dodge.until - now) / 1000), color: '#80d4e0' });
+  }
+
+  // Свитки (attack/crit/speed/range)
+  const sc = (typeof BUFF_SCROLLS !== 'undefined') ? BUFF_SCROLLS : {};
+  for (const type of ['attack','crit','speed','range']) {
+    const until = unit.activeBuffs?.[type];
+    if (until && until > now) {
+      const def = sc[type];
+      if (def) items.push({ icon: def.icon, time: Math.ceil((until - now) / 1000), color: def.color });
+    }
+  }
+
+  // Дебаффы
+  if (unit.stunUntil && unit.stunUntil > now) {
+    items.push({ icon: '💫', time: Math.ceil((unit.stunUntil - now) / 1000), color: '#fbbf24', debuff: true });
+  }
+  if (unit.slowUntil && unit.slowUntil > now) {
+    items.push({ icon: '❄️', time: Math.ceil((unit.slowUntil - now) / 1000), color: '#67e8f9', debuff: true });
+  }
+  if (unit.silenceUntil && unit.silenceUntil > now) {
+    items.push({ icon: '🤐', time: Math.ceil((unit.silenceUntil - now) / 1000), color: '#3b82f6', debuff: true });
+  }
+  if (unit.attackSpeedDebuff && unit.attackSpeedDebuff.until > now) {
+    items.push({ icon: '🐢', time: Math.ceil((unit.attackSpeedDebuff.until - now) / 1000), color: '#67e8f9', debuff: true });
+  }
+  // DoT (яд)
+  if (unit.dots && unit.dots.length > 0) {
+    items.push({ icon: '🩸', time: '', color: '#22c55e', debuff: true });
+  }
+
+  for (const it of items) {
+    const el = document.createElement('div');
+    el.className = 'as-buff' + (it.time && it.time <= 2 ? ' expiring' : '');
+    if (it.color) el.style.borderColor = it.color;
+    el.innerHTML = `${it.icon}${it.time ? `<span class="as-buff-time">${it.time}</span>` : ''}`;
+    box.appendChild(el);
+  }
+}
+  
 window.openOfflinePanel = openOfflinePanel;
 window.enterArena = enterArena;
 requestAnimationFrame(loop);
@@ -2043,3 +2593,4 @@ requestAnimationFrame(loop);
 window.exitArena = exitArena;
 window.arena = arena;
 window.state = state;
+window.__heroApi = { setSkillSlot, learnSkill };

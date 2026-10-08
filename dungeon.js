@@ -66,7 +66,21 @@ export function createDungeon(zone, cityId) {
 
 // Создать одного моба-охрану
 export function spawnGuard(zone, x, y, groupId) {
-  const mobDefId = zone.mobs[Math.floor(Math.random() * zone.mobs.length)];
+  // Собираем список мобов зоны из всех лаиров
+  let mobPool = [];
+  if (zone.lairs && zone.lairs.length > 0) {
+    for (const lair of zone.lairs) {
+      if (lair.mobs) mobPool = mobPool.concat(lair.mobs);
+    }
+  }
+  // Fallback — старая структура
+  if (mobPool.length === 0 && Array.isArray(zone.mobs)) {
+    mobPool = zone.mobs;
+  }
+  // Крайний fallback
+  if (mobPool.length === 0) mobPool = ['gremlin'];
+
+  const mobDefId = mobPool[Math.floor(Math.random() * mobPool.length)];
   const def = MOBS[mobDefId] || MOBS.gremlin;
   const m = createMob(def, x, y, zone.mult, {
     aggroRange: 99,

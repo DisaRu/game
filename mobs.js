@@ -12,7 +12,8 @@ export function createMob(def, x, y, mult = 1, opts = {}) {
   const xpMult = isChampion ? CHAMPION.xpMult : 1;
 
   return {
-    id: def.id,               // id моба (gremlin/keltir/…), по нему берём MOBS[id].drops
+    id: def.id,
+    team: 'enemy',            // ← ДОБАВЬ ЭТУ СТРОКУ
     name: isChampion ? '⭐ ' + def.name : def.name,
     emoji: def.emoji,
     hp: Math.floor(def.hp * mult * hpMult),
@@ -38,12 +39,19 @@ export function createMob(def, x, y, mult = 1, opts = {}) {
     renderAngle: 0,
 
      // ===== ДЕБАФФЫ (скиллы) =====
+        // ===== ДЕБАФФЫ (скиллы) =====
     stunUntil: 0,
     slowUntil: 0,
     slowMult: 1,
-    attackSpeedDebuff: null,  // { mult, until }
+    attackSpeedDebuff: null,
     silenceUntil: 0,
     dots: [],
+
+     // ===== ДАЛЬНИЙ БОЙ (опционально) =====
+    attackRange: def.attackRange || 0.8,
+    attackProjectile: def.attackProjectile || null,
+    keepDistance: def.keepDistance || false,
+
   };
 }
 
@@ -80,16 +88,44 @@ export function updateMob(m, dt, hero, heroX, heroY) {
   const dist = Math.hypot(dx, dy) || 1;
   m.facingAngle = Math.atan2(dy, dx);
 
-  if (!m.aggro && dist < m.aggroRange) m.aggro = true;
+  // Агро
+  // Пробуждение: через 2 сек после спавна включаем aggroRange
+  if (m._aggroWakeAt && Date.now() >= m._aggroWakeAt) {
+    m.aggroRange = m._wakeAggroRange || m.aggroRange;
+    m._aggroWakeAt = 0;
+  }
+  if (!m.aggro && m.aggroRange > 0 && dist < m.aggroRange) m.aggro = true;
+
+  // Если моб далеко от лаира и не агрится — идёт домой
+  if (m.lairCx !== undefined && !m.aggro) {
+    const homeDist = Math.hypot(m.x - m.lairCx, m.y - m.lairCy);
+    if (homeDist > m.lairRadius * 1.5) {
+      const hx = m.lairCx - m.x, hy = m.lairCy - m.y;
+      const hd = Math.hypot(hx, hy) || 1;
+      m.x += hx / hd * m.speed * dt;
+      m.y += hy / hd * m.speed * dt;
+      return null;
+    }
+  }
 
   if (m.aggro) {
-    if (dist > 0.8) {
+    // Дистанция автоатаки: у мили 0.8, у рейнджа задаётся в MOBS[id].attackRange.
+    const attackRange = m.attackRange || 0.8;
+
+    if (dist > attackRange) {
+      // Подходим к цели
       m.x += dx/dist * m.speed * speedMult * dt;
       m.y += dy/dist * m.speed * speedMult * dt;
       if (Math.abs(dx) > 0.1) m.facing = dx > 0 ? 1 : -1;
     } else if (m.attackCd <= 0) {
       m.attackCd = 1.0;
       return 'attack';
+    }
+
+    // keepDistance: рейндж-моб отходит, если герой слишком близко
+    if (m.keepDistance && dist < Math.max(2, attackRange * 0.4)) {
+      m.x -= dx/dist * m.speed * 0.6 * speedMult * dt;
+      m.y -= dy/dist * m.speed * 0.6 * speedMult * dt;
     }
   } else {
     const safeRadius = window.__zoneSafeRadius ?? 4;

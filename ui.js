@@ -1,12 +1,12 @@
-import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt, getEnhanceBonus, ENHANCE_BONUSES, BUFF_SCROLLS, RATING_CHESTS, SKILLS, SKILL_ORDER, MAX_SKILL_LEVEL } from './config.js';
+import { SLOTS, SLOT_NAMES, STAT_NAMES, STAT_SUFFIX, POTION_ORDER, POTIONS, GRADE_ORDER, GRADES, MAX_ENHANCE, ENHANCE_CHANCE, willBreakAt, getEnhanceBonus, ENHANCE_BONUSES, BUFF_SCROLLS, RATING_CHESTS, SKILLS, SKILL_ORDER,SKILL_DESC, MAX_SKILL_LEVEL } from './config.js';
 import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor, getVariantsForSlot, createItem } from './items.js';
-import { equipItem, unequipItem, canEquip, tryEnhance, getSkillManaCost, isSkillReady, getSkillRemainingCooldown, learnSkill, setSkillSlot } from './hero.js';
-import { buyListing, listItem, sellToBot, cancelListing } from './auction.js';
+import { equipItem, unequipItem, canEquip, tryEnhance, getSkillManaCost, getSkillCooldown, getSkillCastTime, isSkillReady, getSkillRemainingCooldown, learnSkill, setSkillSlot, parseSlotAction, setSlotAction, useBuffScroll, getSkillMilestones, getSkillEffect } from './hero.js';
 import { buyEquipment, buyScroll, buyPotion, buySoulshot } from './shop.js';
 import { CITIES, CITY_ORDER, cityTeleportCost, zoneDifficultyLabel } from './cities.js';
 import { getAvailableChests, claimChest, rollCardRewards, estimateWinChance, fightBot, expectedScore } from './arena.js';
 import { getBotStats } from './bots.js';
-
+import { buyListing, listItem, sellToBot, cancelListing } from './auction.js';
+// Рендер иконки: PNG-файл, если это путь; иначе — эмодзи.
 function iconHtml(icon, size = 42) {
   if (!icon) return '';
   if (icon.includes('.') || icon.includes('/')) {
@@ -106,6 +106,8 @@ function _stopAutoEnhance() {
   document.querySelectorAll('.enhance-btn.holding, .blessed-btn.holding').forEach(b => b.classList.remove('holding'));
   if (_autoEnhance.ticked) { _suppressNextEnhanceClick = true; _lastAutoTime = Date.now(); }
   _autoEnhance = null;
+    _autoTickCounter = 0;
+
 }
 window.addEventListener('pointerup', _stopAutoEnhance);
 window.addEventListener('pointercancel', _stopAutoEnhance);
@@ -138,6 +140,9 @@ function _switchToNextEnhanceTarget(currentItem, useBlessed) {
   return false;
 }
 
+// Счётчики для батчинга тяжёлых обновлений при автоточке
+let _autoTickCounter = 0;
+
 function _doAutoTick(useBlessed) {
   const hero = state.hero;
   const item = enhanceSelectedItem;
@@ -152,6 +157,7 @@ function _doAutoTick(useBlessed) {
     if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
     return true;
   }
+
   const listBefore = getBackpackEnhanceList(true);
   const idxBefore = listBefore.indexOf(item);
   const r = tryEnhance(hero, item, useBlessed);
@@ -159,29 +165,66 @@ function _doAutoTick(useBlessed) {
     if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
     return true;
   }
-  playEnhanceAnim(r.result, item, r.blessedUsed);
-  callbacks.onEquipChange && callbacks.onEquipChange();
+
+  _autoTickCounter++;
+
+  // Разрушение — обязательная тяжёлая перерисовка (редко)
   if (r.result === 'destroyed') {
+    // Лёгкий вибро/цвет — без pop-up
+    _flashEnhanceResult('destroyed');
     const oldCard = document.querySelector(`.enhance-item[data-item-id="${item.id}"]`);
     if (oldCard) oldCard.remove();
     const listAfter = getBackpackEnhanceList(true);
     let next = null;
     if (idxBefore >= 0 && listAfter.length > 0) {
-      const pos = Math.min(idxBefore, listAfter.length - 1);
-      next = listAfter[pos];
-    } else if (listAfter.length > 0) next = listAfter[0];
-    if (!next) { _stopAutoEnhance(); enhanceSelectedItem = null; showEnhanceDetail(null); return false; }
+      next = listAfter[Math.min(idxBefore, listAfter.length - 1)];
+    } else if (listAfter.length > 0) {
+      next = listAfter[0];
+    }
+    if (!next) {
+      _stopAutoEnhance();
+      enhanceSelectedItem = null;
+      showEnhanceDetail(null);
+      return false;
+    }
     enhanceSelectedItem = next;
     _selectEnhanceCard(next);
     showEnhanceDetail(next);
+    callbacks.onEquipChange && callbacks.onEquipChange();
     return true;
   }
+
+  // Лёгкое обновление карточки — каждый тик (это быстро)
   updateEnhanceItemCard(item);
-  updateEnhanceLive();
+
+  // Лёгкая вибро-подсветка вместо тяжёлого playEnhanceAnim
+  _flashEnhanceResult(r.result);
+
+  // Тяжёлые обновления — раз в 4 тика (~ раз в секунду)
+  if (_autoTickCounter % 4 === 0) {
+    updateEnhanceLive();
+    callbacks.onEquipChange && callbacks.onEquipChange();
+  }
+
   if (item.enhance >= 12) {
     if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
   }
   return true;
+}
+
+// Лёгкий всплеск-индикатор вместо pop-up. Не создаёт DOM каждый тик.
+function _flashEnhanceResult(result) {
+  const detail = document.getElementById('enhance-detail');
+  if (!detail) return;
+  const color = result === 'success' ? '#4ade80'
+              : result === 'fail' ? '#ef4444'
+              : '#8b0000';
+  detail.style.transition = 'none';
+  detail.style.boxShadow = `inset 0 0 20px ${color}80`;
+  setTimeout(() => {
+    detail.style.transition = 'box-shadow 0.3s ease-out';
+    detail.style.boxShadow = '';
+  }, 60);
 }
 
 function bindEnhanceButton(btn, getItem, useBlessed) {
@@ -314,9 +357,7 @@ function getBackpackEnhanceList(skipMax = false) {
   const hero = state.hero;
   const list = [];
   for (const it of hero.backpack) {
-    if (it.kind === 'blessed') continue;
-    if (it.kind === 'buff') continue;
-    if (it.kind === 'pass') continue;
+    if (it.kind !== 'equip') continue;
     if (skipMax && it.enhance >= MAX_ENHANCE) continue;
     list.push(it);
   }
@@ -354,8 +395,29 @@ export function initUI(s, a, sh, ar, cb = {}) {
   document.querySelectorAll('#bottom-panel button').forEach(btn => {
     btn.addEventListener('click', () => {
       const panel = btn.dataset.panel;
-      if (panel === 'city') { callbacks.onReturnToCity && callbacks.onReturnToCity(); return; }
-      if (panel === 'arena') { openArena(); return; }
+
+      if (panel === 'city') {
+        // Закрываем все модалки и попапы — они мешают городу
+        document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+        const pp = document.getElementById('item-popup');
+        if (pp) pp.classList.add('hidden');
+        const sp = document.getElementById('skill-popup');
+        if (sp) sp.classList.add('hidden');
+        callbacks.onReturnToCity && callbacks.onReturnToCity();
+        return;
+      }
+
+      if (panel === 'arena') {
+        // Тоже закрываем модалки перед ареной
+        document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+        const pp = document.getElementById('item-popup');
+        if (pp) pp.classList.add('hidden');
+        openArena();
+        return;
+      }
+
+      // Открывая новый модал — закрываем предыдущий
+      document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
       openModal(panel);
     });
   });
@@ -418,6 +480,122 @@ export function initUI(s, a, sh, ar, cb = {}) {
       if (!isNaN(slot) && callbacks.onSkillClick) callbacks.onSkillClick(slot);
     });
   });
+
+  // ============================================================
+  // ПУБЛИЧНЫЙ API для inline-скрипта в index.html
+  // ============================================================
+  window.__ui = {
+    renderHero: () => renderHero(),
+    renderBackpack: () => renderBackpack(),
+    renderSkillsTab: () => renderSkillsTab(),
+    renderSkillBar: () => renderSkillBar(),
+    renderScrolls: () => renderScrolls(),
+    renderPotions: () => renderPotions(),
+    renderSoulshots: () => renderSoulshots(),
+
+    setSkillSlot: (slotIndex, skillId) => {
+      const r = setSkillSlot(state.hero, slotIndex, skillId);
+      if (r.ok) {
+        renderSkillsTab();
+        renderSkillBar();
+        updateSkillBar();
+      }
+      return r;
+    },
+
+    setSlotAction: (slotIndex, kind, id) => {
+      const r = setSlotAction(state.hero, slotIndex, kind, id);
+      if (r.ok) {
+        renderSkillsTab();
+        renderSkillBar();
+        updateSkillBar();
+        renderHero();
+      }
+      return r;
+    },
+
+    learnSkill: (skillId) => {
+      const r = learnSkill(state.hero, skillId);
+      if (r.ok) {
+        const hero = state.hero;
+        const book = hero.backpack.find(x => x.kind === 'book' && x.skillId === skillId);
+        if (book) {
+          if ((book.count || 1) > 1) book.count -= 1;
+          else hero.backpack.splice(hero.backpack.indexOf(book), 1);
+        }
+        renderSkillsTab();
+        renderSkillBar();
+        renderHero();
+      }
+      return r;
+    },
+
+      getSkillInfo: (skillId) => {
+      const def = SKILLS[skillId];
+      if (!def) return null;
+      const hero = state.hero;
+      const lvl = hero.skills?.[skillId]?.level || 1;
+      const cost = getSkillManaCost(hero, skillId);
+      const cd = getSkillCooldown(hero, skillId);
+      const eff = getSkillEffect(hero, skillId);
+      return {
+        id: skillId,
+        name: def.name,
+        icon: def.icon,
+        level: lvl,
+        maxLevel: MAX_SKILL_LEVEL,
+        manaCost: cost,
+        cooldown: cd,
+        castTime: getSkillCastTime(hero, skillId),
+        baseDesc: SKILL_DESC[skillId] || def.desc || '',
+        inSlot: hero.skillSlots?.indexOf('skill:' + skillId) ?? -1,
+        freeSlot: hero.skillSlots?.indexOf(null) ?? -1,
+        bookCount: hero.backpack
+          .filter(x => x.kind === 'book' && x.skillId === skillId)
+          .reduce((s, x) => s + (x.count || 1), 0),
+        milestones: getSkillMilestones(lvl),
+        duration: eff?.duration ?? null,
+      };
+    },
+
+    sortBackpack: () => {
+      const hero = state.hero;
+      const slotOrder = {
+        weapon: 1, armor: 2, helmet: 3, gloves: 4, boots: 5, cloak: 6, ring: 7, amulet: 8,
+        scroll: 9, buff: 10, potion: 11, soulshot: 12, book: 13, blessed: 14, pass: 15,
+      };
+      const gradeOrder = { s: 0, a: 1, b: 2, c: 3, d: 4, ng: 5, any: 6, buff: 6 };
+      hero.backpack.sort((a, b) => {
+        const ta = slotOrder[a.slot] ?? 99;
+        const tb = slotOrder[b.slot] ?? 99;
+        if (ta !== tb) return ta - tb;
+        const ga = gradeOrder[a.grade] ?? 6;
+        const gb = gradeOrder[b.grade] ?? 6;
+        if (ga !== gb) return ga - gb;
+        return (b.enhance || 0) - (a.enhance || 0);
+      });
+      renderBackpack();
+      toast('🎒 Отсортировано: оружие → свитки', 'rare');
+    },
+  };
+}
+// Описания скиллов (после initUI)
+function _getSkillDescription(skillId, lvl) {
+  const lvlMult = 1 + 0.05 * (lvl - 1);
+  const map = {
+    multishot: () => `Выпускает 3 стрелы подряд, каждая наносит ${Math.round(40 * lvlMult)}% урона атаки.`,
+    fireball:  () => `Огненный шар: ${Math.round(100 * lvlMult)}% урона по цели + сплэш 1.5 клетки.`,
+    poison:    () => `Накладывает яд: ${Math.round(30 * lvlMult)}% урона в секунду в течение 5 сек.`,
+    stun:      () => `Оглушает цель на 3 сек. Шанс успеха 60%.`,
+    frost:     () => `Замедляет скорость атаки цели на 50% в течение 4 сек.`,
+    silence:   () => `Накладывает немоту на 3 сек — цель не может использовать скиллы.`,
+    heal:      () => `Восстанавливает ${Math.round(20 * lvlMult)}% от максимума HP.`,
+    dodge:     () => `Повышает уклонение на 60% в течение 4 сек.`,
+    cleanse:   () => `Снимает все дебаффы (стан, замедление, немоту, яд).`,
+    summon_shadow: () => `Призывает тень-помощника на 20 сек. Тень атакует цели заклинателя.`,
+  };
+  const fn = map[skillId];
+  return fn ? fn() : 'Описание недоступно.';
 }
 
 function statLabel(k) { return STAT_NAMES[k] || k; }
@@ -589,22 +767,23 @@ function renderHeroBonuses() {
   }
   let html = '';
   if (itemBonuses.length > 0) {
-    html += `<div class="hb-title">✨ Бонусы +15 (${itemBonuses.length})</div><div class="hb-list">${itemBonuses.map(x => `<div class="hb-row"><span class="hb-icon">${iconHtml(x.item.icon)}</span><span class="hb-name">${x.bonus.icon} ${x.bonus.name}</span><span class="hb-val">${x.bonus.display}</span></div>`).join('')}</div>`;
+    html += `<div class="hb-title">✨ Бонусы +15 (${itemBonuses.length})</div><div class="hb-list">${itemBonuses.map(x => `<div class="hb-row"><span class="hb-icon">${iconHtml(x.item.icon, 14)}</span><span class="hb-name">${iconHtml(x.bonus.icon, 12)} ${x.bonus.name}</span><span class="hb-val">${x.bonus.display}</span></div>`).join('')}</div>`;
   }
   if (activeBuffs.length > 0) {
-    html += `<div class="hb-title" style="margin-top:6px">🧪 Активные свитки (${activeBuffs.length})</div><div class="hb-list">${activeBuffs.map(x => `<div class="hb-row"><span class="hb-icon">${x.def.icon}</span><span class="hb-name" style="color:${x.def.color}">${x.def.name}</span><span class="hb-time">${x.timeLeft}</span></div>`).join('')}</div>`;
+    html += `<div class="hb-title" style="margin-top:6px">🧪 Активные свитки (${activeBuffs.length})</div><div class="hb-list">${activeBuffs.map(x => `<div class="hb-row"><span class="hb-icon">${iconHtml(x.def.icon, 16)}</span><span class="hb-name" style="color:${x.def.color}">${x.def.name}</span><span class="hb-time">${x.timeLeft}</span></div>`).join('')}</div>`;
   }
   bonusBox.innerHTML = html || '<div class="hb-empty">Нет бонусов и активных свитков</div>';
 }
 
 function renderHeroTabs() {
+  // Слоты скиллов рендерятся всегда — они теперь на главной вкладке
+  renderSkillsTab();
+
   if (heroTab === 'backpack') renderBackpack();
-  else if (heroTab === 'skills') renderSkillsTab();
   else if (heroTab === 'scrolls') renderScrolls();
   else if (heroTab === 'potions') renderPotions();
   else if (heroTab === 'soulshots') renderSoulshots();
 }
-
 function renderBackpack() {
   const hero = state.hero;
   const grid = document.getElementById('backpack-grid');
@@ -625,10 +804,16 @@ function renderBackpack() {
     } else if (item.kind === 'pass') {
       el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#a855f7">PASS</div><div class="bp-name">${item.name}</div>`;
     } else if (item.kind === 'book') {
+      const def = SKILLS[item.skillId];
       const known = state.hero.skills?.[item.skillId];
       const lvl = known?.level || 0;
       const tag = lvl >= MAX_SKILL_LEVEL ? 'MAX' : (lvl > 0 ? 'Lv.' + lvl : 'NEW');
-      el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#60a5fa">КНИГА</div><div class="bp-name">${item.name.replace('📖 ','')}</div><div class="bp-book-lvl">${tag}</div>`;
+      const cls = def?.class || 'common';
+      const isForbidden = cls !== 'common' && cls !== hero.classType;
+      const clsIcon = cls === 'archer' ? '🏹' : cls === 'mage' ? '🔮' : '✨';
+      el.style.borderColor = isForbidden ? '#7a2a2a' : (cls === 'archer' ? '#4ade80' : cls === 'mage' ? '#c084fc' : '#fbbf24');
+      el.style.opacity = isForbidden ? '0.55' : '';
+      el.innerHTML = `${countBadge}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:#60a5fa">${clsIcon} КНИГА</div><div class="bp-name">${item.name.replace('📖 ','')}</div><div class="bp-book-lvl">${isForbidden ? '✗ не твой класс' : tag}</div>`;
     } else {
       el.innerHTML = `${countBadge}${item.enhance > 0 ? `<span class="enh">+${item.enhance}</span>` : ''}<div class="bp-icon">${iconHtml(item.icon)}</div><div class="bp-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div><div class="bp-name">${item.name}</div><div class="bp-stats">${statsCompact(item)}</div>`;
     }
@@ -647,18 +832,19 @@ function renderSkillsTab() {
   const slotsRow = document.getElementById('skill-slots-row');
   if (slotsRow) {
     slotsRow.innerHTML = '';
-    for (let i = 0; i < 5; i++) {
-      const skillId = hero.skillSlots[i];
-      const def = skillId ? SKILLS[skillId] : null;
-      const lvl = skillId ? (hero.skills[skillId]?.level || 1) : 0;
+    for (let i = 0; i < 8; i++) {
+      const slotStr = hero.skillSlots[i];
+      const disp = slotStr ? _slotDisplay(slotStr, hero) : null;
       const el = document.createElement('div');
-      el.className = 'skill-slot ' + (def ? 'filled' : 'empty');
+      el.className = 'skill-slot ' + (disp && !disp.empty ? 'filled' : 'empty');
       el.dataset.slot = String(i);
-      if (def) {
+      if (slotStr) el.dataset.slotStr = slotStr;
+
+      if (disp && !disp.empty) {
         el.innerHTML = `
           <span class="slot-num">${i + 1}</span>
-          <span class="slot-icon">${def.icon}</span>
-          <span class="slot-lvl">Lv.${lvl}</span>
+          <span class="slot-icon">${disp.icon}</span>
+          <span class="slot-lvl">${disp.kind === 'skill' ? 'Lv.' + (hero.skills[disp.id]?.level || 1) : '×' + disp.sub}</span>
         `;
       } else {
         el.innerHTML = `
@@ -666,14 +852,15 @@ function renderSkillsTab() {
           <span class="slot-empty-label">Пусто</span>
         `;
       }
+
       el.addEventListener('click', () => {
         if (hero.skillSlots[i]) {
-          setSkillSlot(hero, i, null);
+          setSlotAction(hero, i, null, null);
           renderSkillsTab();
           renderSkillBar();
           toast('Слот очищен', 'epic');
         } else {
-          toast('Выбери скилл из списка ниже', 'epic');
+          toast('Выбери скилл из списка ниже или предмет из рюкзака', 'epic');
         }
       });
       slotsRow.appendChild(el);
@@ -684,7 +871,14 @@ function renderSkillsTab() {
   const learnedEl = document.getElementById('learned-skills');
   if (learnedEl) {
     learnedEl.innerHTML = '';
-    const learnedIds = SKILL_ORDER.filter(id => hero.skills?.[id]);
+    const learnedIds = SKILL_ORDER.filter(id => {
+      if (!hero.skills?.[id]) return false;
+      const def = SKILLS[id];
+      if (!def) return false;    // защита от мусорных ключей в сейве
+      const cls = def.class || 'common';
+      // Показываем свои + общие
+      return cls === 'common' || cls === hero.classType;
+    });
     if (learnedIds.length === 0) {
       learnedEl.innerHTML = '<div class="skills-empty">Пока ничего не изучено. Открой книжку скилла из рюкзака.</div>';
     } else {
@@ -697,14 +891,16 @@ function renderSkillsTab() {
 
         const card = document.createElement('div');
         card.className = 'skill-card' + (inSlot ? ' in-slot' : '');
+        card.dataset.skillId = skillId;
         card.innerHTML = `
           ${inSlot ? `<span class="sc-in-slot">✓ слот ${slotIdx + 1}</span>` : ''}
           <span class="sc-lvl">Lv.${lvl}</span>
-          <div class="sc-icon">${def.icon}</div>
+          <div class="sc-icon">${iconHtml(def.icon, 26)}</div>
           <div class="sc-name">${def.name}</div>
           <div class="sc-meta"><span>🔷 <b>${cost}</b></span><span>⏱ ${def.cooldown}с</span></div>
         `;
-        card.addEventListener('click', () => {
+   card.dataset.skillId = skillId;
+card.addEventListener('click', () => {
           if (inSlot) {
             setSkillSlot(hero, slotIdx, null);
             toast(`Снят из слота ${slotIdx + 1}`, 'epic');
@@ -726,15 +922,43 @@ function renderSkillsTab() {
 function renderScrolls() {
   const hero = state.hero;
   const sc = document.getElementById('scrolls-list');
+  if (!sc) return;
   sc.innerHTML = '';
   const scrollIcons = { ng:'📜', d:'📗', c:'📘', b:'📙', a:'📕', s:'🌟' };
   let has = false;
+
   for (const grade of GRADE_ORDER) {
     const w = hero.scrolls[grade]?.weapon || 0;
     const a = hero.scrolls[grade]?.armor || 0;
-    if (w > 0) { has = true; const el = document.createElement('div'); el.className = 'scroll-item'; el.style.borderColor = gradeColor(grade); el.innerHTML = `<span class="scroll-icon">${scrollIcons[grade]}</span><span class="scroll-name" style="color:${gradeColor(grade)}">${gradeName(grade)} · Оружие</span><span class="scroll-count">×${w}</span>`; sc.appendChild(el); }
-    if (a > 0) { has = true; const el = document.createElement('div'); el.className = 'scroll-item'; el.style.borderColor = gradeColor(grade); el.innerHTML = `<span class="scroll-icon">${scrollIcons[grade]}</span><span class="scroll-name" style="color:${gradeColor(grade)}">${gradeName(grade)} · Броня</span><span class="scroll-count">×${a}</span>`; sc.appendChild(el); }
+
+    if (w > 0) {
+      has = true;
+      const el = document.createElement('div');
+      el.className = 'scroll-item';
+      el.style.borderColor = gradeColor(grade);
+      el.innerHTML = `<span class="scroll-icon">${scrollIcons[grade]}</span><span class="scroll-name" style="color:${gradeColor(grade)}">${gradeName(grade)} · Оружие</span><span class="scroll-count">×${w}</span>`;
+      el.dataset.cat = 'scroll';
+      el.dataset.grade = grade;
+      el.dataset.scrollType = 'weapon';
+      el.dataset.count = String(w);
+      sc.appendChild(el);
+    }
+
+    if (a > 0) {
+      has = true;
+      const el = document.createElement('div');
+      el.className = 'scroll-item';
+      el.style.borderColor = gradeColor(grade);
+      el.innerHTML = `<span class="scroll-icon">${scrollIcons[grade]}</span><span class="scroll-name" style="color:${gradeColor(grade)}">${gradeName(grade)} · Броня</span><span class="scroll-count">×${a}</span>`;
+      el.dataset.cat = 'scroll';
+      el.dataset.grade = grade;
+      el.dataset.scrollType = 'armor';
+      el.dataset.count = String(a);
+      sc.appendChild(el);
+    }
   }
+
+  // Бафф-свитки из рюкзака
   const buffItems = hero.backpack.filter(it => it.kind === 'buff');
   for (const item of buffItems) {
     const def = BUFF_SCROLLS[item.buffType];
@@ -745,14 +969,19 @@ function renderScrolls() {
     el.style.borderColor = def.color;
     const cnt = item.count || 1;
     el.innerHTML = `<span class="scroll-icon">${iconHtml(item.icon)}</span><span class="scroll-name" style="color:${def.color}">${item.name}</span><span class="scroll-count">×${cnt}</span>`;
+    el.dataset.cat = 'buff';
+    el.dataset.buffType = item.buffType;
+    el.dataset.count = String(cnt);
     sc.appendChild(el);
   }
+
   if (!has) sc.innerHTML = '<div class="bp-empty">Нет свитков</div>';
 }
 
 function renderPotions() {
   const hero = state.hero;
   const pot = document.getElementById('potions-list');
+  if (!pot) return;
   pot.innerHTML = '';
   let has = false;
   for (const type of POTION_ORDER) {
@@ -764,14 +993,20 @@ function renderPotions() {
     el.className = 'potion-item';
     el.style.borderColor = p.color;
     el.innerHTML = `<span class="potion-icon">${p.icon}</span><span class="scroll-name" style="color:${p.color}">${p.name}</span><span class="potion-count">×${c}</span>`;
+    el.dataset.cat = 'potion';
+    el.dataset.potionType = type;
+    el.dataset.count = String(c);
     pot.appendChild(el);
   }
   if (!has) pot.innerHTML = '<div class="bp-empty">Нет зелий</div>';
 }
 
+
+
 function renderSoulshots() {
   const hero = state.hero;
   const ss = document.getElementById('soulshots-list');
+  if (!ss) return;
   ss.innerHTML = '';
   let has = false;
   for (const grade of GRADE_ORDER) {
@@ -782,11 +1017,13 @@ function renderSoulshots() {
     el.className = 'soulshot-item';
     el.style.borderColor = gradeColor(grade);
     el.innerHTML = `<span class="soulshot-icon">⚡</span><span class="scroll-name" style="color:${gradeColor(grade)}">Соски ${gradeName(grade)}</span><span class="soulshot-count">×${c}</span>`;
+    el.dataset.cat = 'soulshot';
+    el.dataset.grade = grade;
+    el.dataset.count = String(c);
     ss.appendChild(el);
   }
   if (!has) ss.innerHTML = '<div class="bp-empty">Нет сосок</div>';
 }
-
 // ===== ЗАТОЧКА =====
 function renderEnhance() {
   const hero = state.hero;
@@ -810,9 +1047,7 @@ function renderEnhance() {
   const bpEl = document.getElementById('enhance-backpack');
   bpEl.innerHTML = '';
   for (const item of hero.backpack) {
-    if (item.kind === 'blessed') continue;
-    if (item.kind === 'buff') continue;
-    if (item.kind === 'pass') continue;
+    if (item.kind !== 'equip') continue;   // только экипировка
     bpEl.appendChild(makeEnhanceItemEl(item));
   }
   if (enhanceSelectedItem && !isItemStillPresent(enhanceSelectedItem)) {
@@ -1002,7 +1237,7 @@ function renderShop() {
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
-        <div class="auction-icon">${p.icon}</div>
+        <div class="auction-icon">${iconHtml(p.icon, 22)}</div>
         <div class="auction-info">
           <div class="auction-name">${p.name}</div>
           <div class="auction-grade" style="color:${p.color}">Восстанавливает ${p.heal} HP</div>
@@ -1090,7 +1325,7 @@ function renderAuctionSell() {
     const estimate = estimateItemValue(item);
     let statsLine = '';
     if (item.kind === 'blessed') statsLine = '<span style="color:#fbbf24;font-weight:bold">✨ Универсальный свиток</span>';
-    else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; statsLine = `<span style="color:${def.color};font-weight:bold">${def.icon} ${def.desc}</span>`; }
+    else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; statsLine = `<span style="color:${def.color};font-weight:bold">${iconHtml(def.icon, 14)} ${def.desc}</span>`; }
     else if (item.kind === 'pass') statsLine = '<span style="color:#a855f7;font-weight:bold">🎫 Пропуск на арену</span>';
     else statsLine = statsCompact(item);
     const nameColor = item.kind === 'blessed' ? '#fbbf24' : item.kind === 'buff' ? BUFF_SCROLLS[item.buffType].color : item.kind === 'pass' ? '#a855f7' : gradeColor(item.grade);
@@ -1197,7 +1432,7 @@ function showSellPopup(item) {
   const updateTotal = () => {
     const q = Math.max(1, Math.min(parseInt(qtyEl.value) || 1, cnt));
     const p = Math.max(1, parseInt(priceEl.value) || 1);
-    totalEl.textContent = `${(q * p).toLocaleString()}💰`;
+    totalEl.innerHTML = `${(q * p).toLocaleString()}💰`;
   };
   qtyEl.addEventListener('input', updateTotal);
   priceEl.addEventListener('input', updateTotal);
@@ -1221,26 +1456,46 @@ function showSellPopup(item) {
 export function showItemPopup(item, context) {
   const popup = document.getElementById('item-popup');
   const body = document.getElementById('item-popup-body');
+  const estimate = estimateItemValue(item);
   let actionBtns = '';
   if (context === 'backpack') {
     const can = canEquip(state.hero, item);
-    const estimate = estimateItemValue(item);
-    if (item.kind === 'book') {
-      actionBtns = `<button class="popup-close" id="pp-learn" style="border-color:#60a5fa;color:#60a5fa">📖 Изучить</button>`;
-      actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
-    } else if (item.kind === 'equip') {
-      actionBtns = `<button class="popup-close" id="pp-equip" ${can ? '' : 'disabled'}>${can ? 'Надеть' : 'Нельзя надеть'}</button>`;
-      actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
-    } else {
-      actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate*0.5)})</button>`;
+     if (item.kind === 'book') {
+      const def = SKILLS[item.skillId];
+      const cls = def?.class || 'common';
+      const isForbidden = cls !== 'common' && cls !== state.hero.classType;
+      if (isForbidden) {
+        const clsName = cls === 'archer' ? 'Лучника' : cls === 'mage' ? 'Мага' : '';
+        actionBtns = `<button class="popup-close" disabled style="border-color:#7a2a2a;color:#b83232;cursor:not-allowed">✗ Книга ${clsName}</button>`;
+      } else {
+        actionBtns = `<button class="popup-close" id="pp-learn" style="border-color:#60a5fa;color:#60a5fa">📖 Изучить</button>`;
+      }
     }
+    // Кнопка «Продать» есть у любого предмета в рюкзаке
+    actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate * 0.5)}💰)</button>`;
   } else if (context === 'equip') {
     actionBtns = `<button class="popup-close" id="pp-unequip">Снять</button>`;
   }
 
   let extra = '';
+  // Активный бонус (если уже ≥15)
   const bonus = getEnhanceBonus(item);
-  if (bonus) extra += `<div class="stat-row" style="color:#fbbf24"><span class="stat-name">${bonus.icon} ${bonus.name}</span><span class="stat-val">${bonus.display}</span></div>`;
+  if (bonus) {
+    extra += `<div class="stat-row" style="color:#fbbf24;background:rgba(212,175,55,.08);padding:4px;border-radius:3px;margin-top:4px">
+      <span class="stat-name">${bonus.icon} ${bonus.name}</span>
+      <span class="stat-val">${bonus.display}</span>
+    </div>`;
+  }
+  // Превью бонуса на +15 (если ещё не достигнут)
+  if (item.kind === 'equip' && item.enhance < 15) {
+    const willBonus = getEnhanceBonus({ ...item, enhance: 15 });
+    if (willBonus) {
+      extra += `<div class="stat-row" style="opacity:.75;font-size:9px;color:#c9a961;padding:3px 0">
+        <span class="stat-name">🌟 Бонус на +15</span>
+        <span class="stat-val" style="color:#c9a961">${willBonus.icon} ${willBonus.display}</span>
+      </div>`;
+    }
+  }
 
   let bodyHtml = '';
   if (item.kind === 'pass') bodyHtml = `<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#a855f7">🎫 Пропуск на арену</span></div><div class="stat-row"><span class="stat-name">Описание</span><span class="stat-val">1 бой на арене</span></div>`;
@@ -1249,13 +1504,14 @@ export function showItemPopup(item, context) {
     const lvl = state.hero.skills?.[item.skillId]?.level || 0;
     bodyHtml = `
       <div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#60a5fa">📖 Книга скилла</span></div>
-      ${def ? `<div class="stat-row"><span class="stat-name">Скилл</span><span class="stat-val">${def.icon} ${def.name}</span></div>` : ''}
+      ${def ? `<div class="stat-row"><span class="stat-name">Скилл</span><span class="stat-val">${iconHtml(def.icon, 14)} ${def.name}</span></div>` : ''}
+      ${def ? `<div class="stat-row"><span class="stat-name">Описание</span><span class="stat-val">${SKILL_DESC[item.skillId] || def.desc || ''}</span></div>` : ''}
       ${def ? `<div class="stat-row"><span class="stat-name">Мана</span><span class="stat-val">${def.manaCost}</span></div>` : ''}
       ${def ? `<div class="stat-row"><span class="stat-name">КД</span><span class="stat-val">${def.cooldown}с</span></div>` : ''}
       <div class="stat-row"><span class="stat-name">Уровень</span><span class="stat-val">${lvl > 0 ? 'Lv.' + lvl : 'не изучен'}</span></div>
     `;
-  }  else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; bodyHtml = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:${def.color}">${def.desc}</span></div>`; }
-  else if (item.kind === 'blessed') bodyHtml = `<div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:#fbbf24">Спасает от сгорания</span></div>`;
+  }  else if (item.kind === 'buff') { const def = BUFF_SCROLLS[item.buffType]; bodyHtml = `<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:${def.color}">📜 Боевой свиток</span></div><div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:${def.color}">${def.desc}</span></div>${item.count > 1 ? `<div class="stat-row"><span class="stat-name">Количество</span><span class="stat-val">×${item.count}</span></div>` : ''}`; }
+  else if (item.kind === 'blessed') bodyHtml = `<div class="stat-row"><span class="stat-name">Тип</span><span class="stat-val" style="color:#fbbf24">✨ Blessed-скролл</span></div><div class="stat-row"><span class="stat-name">Эффект</span><span class="stat-val" style="color:#fbbf24">Спасает от сгорания</span></div>${item.count > 1 ? `<div class="stat-row"><span class="stat-name">Количество</span><span class="stat-val">×${item.count}</span></div>` : ''}`;
   else bodyHtml = `<div class="stat-row"><span class="stat-name">Грейд</span><span class="stat-val" style="color:${gradeColor(item.grade)}">${gradeName(item.grade)}</span></div><div class="stat-row"><span class="stat-name">Слот</span><span class="stat-val">${SLOT_NAMES[item.slot] || '—'}</span></div>${statsMultiline(item)}`;
 
   body.innerHTML = `
@@ -1271,6 +1527,10 @@ export function showItemPopup(item, context) {
     const r = learnSkill(state.hero, item.skillId);
     if (!r.ok) {
       if (r.reason === 'max_level') toast('Уже максимальный уровень', 'epic');
+      else if (r.reason === 'wrong_class') {
+        const clsName = r.requiredClass === 'archer' ? 'Лучнику' : r.requiredClass === 'mage' ? 'Магу' : '?';
+        toast(`Книга только для класса: ${clsName}`, 'epic');
+      }
       else toast('Нельзя изучить', 'epic');
       return;
     }
@@ -1313,11 +1573,13 @@ export function toast(text, cls = '') {
   const container = document.getElementById('toast-container');
   const el = document.createElement('div');
   el.className = 'toast ' + cls;
-  el.textContent = text;
+  if (text.includes('<')) el.innerHTML = text;
+  else el.textContent = text;
   container.appendChild(el);
   setTimeout(() => el.remove(), 2000);
   while (container.children.length > 6) container.removeChild(container.firstChild);
 }
+window.toast = toast;
 
 // ===== АРЕНА =====
 export function openArena() {
@@ -1629,7 +1891,7 @@ function showArenaResultOverlay(info) {
   cardsEl.innerHTML = rewards.map((reward, i) => `
     <div class="reward-card card-${reward.rarity}" data-idx="${i}" style="animation-delay:${i * 0.15}s">
       <div class="card-glow"></div>
-      <div class="card-icon">${reward.icon}</div>
+      <div class="card-icon">${iconHtml(reward.icon, 44)}</div>
       <div class="card-name">${reward.name}</div>
       <div class="card-rarity">${getRarityLabel(reward.rarity)}</div>
     </div>
@@ -1704,7 +1966,7 @@ function renderArenaResult() {
     <div class="battle-arena" id="battle-arena">
       <div class="battle-side battle-side-me">
         <div class="battle-hero ${myCls}" id="battle-hero-me">
-          <div class="battle-emoji">${b.myEmoji}</div>
+          <div class="battle-emoji">${iconHtml(b.myEmoji, 30)}</div>
           <div class="battle-name">${b.myName}</div>
         </div>
         <div class="battle-hp-bar">
@@ -1717,7 +1979,7 @@ function renderArenaResult() {
 
       <div class="battle-side battle-side-opp">
         <div class="battle-hero ${oppCls}" id="battle-hero-opp">
-          <div class="battle-emoji">${b.oppEmoji}</div>
+          <div class="battle-emoji">${iconHtml(b.oppEmoji, 30)}</div>
           <div class="battle-name">${b.oppName}</div>
         </div>
         <div class="battle-hp-bar">
@@ -1913,7 +2175,7 @@ function showCardRewards() {
         ${rewards.map((reward, i) => `
           <div class="reward-card card-${reward.rarity}" data-idx="${i}" style="animation-delay:${i * 0.15}s">
             <div class="card-glow"></div>
-            <div class="card-icon">${reward.icon}</div>
+            <div class="card-icon">${iconHtml(reward.icon, 44)}</div>
             <div class="card-name">${reward.name}</div>
             <div class="card-rarity">${getRarityLabel(reward.rarity)}</div>
           </div>
@@ -2151,58 +2413,87 @@ export function renderCityScreen() {
 }
 
 export function showCityScreen() {
+  // Сброс таргета + скрыть плашки
+  if (window.state) window.state.target = null;
+  document.body.classList.add('city-open');
+
   // Гарантированно убираем всё, что связано с ареной
-  const ah = document.getElementById('arena-hud');
-  if (ah) ah.classList.add('hidden');
-  const ame = document.getElementById('arena-side-me');
-  if (ame) ame.classList.add('hidden');
-  const aop = document.getElementById('arena-side-opp');
-  if (aop) aop.classList.add('hidden');
-  const amob = document.getElementById('arena-mobile-hud');
-  if (amob) amob.classList.add('hidden');
+  const _ids = ['arena-hud', 'arena-side-me', 'arena-side-opp', 'arena-mobile-hud'];
+  for (const id of _ids) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  }
   document.body.classList.remove('arena-active');
 
-  document.getElementById('city-screen').classList.remove('hidden');
-  document.getElementById('hud-top').classList.remove('hidden');
-  document.getElementById('hud-stats').classList.remove('hidden');
-  document.getElementById('hud-zone').classList.add('hidden');
-  document.getElementById('hud-actions').classList.add('hidden');
-  document.getElementById('combat-log').classList.add('hidden');
+  const city = document.getElementById('city-screen');
+  if (city) city.classList.remove('hidden');
+  const ht = document.getElementById('hud-top');
+  if (ht) ht.classList.remove('hidden');
+  const hs = document.getElementById('hud-stats');
+  if (hs) hs.classList.remove('hidden');
+  const hz = document.getElementById('hud-zone');
+  if (hz) hz.classList.add('hidden');
+  const cl = document.getElementById('combat-log');
+  if (cl) cl.classList.add('hidden');
+
   const mb = document.getElementById('mana-bar-wrap');
   if (mb) mb.classList.remove('hidden');
 
+  // Плашки игрока и таргета — скрываем в городе
+  const mePlate = document.getElementById('hud-plate-me');
+  if (mePlate) mePlate.classList.add('hidden');
+  const tgtPlate = document.getElementById('hud-plate-target');
+  if (tgtPlate) tgtPlate.classList.add('hidden');
+
+  // Офлайн-кнопка в шапке — в городе не нужна
   const offBtn = document.getElementById('hud-offline');
   if (offBtn) offBtn.style.display = 'none';
 
+  // Skill-bar — скрываем
   const sb = document.getElementById('skill-bar');
   if (sb) sb.classList.add('hidden');
   const ab = document.getElementById('btn-auto');
   if (ab) ab.classList.add('hidden');
-
   renderCityScreen();
 }
-
 export function hideCityScreen() {
-  document.getElementById('city-screen').classList.add('hidden');
-  document.getElementById('hud-top').classList.remove('hidden');
-  document.getElementById('hud-stats').classList.remove('hidden');
-  document.getElementById('hud-zone').classList.remove('hidden');
-  document.getElementById('hud-actions').classList.remove('hidden');
-  document.getElementById('combat-log').classList.remove('hidden');
+  document.body.classList.remove('city-open');
+  const city = document.getElementById('city-screen');
+  if (city) city.classList.add('hidden');
+  const ht = document.getElementById('hud-top');
+  if (ht) ht.classList.remove('hidden');
+  const hs = document.getElementById('hud-stats');
+  if (hs) hs.classList.remove('hidden');
+  const hz = document.getElementById('hud-zone');
+  if (hz) hz.classList.remove('hidden');
+  const cl = document.getElementById('combat-log');
+  if (cl) cl.classList.remove('hidden');
+
   const mb = document.getElementById('mana-bar-wrap');
   if (mb) mb.classList.remove('hidden');
 
+  // Офлайн-кнопка в шапке
   const offBtn = document.getElementById('hud-offline');
   if (offBtn) offBtn.style.display = '';
 
-  if (offBtn && !state?.offlineAliveCheck) {
-    offBtn.classList.remove('ready');
-  }
-
+  // Skill-bar — показываем в бою
   const sb = document.getElementById('skill-bar');
   if (sb) sb.classList.remove('hidden');
+    const ab2 = document.getElementById('btn-auto');
+  if (ab2) ab2.classList.remove('hidden');
   const ab = document.getElementById('btn-auto');
   if (ab) ab.classList.remove('hidden');
+  // Плашка игрока — видна в бою (фарм + арена)
+  const mePlate = document.getElementById('hud-plate-me');
+  if (mePlate) mePlate.classList.remove('hidden');
+
+  // Плашка таргета — покажем если есть цель
+  const tgtPlate = document.getElementById('hud-plate-target');
+  if (tgtPlate) {
+    if (state?.target && !state.target.dead) tgtPlate.classList.remove('hidden');
+    else tgtPlate.classList.add('hidden');
+  }
+
   renderSkillBar();
 }
 
@@ -2279,7 +2570,6 @@ export function showArenaHud(oppName) {
 
   state.arenaElapsed = 0;
   updateArenaHud();
-console.log('[showArenaHud] after:', document.getElementById('arena-side-me')?.className);
 }
 
 export function hideArenaHud() {
@@ -2356,7 +2646,18 @@ function setText(id, text) {
 function renderArenaSkillIcons(sideId, mobileId, char) {
   const container = document.getElementById(sideId);
   const mobile = document.getElementById(mobileId);
-  const slots = char.skillSlots || [];
+  const rawSlots = char.skillSlots || [];
+
+  // Парсим слоты: "skill:fireball" → "fireball"
+  const slots = rawSlots.map(s => {
+    if (!s || typeof s !== 'string') return null;
+    const idx = s.indexOf(':');
+    if (idx === -1) return s;
+    const kind = s.slice(0, idx);
+    if (kind !== 'skill') return null;
+    return s.slice(idx + 1);
+  });
+  // ... дальше как было
 
   if (container) {
     container.innerHTML = '';
@@ -2408,74 +2709,154 @@ function renderArenaBuffs(containerId, char) {
   const now = Date.now();
   const buffs = [];
 
-  // Скилловые баффы (dodge)
-  if (char.skillBuffs?.dodge && char.skillBuffs.dodge.until > now) {
-    const left = Math.ceil((char.skillBuffs.dodge.until - now) / 1000);
-    buffs.push({ icon: '💨', time: left, color: '#80d4e0' });
-  }
-
-  // Свитки (attack, crit, speed, range) — если есть
-  const sc = BUFF_SCROLLS;
-  for (const type of ['attack','crit','speed','range']) {
-    const until = char.activeBuffs?.[type];
-    if (until && until > now) {
-      const left = Math.ceil((until - now) / 1000);
-      const def = sc[type];
-      if (def) buffs.push({ icon: def.icon, time: left, color: def.color });
+  // ── Скилловые баффы (skillBuffs) ──
+  const sb = char.skillBuffs || {};
+  const sbMap = {
+    dodge: { icon: '💨', color: '#80d4e0' },
+    attackSpeed: { icon: '⚡', color: '#fde047' },
+    defense: { icon: '🛡', color: '#60a5fa' },
+    attack: { icon: '🗡', color: '#ef4444' },
+    critChance: { icon: '💥', color: '#f97316' },
+    lifesteal: { icon: '🩸', color: '#e07878' },
+    reflect: { icon: '🪞', color: '#c084fc' },
+    range: { icon: '📏', color: '#a3e635' },
+  };
+  for (const key in sb) {
+    const b = sb[key];
+    if (b && b.until > now) {
+      const m = sbMap[key] || { icon: '✦', color: '#94a3b8' };
+      buffs.push({ icon: m.icon, time: Math.ceil((b.until - now) / 1000), color: m.color });
     }
   }
 
-  // Дебаффы: stun/slow — считаются от timestamp
+  // ── Свитки (activeBuffs) ──
+  for (const type of ['attack', 'crit', 'speed', 'range']) {
+    const until = char.activeBuffs?.[type];
+    if (until && until > now) {
+      const def = BUFF_SCROLLS[type];
+      if (def) buffs.push({ icon: def.icon, time: Math.ceil((until - now) / 1000), color: def.color });
+    }
+  }
+
+  // ── Щит ──
+  if (char.shield && char.shield.until > now && char.shield.remaining > 0) {
+    buffs.push({ icon: '🔮', time: Math.ceil((char.shield.until - now) / 1000), color: '#60a5fa' });
+  }
+
+  // ── Дебаффы (stun/slow/silence/frost) ──
   if (char.stunUntil && char.stunUntil > now) {
-    const left = Math.ceil((char.stunUntil - now) / 1000);
-    buffs.push({ icon: '💫', time: left, color: '#fbbf24', debuff: true });
+    buffs.push({ icon: '💫', time: Math.ceil((char.stunUntil - now) / 1000), color: '#fbbf24', debuff: true });
   }
   if (char.slowUntil && char.slowUntil > now) {
-    const left = Math.ceil((char.slowUntil - now) / 1000);
-    buffs.push({ icon: '❄️', time: left, color: '#67e8f9', debuff: true });
+    buffs.push({ icon: '❄️', time: Math.ceil((char.slowUntil - now) / 1000), color: '#67e8f9', debuff: true });
+  }
+  if (char.silenceUntil && char.silenceUntil > now) {
+    buffs.push({ icon: '🤐', time: Math.ceil((char.silenceUntil - now) / 1000), color: '#3b82f6', debuff: true });
+  }
+  if (char.attackSpeedDebuff && char.attackSpeedDebuff.until > now) {
+    buffs.push({ icon: '🐢', time: Math.ceil((char.attackSpeedDebuff.until - now) / 1000), color: '#67e8f9', debuff: true });
+  }
+  if (char.dots && char.dots.length > 0) {
+    buffs.push({ icon: '🩸', time: '', color: '#22c55e', debuff: true });
   }
 
   for (const b of buffs) {
     const el = document.createElement('div');
-    el.className = 'as-buff' + (b.time <= 2 ? ' expiring' : '');
-    el.title = b.icon;
-    el.innerHTML = `${b.icon}<span class="as-buff-time">${b.time}</span>`;
+    el.className = 'as-buff' + (b.time && b.time <= 2 ? ' expiring' : '');
     if (b.color) el.style.borderColor = b.color;
+    el.innerHTML = `${b.icon}${b.time ? `<span class="as-buff-time">${b.time}</span>` : ''}`;
     container.appendChild(el);
   }
 }
-
 // ===== ПАНЕЛЬ СКИЛЛОВ В HUD =====
+// Получить иконку и суб-текст по типу слота
+function _slotDisplay(slotStr, hero) {
+  const parsed = parseSlotAction(slotStr);
+  if (!parsed) return { icon: '·', sub: '', kind: 'empty', empty: true };
+
+  const { kind, id } = parsed;
+
+  if (kind === 'skill') {
+    const def = SKILLS[id];
+    if (!def) return { icon: '·', sub: '', kind: 'empty', empty: true };
+    const cost = getSkillManaCost(hero, id);
+    return { icon: def.icon, sub: String(cost), kind: 'skill', skillDef: def, id };
+  }
+  if (kind === 'potion') {
+    const def = POTIONS[id];
+    const count = hero.potions?.[id] || 0;
+    return { icon: def?.icon || '🧪', sub: String(count), kind: 'potion', id, count };
+  }
+  if (kind === 'soulshot') {
+    const count = hero.soulshots?.[id] || 0;
+    return { icon: '⚡', sub: String(count), kind: 'soulshot', id, count };
+  }
+  if (kind === 'buff') {
+    const def = BUFF_SCROLLS[id];
+    let count = 0;
+    for (const x of hero.backpack || []) {
+      if (x.kind === 'buff' && x.buffType === id) count += (x.count || 1);
+    }
+    return { icon: def?.icon || '📜', sub: String(count), kind: 'buff', id, count };
+  }
+  return { icon: '·', sub: '', kind: 'empty', empty: true };
+}
+
 export function renderSkillBar() {
   const hero = state?.hero;
   const bar = document.getElementById('skill-bar');
   if (!bar || !hero) return;
   const btns = bar.querySelectorAll('.skill-btn');
-  for (let i = 0; i < 5; i++) {
+
+  for (let i = 0; i < btns.length; i++) {
     const btn = btns[i];
     if (!btn) continue;
-    const skillId = hero.skillSlots?.[i] || null;
-    btn.dataset.skillId = skillId || '';
+    const slotStr = hero.skillSlots?.[i] || null;
+
     const iconEl = btn.querySelector('.skill-icon');
     const manaEl = btn.querySelector('.skill-mana');
-    if (!skillId || !SKILLS[skillId]) {
+
+    if (!slotStr) {
       btn.classList.add('empty');
       btn.classList.remove('ready', 'on-cd');
       btn.disabled = true;
-      iconEl.textContent = '·';
-      manaEl.textContent = '';
+      if (iconEl) iconEl.textContent = '·';
+      if (manaEl) manaEl.textContent = '';
+      btn.dataset.slotKind = '';
+      btn.dataset.slotId = '';
       continue;
     }
+
+    const disp = _slotDisplay(slotStr, hero);
     btn.classList.remove('empty');
-    const def = SKILLS[skillId];
-    iconEl.textContent = def.icon;
-    const cost = getSkillManaCost(hero, skillId);
-    manaEl.textContent = cost;
-    const ready = isSkillReady(hero, skillId);
-    const hasMana = hero.mana >= cost;
-    btn.disabled = !ready || !hasMana;
-    btn.classList.toggle('ready', ready && hasMana);
-    btn.classList.remove('on-cd');
+    btn.dataset.slotKind = disp.kind;
+    btn.dataset.slotId = disp.id || '';
+    btn.dataset.slotStr = slotStr;
+    if (iconEl) iconEl.textContent = disp.icon;
+    if (manaEl) manaEl.textContent = disp.sub;
+
+    if (disp.kind === 'skill') {
+      const ready = isSkillReady(hero, disp.id);
+      const hasMana = hero.mana >= (getSkillManaCost(hero, disp.id) || 0);
+      btn.disabled = !ready || !hasMana;
+      btn.classList.toggle('ready', ready && hasMana);
+      btn.classList.remove('on-cd');
+    } else if (disp.kind === 'potion') {
+      btn.disabled = !disp.count;
+      btn.classList.remove('ready', 'on-cd');
+    } else if (disp.kind === 'soulshot') {
+      btn.disabled = false;
+      btn.classList.toggle('ready', !!hero.soulshotActive && hero.soulshotGrade === disp.id);
+      btn.classList.remove('on-cd');
+    } else if (disp.kind === 'buff') {
+      const now = Date.now();
+      const active = hero.activeBuffs?.[disp.id] && hero.activeBuffs[disp.id] > now;
+      const cd = hero.buffScrollCooldowns?.[disp.id] || 0;
+      const hasScroll = disp.count > 0;
+      btn.disabled = !hasScroll || active || cd > now;
+      btn.classList.toggle('ready', !active && cd <= now && hasScroll);
+      btn.classList.remove('on-cd');
+    }
   }
 }
 
@@ -2484,30 +2865,87 @@ export function updateSkillBar() {
   const bar = document.getElementById('skill-bar');
   if (!bar || !hero || bar.classList.contains('hidden')) return;
   const btns = bar.querySelectorAll('.skill-btn');
-  for (let i = 0; i < 5; i++) {
+  const now = Date.now();
+
+  for (let i = 0; i < btns.length; i++) {
     const btn = btns[i];
     if (!btn || btn.classList.contains('empty')) continue;
-    const skillId = btn.dataset.skillId;
-    if (!skillId || !SKILLS[skillId]) continue;
-    const cd = getSkillRemainingCooldown(hero, skillId);
-    const cost = getSkillManaCost(hero, skillId);
-    const cdNum = btn.querySelector('.skill-cd-num');
+    const slotStr = btn.dataset.slotStr || hero.skillSlots?.[i];
+    if (!slotStr) continue;
+    const parsed = parseSlotAction(slotStr);
+    if (!parsed) continue;
+
+    const iconEl = btn.querySelector('.skill-icon');
     const manaEl = btn.querySelector('.skill-mana');
-    if (manaEl) manaEl.textContent = cost;
-    if (cd > 0) {
-      btn.classList.add('on-cd');
-      if (cdNum) cdNum.textContent = Math.ceil(cd);
-    } else {
+    const cdNum = btn.querySelector('.skill-cd-num');
+
+    if (parsed.kind === 'skill') {
+      const cd = getSkillRemainingCooldown(hero, parsed.id);
+      const cost = getSkillManaCost(hero, parsed.id);
+      if (iconEl) iconEl.textContent = SKILLS[parsed.id]?.icon || '·';
+      if (manaEl) manaEl.textContent = String(cost);
+      if (cd > 0) {
+        btn.classList.add('on-cd');
+        if (cdNum) cdNum.textContent = Math.ceil(cd);
+      } else {
+        btn.classList.remove('on-cd');
+        if (cdNum) cdNum.textContent = '';
+      }
+      const ready = cd <= 0;
+      const hasMana = hero.mana >= cost;
+      btn.disabled = !ready || !hasMana;
+      btn.classList.toggle('ready', ready && hasMana);
+
+    } else if (parsed.kind === 'potion') {
+      const count = hero.potions?.[parsed.id] || 0;
+      const cd = hero.potionCooldown || 0;
+      const isActive = hero.activePotion === parsed.id;
+      if (manaEl) manaEl.textContent = String(count);
+      if (cd > 0) {
+        btn.classList.add('on-cd');
+        if (cdNum) cdNum.textContent = Math.ceil(cd);
+      } else {
+        btn.classList.remove('on-cd');
+        if (cdNum) cdNum.textContent = '';
+      }
+      btn.classList.toggle('ready', count > 0 && cd <= 0 && isActive);
+      btn.disabled = count <= 0 || cd > 0;
+
+    } else if (parsed.kind === 'soulshot') {
+      const count = hero.soulshots?.[parsed.id] || 0;
+      if (manaEl) manaEl.textContent = String(count);
       btn.classList.remove('on-cd');
+      const isOn = !!hero.soulshotActive && hero.soulshotGrade === parsed.id;
+      btn.classList.toggle('ready', isOn);
+      btn.disabled = false;
       if (cdNum) cdNum.textContent = '';
+
+    } else if (parsed.kind === 'buff') {
+      const cd = hero.buffScrollCooldowns?.[parsed.id] || 0;
+      const active = hero.activeBuffs?.[parsed.id] && hero.activeBuffs[parsed.id] > now;
+      if (cd > now) {
+        btn.classList.add('on-cd');
+        if (cdNum) cdNum.textContent = Math.ceil((cd - now) / 1000);
+      } else if (active) {
+        btn.classList.add('on-cd');
+        if (cdNum) cdNum.textContent = '✓';
+      } else {
+        btn.classList.remove('on-cd');
+        if (cdNum) cdNum.textContent = '';
+      }
+      const hasScroll = (function(){
+        for (const x of hero.backpack || []) {
+          if (x.kind === 'buff' && x.buffType === parsed.id) return true;
+        }
+        return false;
+      })();
+      btn.disabled = !hasScroll;
+      btn.classList.toggle('ready', !active && cd <= now && hasScroll);
     }
-    const ready = cd <= 0;
-    const hasMana = hero.mana >= cost;
-    btn.disabled = !ready || !hasMana;
-    btn.classList.toggle('ready', ready && hasMana);
   }
-  window.showArenaHud = showArenaHud;
+}
+
+window.showArenaHud = showArenaHud;
 window.hideArenaHud = hideArenaHud;
 window.updateArenaHud = updateArenaHud;
 window.onArenaEnd = onArenaEnd;
-}

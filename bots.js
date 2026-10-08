@@ -240,13 +240,13 @@ export function botToArenaHero(bot) {
   const botSlots = [];
   const botSkillIds = (bot.skillIds && bot.skillIds.length)
     ? bot.skillIds
-    : (isMage ? ['fireball', 'frost', 'heal'] : ['multishot', 'dodge', 'stun']);
-  for (const id of botSkillIds) {
+    : (isMage ? ['fireball', 'ice_bolt', 'heal'] : ['multishot', 'dodge', 'slow_arrow']);
+   for (const id of botSkillIds) {
     botSkills[id] = { level: 1 };
-    botSlots.push(id);
+    botSlots.push('skill:' + id);
   }
 
-  return {
+  const result = {
     isAI: true,
     team: 'enemy',
     classType: isMage ? 'mage' : 'archer',
@@ -318,6 +318,7 @@ export function botToArenaHero(bot) {
 
     skills: botSkills,
     skillSlots: botSlots,
+    ignoreClassLock: true,   // боты кастуют любой скилл
     skillCooldowns: {},
     skillBuffs: {},
 
@@ -330,4 +331,13 @@ export function botToArenaHero(bot) {
     arenaRating: bot.rating,
     arenaId: bot.id,
   };
+
+  // Тренировочный манекен — переопределяем статы
+  if (bot.isTrainingDummy && bot.statsOverride) {
+    Object.assign(result, bot.statsOverride);
+    result.ignoreClassLock = true;
+    result.isTrainingDummy = true;
+  }
+
+  return result;
 }

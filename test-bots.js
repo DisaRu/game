@@ -145,3 +145,48 @@ export function createTestBots() {
 
   return bots;
 } 
+
+// ===== ТРЕНИРОВОЧНЫЙ МАНЕКЕН =====
+// Огромное HP, слабая автоатака, кастует всё что есть в слотах.
+// Для теста эффектов скиллов на арене.
+export function createTrainingDummy() {
+  const skillIds = [
+    'fireball',       // DD-burst маг (fireball + AoE 1.5)
+    'multishot',      // DD-burst лук
+    'stun_shot',      // CC-stun
+    'silence',        // CC-silence
+    'heal',           // само-хил
+    'arcane_shield',  // щит
+    'dodge',          // buff-def
+    'panther',        // summon (пантера)
+  ];
+
+  return {
+    id: 'training_dummy',
+    name: '🎯 Тренировочный манекен',
+    isTest: true,
+    isTrainingDummy: true,
+    ignoreClassLock: true,   // кастует любой скилл независимо от класса
+    classType: 'mage',
+    rating: 800,             // внизу списка, всегда доступен
+    level: 80,
+    wins: 0, losses: 0,
+    equipment: {},
+    soulshots: { s: 0 },
+    potions: { small: 0 },
+    activeBuffs: {},
+    skillIds,
+
+    // Переопределение статов (применяется в botToArenaHero)
+    statsOverride: {
+      maxHp: 999999, hp: 999999,
+      attack: 3,          // очень слабая автоатака
+      attackSpeed: 0.3,   // медленная
+      defense: 0,
+      maxMana: 99999, mana: 99999,
+      manaRegen: 50,      // чтобы кастовал без остановки
+      range: 999,
+      emoji: '🎯',
+    },
+  };
+}

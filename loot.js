@@ -39,13 +39,43 @@ export const ITEM_REGISTRY = {
   buff_speed:  { kind: 'backpack', make: () => createBuffScroll('speed') },
   buff_range:  { kind: 'backpack', make: () => createBuffScroll('range') },
 
-  // ----- Книжки скиллов -----
-  book_multishot: { kind: 'backpack', make: () => createSkillBook('multishot') },
-  book_dodge:     { kind: 'backpack', make: () => createSkillBook('dodge') },
-  book_stun:      { kind: 'backpack', make: () => createSkillBook('stun') },
-  book_fireball:  { kind: 'backpack', make: () => createSkillBook('fireball') },
-  book_frost:     { kind: 'backpack', make: () => createSkillBook('frost') },
-  book_heal:      { kind: 'backpack', make: () => createSkillBook('heal') },
+  // ----- Книжки скиллов (31 шт) -----
+  // Общие
+  book_heal:        { kind: 'backpack', make: () => createSkillBook('heal') },
+  book_cleanse:     { kind: 'backpack', make: () => createSkillBook('cleanse') },
+  book_dodge:       { kind: 'backpack', make: () => createSkillBook('dodge') },
+  book_haste:       { kind: 'backpack', make: () => createSkillBook('haste') },
+  book_iron_skin:   { kind: 'backpack', make: () => createSkillBook('iron_skin') },
+  book_reflect:     { kind: 'backpack', make: () => createSkillBook('reflect') },
+  book_vampiric:    { kind: 'backpack', make: () => createSkillBook('vampiric') },
+  book_berserk:     { kind: 'backpack', make: () => createSkillBook('berserk') },
+  book_focus:       { kind: 'backpack', make: () => createSkillBook('focus') },
+  book_last_stand:  { kind: 'backpack', make: () => createSkillBook('last_stand') },
+
+  // Лучник
+  book_multishot:    { kind: 'backpack', make: () => createSkillBook('multishot') },
+  book_power_shot:   { kind: 'backpack', make: () => createSkillBook('power_shot') },
+  book_double_shot:  { kind: 'backpack', make: () => createSkillBook('double_shot') },
+  book_precise_shot: { kind: 'backpack', make: () => createSkillBook('precise_shot') },
+  book_lethal_shot:  { kind: 'backpack', make: () => createSkillBook('lethal_shot') },
+  book_stun_shot:    { kind: 'backpack', make: () => createSkillBook('stun_shot') },
+  book_slow_arrow:   { kind: 'backpack', make: () => createSkillBook('slow_arrow') },
+  book_poison_arrow: { kind: 'backpack', make: () => createSkillBook('poison_arrow') },
+  book_arrow_rain:   { kind: 'backpack', make: () => createSkillBook('arrow_rain') },
+  book_hawk_eye:     { kind: 'backpack', make: () => createSkillBook('hawk_eye') },
+  book_panther:      { kind: 'backpack', make: () => createSkillBook('panther') },
+
+  // Маг
+  book_fireball:        { kind: 'backpack', make: () => createSkillBook('fireball') },
+  book_ice_bolt:        { kind: 'backpack', make: () => createSkillBook('ice_bolt') },
+  book_lightning:       { kind: 'backpack', make: () => createSkillBook('lightning') },
+  book_chain_lightning: { kind: 'backpack', make: () => createSkillBook('chain_lightning') },
+  book_meteor:          { kind: 'backpack', make: () => createSkillBook('meteor') },
+  book_frost_nova:      { kind: 'backpack', make: () => createSkillBook('frost_nova') },
+  book_silence:         { kind: 'backpack', make: () => createSkillBook('silence') },
+  book_sleep:           { kind: 'backpack', make: () => createSkillBook('sleep') },
+  book_arcane_shield:   { kind: 'backpack', make: () => createSkillBook('arcane_shield') },
+  book_shadow:          { kind: 'backpack', make: () => createSkillBook('shadow') },
 
   // ----- Зелья (счётчик) -----
   potion_small:  { kind: 'counter', counter: 'potion', potionType: 'small' },
