@@ -506,7 +506,7 @@ function updateHUD() {
   if (meHpFill && h.maxHp > 0) {
     meHpFill.style.width = Math.max(0, Math.min(100, (h.hp / h.maxHp) * 100)) + '%';
   }
-  if (meHpText) meHpText.textContent = `${Math.ceil(h.hp)}/${h.maxHp}`;
+  if (meHpText) meHpText.textContent = `${Math.max(0, Math.ceil(h.hp))}/${h.maxHp}`;
   if (meMpFill && h.maxMana > 0) {
     meMpFill.style.width = Math.max(0, Math.min(100, (h.mana / h.maxMana) * 100)) + '%';
   }
@@ -563,16 +563,23 @@ function updateHUD() {
 function updateHudActions() {
   const h = state.hero; if (!h) return;
 
-  // Все элементы расходников удалены из HUD — расходники теперь в слотах героя.
-  // Оставляем только обновление офлайн-кнопки, если она есть.
   const offBtn = document.getElementById('hud-offline');
   if (offBtn) {
-    if (h.offlineActive) {
-      offBtn.style.display = '';
-      offBtn.classList.add('active');
-    } else {
+    // Кнопка видна ТОЛЬКО в бою (в зоне) и НЕ в городе
+    const inZone = !!state.currentZone && state.inBattle;
+    if (!inZone) {
       offBtn.style.display = 'none';
-      offBtn.classList.remove('active');
+      offBtn.classList.remove('active', 'ready');
+    } else {
+      offBtn.style.display = '';
+      if (h.offlineActive) {
+        offBtn.classList.add('active');
+        offBtn.classList.remove('ready');
+      } else {
+        offBtn.classList.remove('active');
+        // Класс ready добавит пульсацию если игрок в бою > 30 сек
+        if (state.aliveTime >= 30) offBtn.classList.add('ready');
+      }
     }
   }
 }
@@ -587,118 +594,127 @@ function log(msg, color) {
   while (el.children.length > 5) el.removeChild(el.firstChild);
 }
 
-function findSpawnPoint() {
-  const hero = state.hero;
-  const sp = state.currentZone?.spawn || {};
-  const minD = sp.minSpawnDist ?? 6;
-  const maxD = sp.maxSpawnDist ?? 14;   // кольцо спавна вокруг героя
 
-  // Пытаемся до 15 раз найти точку в кольце, не пересекающуюся с другими мобами
-  for (let t = 0; t < 15; t++) {
-    const ang = Math.random() * Math.PI * 2;
-    const dist = minD + Math.random() * (maxD - minD);
-    let x = hero.x + Math.cos(ang) * dist;
-    let y = hero.y + Math.sin(ang) * dist;
-    x = Math.max(1, Math.min(COLS - 2, x));
-    y = Math.max(1, Math.min(ROWS - 2, y));
 
-    let tooClose = false;
-    for (const m of state.mobs) {
-      if (Math.hypot(x - m.x, y - m.y) < 1.2) { tooClose = true; break; }
-    }
-    if (!tooClose) return { x, y };
+// ===== СПАВН ПО ЛЕЙРАМ =====
+// Каждый лейр (сектор карты) имеет свой лимит мобов.
+// Мобы спавнятся внутри сектора — так их распределение осмысленное.
+
+function countMobsByLair() {
+  const counts = {};
+  for (const m of state.mobs) {
+    if (m.dead) continue;
+    if (m.lairId) counts[m.lairId] = (counts[m.lairId] || 0) + 1;
   }
-  // Fallback — просто в кольце
-  const ang = Math.random() * Math.PI * 2;
-  const dist = minD + Math.random() * (maxD - minD);
-  return {
-    x: Math.max(1, Math.min(COLS - 2, hero.x + Math.cos(ang) * dist)),
-    y: Math.max(1, Math.min(ROWS - 2, hero.y + Math.sin(ang) * dist)),
-  };
+  return counts;
+}
+
+function pickRandomLair(lairs, counts) {
+  // Взвешенный выбор: менее заполненные лейры приоритетнее.
+  // Так все секторы заполняются равномерно, а не «жирный первый забьётся».
+  const available = lairs.filter(l => (counts[l.id] || 0) < l.maxMobs);
+  if (available.length === 0) return null;
+
+  let totalW = 0;
+  const ws = available.map(l => {
+    const fill = (counts[l.id] || 0) / l.maxMobs;
+    const w = Math.max(0.15, 1 - fill);
+    totalW += w;
+    return w;
+  });
+  let roll = Math.random() * totalW;
+  for (let i = 0; i < available.length; i++) {
+    roll -= ws[i];
+    if (roll <= 0) return available[i];
+  }
+  return available[available.length - 1];
 }
 
 function trySpawnMob() {
-  if (!state.currentZone || state.dungeon) return;
-  const zone = state.currentZone;
-  const lairs = zone.lairs;
+  if (!state.currentZone) return;
+  if (state.dungeon) return;
+
+  const lairs = state.currentZone.lairs;
   if (!lairs || lairs.length === 0) return;
 
-  const now = Date.now();
+  // Глобальный кап по всей зоне (защита от раздувания)
+  const totalCap = lairs.reduce((s, l) => s + l.maxMobs, 0);
+  if (state.mobs.filter(m => !m.dead).length >= totalCap) return;
 
-  for (const lair of lairs) {
-    // Считаем живых мобов в этом лаире
-    let count = 0;
-    for (const m of state.mobs) {
-      if (m.lairId === lair.id && !m.dead) count++;
+  const counts = countMobsByLair();
+  const lair = pickRandomLair(lairs, counts);
+  if (!lair) return;
+
+  // Спавн внутри сектора
+  const angle = Math.random() * Math.PI * 2;
+  const dist = Math.random() * (lair.radius || 3);
+  let x = (lair.cx || COLS / 2) + Math.cos(angle) * dist;
+  let y = (lair.cy || ROWS / 2) + Math.sin(angle) * dist;
+  x = Math.max(0.5, Math.min(COLS - 0.5, x));
+  y = Math.max(0.5, Math.min(ROWS - 0.5, y));
+
+  // Не спавним рядом с героем
+  const minDist = lair.minSpawnDist ?? 1;
+  if (Math.hypot(x - state.hero.x, y - state.hero.y) < minDist) return;
+
+  // Моб из списка лейра
+  const mobId = lair.mobs[Math.floor(Math.random() * lair.mobs.length)];
+  const def = MOBS[mobId];
+  if (!def) return;
+
+  const mult = state.currentZone.mult;
+  const isChampion = Math.random() < (lair.champChance || 0);
+  const baseOpts = {
+    aggroRange: lair.aggroRange ?? 5,
+  wander: lair.wander ?? 1.5,
+  champion: isChampion,
+  kite: lair.kite ?? 0,  
+  };
+
+  const pushMob = (mob) => {
+    mob.lairId = lair.id;
+    mob.level = def.level || 1;
+    // Leash — моб помнит свой сектор
+    mob.homeX = lair.cx;
+    mob.homeY = lair.cy;
+    mob.homeRadius = (lair.radius || 3) + 2;
+    mob.leashRange = (lair.radius || 3) + 10;
+    mob.returning = false;
+    mob.lairCx = lair.cx;   // для NaN-защиты
+    mob.lairCy = lair.cy;
+    state.mobs.push(mob);
+  };
+  // Группа?
+  if (Math.random() < (lair.groupChance || 0)) {
+    const count = 3 + Math.floor(Math.random() * 3);
+    const groupId = createGroupId();
+    for (let i = 0; i < count; i++) {
+      if ((counts[lair.id] || 0) + i >= lair.maxMobs) break;
+      const gx = Math.max(0.5, Math.min(COLS - 0.5, x + (Math.random() - 0.5) * 2.5));
+      const gy = Math.max(0.5, Math.min(ROWS - 0.5, y + (Math.random() - 0.5) * 2.5));
+      pushMob(createMob(def, gx, gy, mult, { ...baseOpts, groupId }));
     }
-
-    // ── Босс-лаир: респавн по таймерам (может быть НЕСКОЛЬКО боссов) ──
-    if (lair.bosses && lair.bosses.length > 0) {
-      for (const bossCfg of lair.bosses) {
-        const bossId = bossCfg.id;
-        if (!bossId) continue;
-
-        const bossAlive = state.mobs.some(m =>
-          m.lairId === lair.id && m.boss && m.defId === bossId && !m.dead
-        );
-
-        const respawnKey = '_respawnAt_' + bossId;
-        if (bossAlive || now < (lair[respawnKey] || 0)) continue;
-
-        // Позиция: точные x/y → offset → центр лаира
-        let bx = lair.cx, by = lair.cy;
-        if (bossCfg.x !== undefined && bossCfg.y !== undefined) {
-          bx = bossCfg.x; by = bossCfg.y;
-        } else if (bossCfg.offset) {
-          bx += bossCfg.offset.x || 0;
-          by += bossCfg.offset.y || 0;
-        }
-        bx = Math.max(1, Math.min(COLS - 2, bx));
-        by = Math.max(1, Math.min(ROWS - 2, by));
-
-        const boss = createBoss(bossId, bx, by, zone.mult);
-        if (!boss) {
-          console.warn('[main] createBoss вернул null для id:', bossId);
-          continue;
-        }
-        boss.lairId = lair.id;
-        state.mobs.push(boss);
-
-        // respawn в СЕКУНДАХ
-        lair[respawnKey] = now + (bossCfg.respawn || 300) * 1000;
-
-        // Охрана: из bosses.js → guards, иначе дефолт
-        const guards = boss._guardsConfig || { mobs: lair.mobs, count: 5 };
-        const count = guards.count || 5;
-        for (let i = 0; i < count; i++) {
-          spawnGuardForBoss(lair, zone, boss, guards.mobs || lair.mobs);
-        }
-
-        toast(`⚠️ ${lair.name}: пробудился ${boss.name}`, 'epic');
-      }
-      continue;
-    }
-
-    // ── Обычный лаир ──
-    if (count >= lair.maxMobs) continue;
-    const last = lair._lastSpawn || 0;
-    if (now < last + (lair.interval || 2.0) * 1000) continue;
-    lair._lastSpawn = now;
-
-    if (Math.random() < (lair.groupChance || 0.2)) {
-      const gs = 3 + Math.floor(Math.random() * 3);
-      const gid = createGroupId();
-      for (let i = 0; i < gs; i++) spawnMobInLair(lair, zone, gid);
-    } else {
-      spawnMobInLair(lair, zone);
-    }
+  } else {
+    pushMob(createMob(def, x, y, mult, baseOpts));
   }
+
+  // Обновляем счётчик для текущего лейра (для следующей попытки)
+  counts[lair.id] = (counts[lair.id] || 0) + 1;
+
+  // Скорость спавна зависит от самого "медленного" лейра
+  const interval = lair.interval ?? 2.0;
+  state.spawnTimer = interval * (0.7 + Math.random() * 0.6);
 }
 function spawnMobInLair(lair, zone, groupId) {
+  // Защита: если cx/cy лаира не заданы — берём центр карты
+  const cx = Number.isFinite(lair.cx) ? lair.cx : Math.floor((COLS || 50) / 2);
+  const cy = Number.isFinite(lair.cy) ? lair.cy : Math.floor((ROWS || 50) / 2);
+  const radius = Number.isFinite(lair.radius) ? lair.radius : 5;
+
   const ang = Math.random() * Math.PI * 2;
-  const dist = Math.random() * lair.radius;
-  const x = Math.max(1, Math.min(COLS - 2, lair.cx + Math.cos(ang) * dist));
-  const y = Math.max(1, Math.min(ROWS - 2, lair.cy + Math.sin(ang) * dist));
+  const dist = Math.random() * radius;
+  const x = Math.max(1, Math.min(COLS - 2, cx + Math.cos(ang) * dist));
+  const y = Math.max(1, Math.min(ROWS - 2, cy + Math.sin(ang) * dist));
 
   const defId = lair.mobs[Math.floor(Math.random() * lair.mobs.length)];
   const def = MOBS[defId] || MOBS.gremlin;
@@ -711,9 +727,10 @@ function spawnMobInLair(lair, zone, groupId) {
     groupId,
   });
   // Просыпается через 2 сек после спавна — тогда начнёт агриться по дистанции
-  m._aggroWakeAt = Date.now() + 2000;
-  m._wakeAggroRange = lair.aggroRange || 7;
-  m.lairId = lair.id;
+   m._aggroWakeAt = Date.now() + 2000;
+  // ?? вместо || — 0 это валидное значение (пассивный лаир)!
+  m._wakeAggroRange = (lair.aggroRange != null) ? lair.aggroRange : 7;
+  // Используем ?? вместо || — 0 это валидное значение (пассивный лаир)!    m.lairId = lair.id;
   m.lairCx = lair.cx;
   m.lairCy = lair.cy;
   m.lairRadius = lair.radius;
@@ -730,14 +747,19 @@ function spawnGuardForBoss(lair, zone, boss, mobPool) {
   const pool = (mobPool && mobPool.length) ? mobPool : (lair.mobs || ['gremlin']);
   const defId = pool[Math.floor(Math.random() * pool.length)];
   const def = MOBS[defId] || MOBS.gremlin;
+
+  // ── Охрана босса ВСЕГДА агрессивна ──
+  // Даже если базовый моб пассивный (gremlin.aggroRange = 0),
+  // охрана защищает босса и атакует игрока при подходе.
+  const GUARD_AGGRO = 10;   // радиус агра охраны
   const m = createMob(def, x, y, zone.mult, {
-    aggroRange: 0,
+    aggroRange: GUARD_AGGRO,   // ← не 0, а 10 клеток
     wander: 3,
     champion: false,
     groupId: null,
   });
-  m._aggroWakeAt = Date.now() + 1000;
-  m._wakeAggroRange = lair.aggroRange || 7;
+  // Отключаем "пробуждение" — охрана активна сразу
+  m._aggroWakeAt = 0;
   m.lairId = lair.id;
   m.lairCx = lair.cx;
   m.lairCy = lair.cy;
@@ -900,7 +922,13 @@ setInterval(() => {
   const hero = state.hero;
   if (!hero || !hero.offlineActive || hero.dead) return;
   if (!state.currentZone) return;
-
+  // Страховка: HP ≤ 0 → смерть
+  if (hero.hp <= 0 && !hero.dead) {
+    hero.hp = 0;
+    hero.dead = true;
+    heroDie();
+    return;
+  }
   // Вне своей фарм-зоны (город/другая зона/данж) — офлайн на паузе:
   // сдвигаем watermark, чтобы это время не досчитывалось как бой
   if (state.currentZone.id !== hero.offlineZoneId || state.dungeon) {
@@ -1759,6 +1787,13 @@ function update(dt) {
   const hero = state.hero;
   if (!hero) return;
   if (!state.currentZone) return;
+    // Страховка: если HP ушёл в минус, но герой не помечен мёртвым — убиваем
+  if (hero.hp <= 0 && !hero.dead) {
+    hero.hp = 0;
+    hero.dead = true;
+    heroDie();
+    return;
+  }
   if (hero.dead) {
     state.deathTimer -= dt;
     if (!window._offlineSim) {
@@ -1782,16 +1817,13 @@ function update(dt) {
   }
 
   // ===== Спавн мобов =====
-  if (!state.dungeon && state.currentZone) {
-    state.spawnTimer -= dt;
-    if (state.spawnTimer <= 0) {
-      trySpawnMob();
-      // Если у зоны есть spawn.interval — используем его, иначе дефолт для лаиров
-      const iv = state.currentZone.spawn?.interval ?? 0.5;
-      state.spawnTimer = iv * (0.7 + Math.random() * 0.6);
-    }
+if (!state.dungeon && state.currentZone) {
+  state.spawnTimer -= dt;
+  if (state.spawnTimer <= 0) {
+    trySpawnMob();          // сам выставит новый spawnTimer
+    if (state.spawnTimer <= 0) state.spawnTimer = 1.5; // страховка
   }
-  window.__zoneSafeRadius = state.currentZone?.spawn?.safeRadius ?? 4;
+}
 
   // ===== Ввод движения =====
   const moveInput = {
@@ -1824,14 +1856,26 @@ function update(dt) {
 
   // ===== Обработка убийств (xp, дроп, level up) =====
   const prevLevel = hero.level;
-  const _lootCtx = {
-    cityGrade: CITIES[state.currentCity].grade,
-    heroWeaponType: hero.weaponType,
-    heroWeaponGrade: hero.equipment?.weapon?.grade || null,
-  };
+const _lootCtx = {
+  cityGrade: CITIES[state.currentCity].grade,
+  heroWeaponType: hero.weaponType,
+  heroWeaponGrade: hero.equipment?.weapon?.grade || null,
+  heroLevel: hero.level,
+  mobLevel: 1,
+};
 
-  for (const m of killed) {
-    addXp(hero, m.xp);
+for (const m of killed) {
+  // XP-штраф за оверлевел
+const _diff = hero.level - (m.level || 1);
+let _xpMult;
+if (_diff <= 3)       _xpMult = 1.00;
+else if (_diff <= 5)  _xpMult = 0.75;
+else if (_diff <= 8)  _xpMult = 0.50;
+else if (_diff <= 11) _xpMult = 0.25;
+else if (_diff <= 15) _xpMult = 0.05;
+else                  _xpMult = 0.01;
+const _xpGain = Math.max(1, Math.floor(m.xp * _xpMult));
+addXp(hero, _xpGain);
     gainManaOnKill(hero);
     state.sessionStats.xp += m.xp;
     state.sessionStats.kills++;
@@ -1856,7 +1900,7 @@ function update(dt) {
       }
     }
 
-    const drops = rollDrops(entries, _lootCtx);
+    const drops = rollDrops(entries, { ..._lootCtx, mobLevel: m.level || 1 });
     const summary = applyDrops(drops, hero, state);
 
     state.sessionStats.gold += summary.gold;
@@ -2100,8 +2144,7 @@ initUI(state, auction, shop, arena, {
   onEnterZone: (zoneId) => enterZone(zoneId),
   onTravelToCity: (cityId, cost) => travelToCity(cityId, cost),
   onReturnToCity: () => returnToCity(),
-  makeItem: (grade, slot, wt, variant) => createItem(grade, slot, wt, variant),
-   onSkillClick: (slot) => useActionFromSlot(slot),
+  makeItem: (grade, slot, wt, variant, source) => createItem(grade, slot, wt, variant, source || 'shop'),   onSkillClick: (slot) => useActionFromSlot(slot),
 });
 // ===== АВТОРИЗАЦИЯ =====
 // ===== АВТОРИЗАЦИЯ =====
@@ -2348,21 +2391,28 @@ initAuth({
           state.projectiles = [];
           state.effects = [];
           state.spawnTimer = 0.5;
-  // Сброс таймеров лаиров при входе в зону + предзаполнение
-  if (zone.lairs) {
-    for (const lair of zone.lairs) {
-      lair._lastSpawn = 0;
-      lair._bossRespawnAt = 0;
-    }
-    // Сразу спавним 60% мобов в каждом лаире — не ждём trySpawnMob
-    for (const lair of zone.lairs) {
-      if (lair.boss) continue;
-      const prefill = Math.floor((lair.maxMobs || 15) * 0.6);
-      for (let i = 0; i < prefill; i++) {
-        spawnMobInLair(lair, zone);
-      }
-    }
-  }
+
+          // Сброс таймеров лаиров + предзаполнение
+          if (offZone.lairs) {
+            for (const lair of offZone.lairs) {
+              lair._lastSpawn = 0;
+              if (lair.bosses) {
+                for (const bossCfg of lair.bosses) {
+                  if (bossCfg.id) lair['_respawnAt_' + bossCfg.id] = 0;
+                }
+              }
+            }
+            for (const lair of offZone.lairs) {
+              if (lair.bosses && lair.bosses.length > 0) continue;
+              if (!lair.mobs || lair.mobs.length === 0) continue;
+              if (!lair.maxMobs || lair.maxMobs <= 0) continue;
+              const prefill = Math.floor(lair.maxMobs * 0.6);
+              for (let i = 0; i < prefill; i++) {
+                spawnMobInLair(lair, offZone);
+              }
+            }
+          }
+
           state.hero.x = COLS / 2;
           state.hero.y = ROWS / 2;
           if (!state.hero.dead) state.portal = spawnPortalInZone(offZone);

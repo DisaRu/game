@@ -3,9 +3,11 @@ import { itemStats, estimateItemValue, gradeName, gradeShort, gradeColor, getVar
 import { equipItem, unequipItem, canEquip, tryEnhance, getSkillManaCost, getSkillCooldown, getSkillCastTime, isSkillReady, getSkillRemainingCooldown, learnSkill, setSkillSlot, parseSlotAction, setSlotAction, useBuffScroll, getSkillMilestones, getSkillEffect } from './hero.js';
 import { buyEquipment, buyScroll, buyPotion, buySoulshot } from './shop.js';
 import { CITIES, CITY_ORDER, cityTeleportCost, zoneDifficultyLabel } from './cities.js';
-import { getAvailableChests, claimChest, rollCardRewards, estimateWinChance, fightBot, expectedScore } from './arena.js';
+import { getAvailableChests, claimChest, rollCardRewards, estimateWinChance, expectedScore } from './arena.js';
 import { getBotStats } from './bots.js';
 import { buyListing, listItem, sellToBot, cancelListing } from './auction.js';
+import { openWiki as _openWiki, closeWiki as _closeWiki } from './wiki.js';
+import { openWiki } from './wiki.js';
 // Рендер иконки: PNG-файл, если это путь; иначе — эмодзи.
 function iconHtml(icon, size = 42) {
   if (!icon) return '';
@@ -46,52 +48,85 @@ let _holdBuy = null;
 let _lastLongPressTime = 0;
 let _suppressNextClick = false;
 
-function _startHold(btn, onTick, holdMs = 400, repeatMs = 100) {
-  _killHold(_holdBuy); _holdBuy = null;
-  btn.classList.add('holding');
-  const st = { btn, timeout: null, interval: null, alive: true, ticked: false };
-  st.timeout = setTimeout(() => {
-    if (!st.alive) return;
-    const first = onTick(true);
-    if (!first || !first.ok) { _killHold(st); return; }
-    st.ticked = true;
-    st.interval = setInterval(() => {
-      if (!st.alive) { clearInterval(st.interval); return; }
-      const r = onTick(true);
-      if (!r || !r.ok) _killHold(st);
-      else st.ticked = true;
-    }, repeatMs);
-  }, holdMs);
-  return st;
+function openBuyDialog(info, buyFn) {
+  const popup = document.getElementById('item-popup');
+  const body = document.getElementById('item-popup-body');
+  if (!popup || !body) return;
+
+  let qty = 1;
+  const maxQty = Math.max(1, Math.floor(state.gold / info.price));
+
+  function render() {
+    const total = qty * info.price;
+    const canAfford = total <= state.gold;
+    body.innerHTML = `
+      <div class="item-icon-big">${iconHtml(info.icon, 48)}</div>
+      <h3 style="text-align:center">${info.name}</h3>
+      <div class="stat-row"><span class="stat-name">Цена за 1</span><span class="stat-val">${info.price.toLocaleString()}💰</span></div>
+      <div class="stat-row"><span class="stat-name">В кошельке</span><span class="stat-val">${state.gold.toLocaleString()}💰</span></div>
+      <div class="stat-row" style="align-items:center">
+        <span class="stat-name">Количество</span>
+        <span class="stat-val" style="display:flex;gap:4px;align-items:center">
+          <button class="qty-btn" id="qty-minus" style="width:28px;height:28px;font-size:16px;font-weight:bold;background:#1a2340;border:1px solid #4ade80;color:#4ade80;border-radius:4px;cursor:pointer">−</button>
+          <input id="qty-input" type="number" min="1" value="${qty}" style="width:70px;text-align:center;background:#0d1526;border:1px solid #2a3a5c;color:#c8d1e6;padding:5px;border-radius:3px;font-family:inherit;font-size:14px;font-weight:bold">
+          <button class="qty-btn" id="qty-plus" style="width:28px;height:28px;font-size:16px;font-weight:bold;background:#1a2340;border:1px solid #4ade80;color:#4ade80;border-radius:4px;cursor:pointer">+</button>
+        </span>
+      </div>
+      <div class="stat-row" style="border-top:1px solid #d4af37;margin-top:6px;padding-top:6px">
+        <span class="stat-name" style="font-size:12px">ИТОГО</span>
+        <span class="stat-val" style="color:${canAfford ? '#fbbf24' : '#ef4444'};font-size:18px;font-weight:900">${total.toLocaleString()}💰</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button class="popup-close" id="qty-buy" style="border-color:${canAfford ? '#4ade80' : '#64748b'};color:${canAfford ? '#4ade80' : '#64748b'};flex:1;font-size:13px;font-weight:bold" ${canAfford ? '' : 'disabled'}>✅ Купить</button>
+        <button class="popup-close" id="qty-max" style="border-color:#fbbf24;color:#fbbf24;flex:1;font-size:13px;font-weight:bold">🔼 Макс (${maxQty})</button>
+      </div>
+      <button class="popup-close" id="qty-cancel" style="border-color:#64748b;color:#64748b;margin-top:6px">Отмена</button>
+    `;
+
+    const input = document.getElementById('qty-input');
+    input.addEventListener('input', () => {
+      qty = Math.max(1, Math.min(maxQty || 1, parseInt(input.value) || 1));
+      render();
+    });
+    document.getElementById('qty-minus').onclick = () => {
+      qty = Math.max(1, qty - 1);
+      render();
+    };
+    document.getElementById('qty-plus').onclick = () => {
+      qty = Math.min(maxQty, qty + 1);
+      render();
+    };
+    document.getElementById('qty-max').onclick = () => {
+      qty = maxQty;
+      render();
+    };
+    document.getElementById('qty-buy').onclick = () => {
+      if (qty * info.price > state.gold) return;
+      const result = buyFn(qty);
+      if (result && result.ok === false && result.reason === 'no_gold') {
+        toast('Недостаточно золота', 'epic');
+        return;
+      }
+      hideItemPopup();
+      callbacks.onEquipChange && callbacks.onEquipChange();
+    };
+    document.getElementById('qty-cancel').onclick = hideItemPopup;
+  }
+
+  render();
+  popup.classList.remove('hidden');
 }
-
-function _killHold(st) {
-  if (!st) return;
-  st.alive = false;
-  if (st.timeout) clearTimeout(st.timeout);
-  if (st.interval) clearInterval(st.interval);
-  if (st.btn) st.btn.classList.remove('holding');
-  if (st.ticked) { _suppressNextClick = true; _lastLongPressTime = Date.now(); }
-}
-
-function _endHoldBuy() { if (_holdBuy) { _killHold(_holdBuy); _holdBuy = null; } }
-window.addEventListener('pointerup', () => { _endHoldBuy(); });
-window.addEventListener('pointercancel', () => { _endHoldBuy(); });
-
-function bindBuyButton(btn, buyFn) {
+function bindBuyButton(btn, buyFn, getInfo) {
   if (!btn) return;
   btn.addEventListener('click', (e) => {
-    if (_suppressNextClick) { _suppressNextClick = false; e.preventDefault(); e.stopPropagation(); return; }
-    if (Date.now() - _lastLongPressTime < 500) return;
-    e.preventDefault(); e.stopPropagation();
-    buyFn(false);
+    e.stopPropagation();
+    e.preventDefault();
+    if (typeof getInfo === 'function') {
+      const info = getInfo();
+      if (info) { openBuyDialog(info, buyFn); return; }
+    }
+    buyFn(1);
   });
-  btn.addEventListener('pointerdown', (e) => {
-    if (btn.disabled) return;
-    e.preventDefault(); e.stopPropagation();
-    _holdBuy = _startHold(btn, (silent) => buyFn(true));
-  });
-  btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 // ===== АВТО-ТОЧКА =====
@@ -147,30 +182,32 @@ function _doAutoTick(useBlessed) {
   const hero = state.hero;
   const item = enhanceSelectedItem;
   if (!item) { _stopAutoEnhance(); return false; }
+
+  // ── Автоточка работает только до +11. +12 и выше — только клик.
   if (item.enhance >= 12) {
-    if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
-    return true;
+    _stopAutoEnhance();
+    return false;
   }
+
   const stype = item.slot === 'weapon' ? 'weapon' : 'armor';
   const scrollsHave = hero.scrolls[item.grade]?.[stype] || 0;
   if (scrollsHave <= 0) {
-    if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
-    return true;
+    _stopAutoEnhance();
+    return false;
   }
 
   const listBefore = getBackpackEnhanceList(true);
   const idxBefore = listBefore.indexOf(item);
   const r = tryEnhance(hero, item, useBlessed);
   if (!r.ok) {
-    if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
-    return true;
+    _stopAutoEnhance();
+    return false;
   }
 
   _autoTickCounter++;
 
-  // Разрушение — обязательная тяжёлая перерисовка (редко)
+  // Разрушение — обновить DOM
   if (r.result === 'destroyed') {
-    // Лёгкий вибро/цвет — без pop-up
     _flashEnhanceResult('destroyed');
     const oldCard = document.querySelector(`.enhance-item[data-item-id="${item.id}"]`);
     if (oldCard) oldCard.remove();
@@ -194,21 +231,20 @@ function _doAutoTick(useBlessed) {
     return true;
   }
 
-  // Лёгкое обновление карточки — каждый тик (это быстро)
+  // Обычная точка — обновить карточку и подсветку
   updateEnhanceItemCard(item);
-
-  // Лёгкая вибро-подсветка вместо тяжёлого playEnhanceAnim
   _flashEnhanceResult(r.result);
 
-  // Тяжёлые обновления — раз в 4 тика (~ раз в секунду)
   if (_autoTickCounter % 4 === 0) {
     updateEnhanceLive();
-    callbacks.onEquipChange && callbacks.onEquipChange();
   }
 
+  // Дошли до +12? Стоп автоточки, дальше только клик.
   if (item.enhance >= 12) {
-    if (!_switchToNextEnhanceTarget(item, useBlessed)) { _stopAutoEnhance(); return false; }
+    _stopAutoEnhance();
+    return false;
   }
+
   return true;
 }
 
@@ -264,10 +300,20 @@ function bindEnhanceButton(btn, getItem, useBlessed) {
 function doOneEnhance(item, useBlessed) {
   if (!item) return;
   const hero = state.hero;
-  if (item.enhance >= 12) { showBigEnhanceAnim(item, useBlessed); return; }
+
+  // +12 и выше → одна точка + эпичная карточка
+  if (item.enhance >= 12) {
+    showBigEnhanceAnim(item, useBlessed);
+    return;
+  }
+
+  // До +11 → обычная быстрая точка
   const r = tryEnhance(hero, item, useBlessed);
   if (!r.ok) { toast('Нельзя', 'epic'); return; }
+
   playEnhanceAnim(r.result, item, r.blessedUsed);
+  _selectEnhanceCard(item);
+
   if (r.result === 'destroyed') {
     const listBefore = getBackpackEnhanceList(true);
     const idxBefore = listBefore.indexOf(item);
@@ -290,7 +336,6 @@ function doOneEnhance(item, useBlessed) {
     updateEnhanceItemCard(item);
     updateEnhanceLive();
   }
-  callbacks.onEquipChange && callbacks.onEquipChange();
 }
 
 function updateEnhanceItemCard(item) {
@@ -1069,12 +1114,15 @@ function makeEnhanceItemEl(item) {
   el.dataset.itemId = item.id;
   el.style.borderColor = gradeColor(item.grade);
   const bonus = getEnhanceBonus(item);
+  const bonusLine = item.source === 'shop'
+    ? '<span style="color:#7a2a2a;font-size:7px">❌ без бонуса</span>'
+    : (bonus ? bonus.icon + ' ' + bonus.display : '');
   el.innerHTML = `
     <div class="ei-icon">${iconHtml(item.icon)}</div>
     <div class="ei-enh" style="opacity:${item.enhance > 0 ? 1 : 0}">+${item.enhance}</div>
     <div class="ei-grade" style="color:${gradeColor(item.grade)}">${gradeShort(item.grade)}</div>
     <div class="ei-stats">${statsTwoMain(item)}</div>
-    <div class="ei-bonus" style="color:#fbbf24;font-size:8px;font-weight:bold">${bonus ? bonus.icon + ' ' + bonus.display : ''}</div>
+    <div class="ei-bonus" style="color:#fbbf24;font-size:8px;font-weight:bold">${bonusLine}</div>
   `;
   el.addEventListener('click', () => {
     enhanceSelectedItem = item;
@@ -1140,13 +1188,27 @@ function showEnhanceDetail(item) {
 
 function playEnhanceAnim(result, item, blessedUsed) {
   const div = document.createElement('div');
-  div.className = 'enhance-anim ' + (result === 'success' ? 'success' : result === 'fail' ? 'fail' : 'destroyed');
-  div.textContent = result === 'success' ? `+${item.enhance}` : result === 'fail' ? 'FAIL' : '💥';
+  let cls = 'fail';
+  let txt = 'FAIL';
+  if (result === 'success') { cls = 'success'; txt = `+${item.enhance}`; }
+  else if (result === 'downgrade') { cls = 'fail'; txt = `+${item.enhance} ↓`; }
+  else if (result === 'fail') { cls = 'fail'; txt = blessedUsed ? 'СПАСЁН' : 'FAIL'; }
+  else if (result === 'destroyed') { cls = 'destroyed'; txt = '💥'; }
+
+  div.className = 'enhance-anim ' + cls;
+  div.textContent = txt;
   document.body.appendChild(div);
   setTimeout(() => div.remove(), 900);
-  if (result === 'success') toast(`Успех! +${item.enhance}`, 'legendary');
-  else if (result === 'fail') toast(blessedUsed ? 'Провал (Blessed спас)' : 'Заточка провалилась', 'epic');
-  else toast('💥 Предмет сгорел', 'unique');
+
+  if (result === 'success') {
+    toast(`Успех! +${item.enhance}`, 'legendary');
+  } else if (result === 'downgrade') {
+    toast(`⚠️ Провал — откат до +${item.enhance}`, 'epic');
+  } else if (result === 'fail') {
+    toast(blessedUsed ? 'Провал (Blessed спас)' : 'Заточка провалилась', 'epic');
+  } else if (result === 'destroyed') {
+    toast('💥 Предмет сгорел', 'unique');
+  }
 }
 
 function showBigEnhanceAnim(item, useBlessed) {
@@ -1162,9 +1224,34 @@ function showBigEnhanceAnim(item, useBlessed) {
     const r = tryEnhance(hero, item, useBlessed);
     const enhEl = card.querySelector('#ebc-enh');
     if (!r.ok) { overlay.remove(); toast('Нельзя', 'epic'); return; }
-    if (r.result === 'success') { enhEl.textContent = '+' + item.enhance; enhEl.style.color = '#4ade80'; card.classList.add('glow-success'); toast(`Успех! +${item.enhance}`, 'legendary'); }
-    else if (r.result === 'fail') { enhEl.textContent = 'FAIL'; enhEl.style.color = '#ef4444'; card.classList.add('glow-fail'); toast(useBlessed ? 'Провал (Blessed спас)' : 'Провал', 'epic'); }
-    else { enhEl.textContent = '💥'; enhEl.style.color = '#dc2626'; card.classList.add('glow-destroyed'); toast('Предмет сгорел', 'unique'); enhanceSelectedItem = getNextBackpackItem(item, true); }
+
+    if (r.result === 'success') {
+      enhEl.textContent = '+' + item.enhance;
+      enhEl.style.color = '#4ade80';
+      card.classList.add('glow-success');
+      toast(`Успех! +${item.enhance}`, 'legendary');
+    }
+    else if (r.result === 'downgrade') {
+      // Откат до +6 — вещь не сгорает
+      enhEl.textContent = '+' + item.enhance + ' ↓';
+      enhEl.style.color = '#ef4444';
+      card.classList.add('glow-fail');
+      toast(`⚠️ Провал — откат до +${item.enhance}`, 'epic');
+    }
+    else if (r.result === 'fail') {
+      enhEl.textContent = 'FAIL';
+      enhEl.style.color = '#ef4444';
+      card.classList.add('glow-fail');
+      toast(useBlessed ? 'Провал (Blessed спас)' : 'Провал', 'epic');
+    }
+    else if (r.result === 'destroyed') {
+      enhEl.textContent = '💥';
+      enhEl.style.color = '#dc2626';
+      card.classList.add('glow-destroyed');
+      toast('Предмет сгорел', 'unique');
+      enhanceSelectedItem = getNextBackpackItem(item, true);
+    }
+
     callbacks.onEquipChange && callbacks.onEquipChange();
     setTimeout(() => { overlay.remove(); renderEnhance(); }, 1200);
   }, 2200);
@@ -1173,111 +1260,238 @@ function showBigEnhanceAnim(item, useBlessed) {
 // ===== МАГАЗИН =====
 function renderShop() {
   const gradeInfo = document.getElementById('shop-grade-info');
-  if (gradeInfo && shop.stock) gradeInfo.innerHTML = `Городской грейд: <b style="color:${gradeColor(shop.stock.grade)}">${gradeName(shop.stock.grade)}</b>`;
+  if (gradeInfo && shop.stock) {
+    gradeInfo.innerHTML = `Городской грейд: <b style="color:${gradeColor(shop.stock.grade)}">${gradeName(shop.stock.grade)}</b>`;
+  }
   const content = document.getElementById('shop-content');
   content.innerHTML = '';
   if (!shop.stock) return;
+
+  const grid = document.createElement('div');
+  grid.style.display = 'flex';
+  grid.style.flexWrap = 'wrap';
+  grid.style.gap = 'var(--cell-gap)';
+  grid.style.padding = '4px';
+  grid.style.justifyContent = 'flex-start';
+  grid.style.alignContent = 'flex-start';
+  grid.style.background = '#05070d';
+  grid.style.border = '1px solid var(--l2-border)';
+  grid.style.borderRadius = '3px';
+  content.appendChild(grid);
+
+  // ─── Экипировка ───
   if (shopCat === 'equipment') {
     for (const entry of shop.stock.equipment) {
-      const realItem = callbacks.makeItem(shop.stock.grade, entry.slot, entry.weaponType, entry.variant);
+      const realItem = callbacks.makeItem(shop.stock.grade, entry.slot, entry.weaponType, entry.variant, 'shop');
       if (!realItem) continue;
-      const s = itemStats(realItem);
-      const statParts = [];
-      for (const k of STAT_ORDER) if (s[k]) statParts.push(statLine(k, s[k]));
-      const bonus = ENHANCE_BONUSES[realItem.slot];
-      const bonusPreview = bonus ? `+15: ${bonus.icon} ${bonus.name} — ${bonus.format(bonus.getValue(15))}` : '';
-      const row = document.createElement('div');
-      row.className = 'shop-row';
-      row.innerHTML = `
-        <div class="auction-icon">${iconHtml(entry.icon)}</div>
-        <div class="auction-info">
-          <div class="auction-name">${entry.name}</div>
-          <div class="auction-stats">${statParts.join('')}</div>
-          ${bonusPreview ? `<div class="auction-bonus">${bonusPreview}</div>` : ''}
-        </div>
-        <div class="auction-price">${entry.price}💰</div>
-        <button ${state.gold < entry.price ? 'disabled' : ''}>Купить</button>
+      const el = document.createElement('div');
+      el.className = 'bp-item';
+      const gc = gradeColor(realItem.grade);
+      el.style.borderColor = gc;
+      el.innerHTML = `
+        <div class="bp-icon">${iconHtml(realItem.icon)}</div>
+        <div class="bp-grade" style="color:${gc}">${gradeShort(realItem.grade)}</div>
+        <div class="bp-name">${realItem.name}</div>
       `;
-      bindBuyButton(row.querySelector('button'), (silent) => {
-        const r = buyEquipment(shop, state.hero, state, entry.slot, entry.weaponType, entry.variant);
-        if (r.ok) { toast(`🛒 ${entry.name}`, shop.stock.grade); if (!silent) renderShop(); callbacks.onEquipChange && callbacks.onEquipChange(); }
-        else if (r.reason === 'no_gold' && !silent) toast('Недостаточно золота', 'epic');
-        return r;
+      el.addEventListener('click', () => {
+        _openBuyDialog({
+          title: realItem.name,
+          icon: realItem.icon,
+          price: entry.price,
+          subtitle: `Грейд: ${gradeName(realItem.grade)}`,
+        }, (qty) => {
+          let last = null;
+          for (let i = 0; i < qty; i++) {
+            const r = buyEquipment(shop, state.hero, state, entry.slot, entry.weaponType, entry.variant);
+            if (!r.ok) { last = r; break; }
+            last = r;
+          }
+          if (last && last.ok) toast(`🛒 ${realItem.name} ×${qty}`, shop.stock.grade);
+          else if (last && last.reason === 'no_gold') toast('Недостаточно золота', 'epic');
+          renderShop();
+          callbacks.onEquipChange && callbacks.onEquipChange();
+          return last;
+        });
       });
-      content.appendChild(row);
+      grid.appendChild(el);
     }
-  } else if (shopCat === 'scrolls') {
+  }
+
+  // ─── Свитки ───
+  else if (shopCat === 'scrolls') {
     for (const type of ['weapon','armor']) {
       const entry = shop.stock.scrolls[type];
       const have = state.hero.scrolls[shop.stock.grade]?.[type] || 0;
-      const row = document.createElement('div');
-      row.className = 'shop-row';
-      row.innerHTML = `
-        <div class="auction-icon">📜</div>
-        <div class="auction-info">
-          <div class="auction-name">Свиток заточки: ${type === 'weapon' ? 'Оружие' : 'Броня'}</div>
-          <div class="auction-grade" style="color:${gradeColor(shop.stock.grade)}">${gradeName(shop.stock.grade)}</div>
-          <div class="auction-stats"><span data-have="scroll:${type}">У тебя: ${have}</span></div>
-        </div>
-        <div class="auction-price">${entry.price}💰</div>
-        <button ${state.gold < entry.price ? 'disabled' : ''}>Купить</button>
+      const tName = type === 'weapon' ? 'Оружие' : 'Броня';
+      const el = document.createElement('div');
+      el.className = 'bp-item';
+      el.style.borderColor = gradeColor(shop.stock.grade);
+      el.innerHTML = `
+        <div class="bp-icon">📜</div>
+        <div class="bp-grade" style="color:${gradeColor(shop.stock.grade)}">${gradeShort(shop.stock.grade)}</div>
+        <div class="bp-name">${tName}</div>
+        <div class="bp-book-lvl" style="color:#d4af37">×${have}</div>
       `;
-      bindBuyButton(row.querySelector('button'), (silent) => {
-        const r = buyScroll(shop, state.hero, state, type);
-        if (r.ok) { toast(`🛒 Свиток ${gradeName(shop.stock.grade)}`, shop.stock.grade); updateShopCounts(); if (!silent) renderShop(); callbacks.onEquipChange && callbacks.onEquipChange(); }
-        else if (r.reason === 'no_gold' && !silent) toast('Недостаточно золота', 'epic');
-        return r;
+      el.addEventListener('click', () => {
+        _openBuyDialog({
+          title: `Свиток: ${tName}`,
+          icon: '📜',
+          price: entry.price,
+          subtitle: `У тебя: ${have}`,
+        }, (qty) => {
+          let last = null;
+          for (let i = 0; i < qty; i++) {
+            const r = buyScroll(shop, state.hero, state, type);
+            if (!r.ok) { last = r; break; }
+            last = r;
+          }
+          if (last && last.ok) toast(`🛒 Свиток ×${qty}`, shop.stock.grade);
+          else if (last && last.reason === 'no_gold') toast('Недостаточно золота', 'epic');
+          renderShop();
+          callbacks.onEquipChange && callbacks.onEquipChange();
+          return last;
+        });
       });
-      content.appendChild(row);
+      grid.appendChild(el);
     }
-  } else if (shopCat === 'potions') {
+  }
+
+  // ─── Зелья ───
+  else if (shopCat === 'potions') {
     for (const type of POTION_ORDER) {
       const p = POTIONS[type];
       const have = state.hero.potions[type] || 0;
-      const row = document.createElement('div');
-      row.className = 'shop-row';
-      row.innerHTML = `
-        <div class="auction-icon">${iconHtml(p.icon, 22)}</div>
-        <div class="auction-info">
-          <div class="auction-name">${p.name}</div>
-          <div class="auction-grade" style="color:${p.color}">Восстанавливает ${p.heal} HP</div>
-          <div class="auction-stats"><span data-have="potion:${type}">У тебя: ${have}</span></div>
-        </div>
-        <div class="auction-price">${p.price}💰</div>
-        <button ${state.gold < p.price ? 'disabled' : ''}>Купить</button>
+      const el = document.createElement('div');
+      el.className = 'bp-item';
+      el.style.borderColor = p.color;
+      el.innerHTML = `
+        <div class="bp-icon">${iconHtml(p.icon)}</div>
+        <div class="bp-grade" style="color:${p.color}">HP</div>
+        <div class="bp-name">${p.name}</div>
+        <div class="bp-book-lvl" style="color:#d4af37">×${have}</div>
       `;
-      bindBuyButton(row.querySelector('button'), (silent) => {
-        const r = buyPotion(shop, state.hero, state, type);
-        if (r.ok) { toast(`🛒 ${p.name}`, 'rare'); updateShopCounts(); if (!silent) renderShop(); callbacks.onEquipChange && callbacks.onEquipChange(); }
-        else if (r.reason === 'no_gold' && !silent) toast('Недостаточно золота', 'epic');
-        return r;
+      el.addEventListener('click', () => {
+        _openBuyDialog({
+          title: p.name,
+          icon: p.icon,
+          price: p.price,
+          subtitle: `Восст. ${p.heal} HP · У тебя: ${have}`,
+        }, (qty) => {
+          let last = null;
+          for (let i = 0; i < qty; i++) {
+            const r = buyPotion(shop, state.hero, state, type);
+            if (!r.ok) { last = r; break; }
+            last = r;
+          }
+          if (last && last.ok) toast(`🛒 ${p.name} ×${qty}`, 'rare');
+          else if (last && last.reason === 'no_gold') toast('Недостаточно золота', 'epic');
+          renderShop();
+          callbacks.onEquipChange && callbacks.onEquipChange();
+          return last;
+        });
       });
-      content.appendChild(row);
+      grid.appendChild(el);
     }
-  } else if (shopCat === 'soulshots') {
+  }
+
+  // ─── Соски ───
+  else if (shopCat === 'soulshots') {
     const entry = shop.stock.soulshots;
     const have = state.hero.soulshots[shop.stock.grade] || 0;
-    const row = document.createElement('div');
-    row.className = 'shop-row';
-    row.innerHTML = `
-      <div class="auction-icon">⚡</div>
-      <div class="auction-info">
-        <div class="auction-name">Соски ${gradeName(shop.stock.grade)}</div>
-        <div class="auction-grade" style="color:${gradeColor(shop.stock.grade)}">Удваивают урон оружия</div>
-        <div class="auction-stats"><span data-have="soulshot:${shop.stock.grade}">У тебя: ${have}</span><span>+10 шт.</span></div>
-      </div>
-      <div class="auction-price">${entry.price}💰</div>
-      <button ${state.gold < entry.price ? 'disabled' : ''}>Купить</button>
+    const el = document.createElement('div');
+    el.className = 'bp-item';
+    el.style.borderColor = gradeColor(shop.stock.grade);
+    el.innerHTML = `
+      <div class="bp-icon">⚡</div>
+      <div class="bp-grade" style="color:${gradeColor(shop.stock.grade)}">${gradeShort(shop.stock.grade)}</div>
+      <div class="bp-name">Соски ×10</div>
+      <div class="bp-book-lvl" style="color:#d4af37">×${have}</div>
     `;
-    bindBuyButton(row.querySelector('button'), (silent) => {
-      const r = buySoulshot(shop, state.hero, state);
-      if (r.ok) { toast(`🛒 Соски ×10`, shop.stock.grade); updateShopCounts(); if (!silent) renderShop(); callbacks.onEquipChange && callbacks.onEquipChange(); }
-      else if (r.reason === 'no_gold' && !silent) toast('Недостаточно золота', 'epic');
-      return r;
+    el.addEventListener('click', () => {
+      _openBuyDialog({
+        title: `Соски ${gradeName(shop.stock.grade)}`,
+        icon: '⚡',
+        price: entry.price,
+        subtitle: `Пачка 10 шт. · У тебя: ${have}`,
+      }, (qty) => {
+        let last = null;
+        let total = 0;
+        for (let i = 0; i < qty; i++) {
+          const r = buySoulshot(shop, state.hero, state);
+          if (!r.ok) { last = r; break; }
+          last = r;
+          total += 10;
+        }
+        if (last && last.ok) toast(`🛒 Соски ×${total}`, shop.stock.grade);
+        else if (last && last.reason === 'no_gold') toast('Недостаточно золота', 'epic');
+        renderShop();
+        callbacks.onEquipChange && callbacks.onEquipChange();
+        return last;
+      });
     });
-    content.appendChild(row);
+    grid.appendChild(el);
   }
 }
+// ===== МАГАЗИН: покупка через диалог с количеством =====
+function showShopItemPopup(entry, realItem) {
+  const price = entry.price;
+  _openBuyDialog({
+    title: realItem.name,
+    icon: realItem.icon,
+    price,
+    subtitle: `Грейд: ${gradeName(realItem.grade)}`,
+  }, (qty) => {
+    let last = null;
+    for (let i = 0; i < qty; i++) {
+      const r = buyEquipment(shop, state.hero, state, entry.slot, entry.weaponType, entry.variant);
+      if (!r.ok) { last = r; break; }
+      last = r;
+    }
+    if (last && last.ok) {
+      toast(`🛒 ${realItem.name} ×${qty}`, shop.stock.grade);
+      callbacks.onEquipChange && callbacks.onEquipChange();
+    } else if (last && last.reason === 'no_gold') {
+      toast('Недостаточно золота', 'epic');
+    }
+    renderShop();
+    return last;
+  });
+}
+
+function showShopResourcePopup(entry, kind, key) {
+  let title, icon, price, extraLine = '';
+
+  if (kind === 'scroll') {
+    const tName = key === 'weapon' ? 'Оружие' : 'Броня';
+    title = `Свиток: ${tName}`;
+    icon = '📜';
+    price = entry.price;
+    const have = state.hero.scrolls[shop.stock.grade]?.[key] || 0;
+    extraLine = `У тебя: ${have}`;
+  }
+  else if (kind === 'potion') {
+    const p = POTIONS[key];
+    title = p.name;
+    icon = p.icon;
+    price = p.price;
+    const have = state.hero.potions[key] || 0;
+    extraLine = `Восст. ${p.heal} HP · У тебя: ${have}`;
+  }
+  else if (kind === 'soulshot') {
+    title = `Соски ${gradeName(shop.stock.grade)}`;
+    icon = '⚡';
+    price = entry.price;
+    const have = state.hero.soulshots[shop.stock.grade] || 0;
+    extraLine = `Пачка 10 шт. · У тебя: ${have}`;
+  }
+
+
+}
+
+
+
+
+// ─── Универсальный диалог покупки ────────────────────────────
 
 // ===== АУКЦИОН =====
 function renderAuction() {
@@ -1459,19 +1673,40 @@ export function showItemPopup(item, context) {
   const estimate = estimateItemValue(item);
   let actionBtns = '';
   if (context === 'backpack') {
-    const can = canEquip(state.hero, item);
-     if (item.kind === 'book') {
+    // ── Кнопка «Надеть» для экипировки (если можно) ──
+    if (item.kind === 'equip') {
+      const can = canEquip(state.hero, item);
+      if (can) {
+        actionBtns += `<button class="popup-close" id="pp-equip" style="border-color:#4ade80;color:#b9f5c8">✅ Надеть</button>`;
+      } else {
+        // Не подходит — покажем почему
+        let reason = 'Нельзя надеть';
+        if (item.slot === 'weapon' && item.weaponType !== state.hero.weaponType) {
+          reason = '✗ Оружие другого класса';
+        } else {
+          const g = GRADES[item.grade];
+          if (g && state.hero.level < g.levelReq) {
+            reason = `✗ Нужен ${g.levelReq} уровень`;
+          }
+        }
+        actionBtns += `<button class="popup-close" disabled style="border-color:#7a2a2a;color:#b83232;cursor:not-allowed">${reason}</button>`;
+      }
+    }
+
+    // ── Кнопка «Изучить» для книжек ──
+    if (item.kind === 'book') {
       const def = SKILLS[item.skillId];
       const cls = def?.class || 'common';
       const isForbidden = cls !== 'common' && cls !== state.hero.classType;
       if (isForbidden) {
         const clsName = cls === 'archer' ? 'Лучника' : cls === 'mage' ? 'Мага' : '';
-        actionBtns = `<button class="popup-close" disabled style="border-color:#7a2a2a;color:#b83232;cursor:not-allowed">✗ Книга ${clsName}</button>`;
+        actionBtns += `<button class="popup-close" disabled style="border-color:#7a2a2a;color:#b83232;cursor:not-allowed">✗ Книга ${clsName}</button>`;
       } else {
-        actionBtns = `<button class="popup-close" id="pp-learn" style="border-color:#60a5fa;color:#60a5fa">📖 Изучить</button>`;
+        actionBtns += `<button class="popup-close" id="pp-learn" style="border-color:#60a5fa;color:#60a5fa">📖 Изучить</button>`;
       }
     }
-    // Кнопка «Продать» есть у любого предмета в рюкзаке
+
+    // ── Продажа доступна всегда ──
     actionBtns += `<button class="popup-close" id="pp-sell" style="border-color:#fbbf24;color:#fbbf24">Продать боту (${Math.floor(estimate * 0.5)}💰)</button>`;
   } else if (context === 'equip') {
     actionBtns = `<button class="popup-close" id="pp-unequip">Снять</button>`;
@@ -1486,14 +1721,22 @@ export function showItemPopup(item, context) {
       <span class="stat-val">${bonus.display}</span>
     </div>`;
   }
-  // Превью бонуса на +15 (если ещё не достигнут)
+    // Превью бонуса на +15
+  // Превью бонуса на +15
   if (item.kind === 'equip' && item.enhance < 15) {
-    const willBonus = getEnhanceBonus({ ...item, enhance: 15 });
-    if (willBonus) {
-      extra += `<div class="stat-row" style="opacity:.75;font-size:9px;color:#c9a961;padding:3px 0">
-        <span class="stat-name">🌟 Бонус на +15</span>
-        <span class="stat-val" style="color:#c9a961">${willBonus.icon} ${willBonus.display}</span>
+    if (item.source === 'shop') {
+      extra += `<div class="stat-row" style="opacity:.55;font-size:9px;padding:3px 0">
+        <span class="stat-name" style="color:#94a3b8">❌ Бонус +15</span>
+        <span class="stat-val" style="color:#94a3b8">недоступен (магазин)</span>
       </div>`;
+    } else {
+      const willBonus = getEnhanceBonus({ ...item, enhance: 15 });
+      if (willBonus) {
+        extra += `<div class="stat-row" style="opacity:.75;font-size:9px;color:#c9a961;padding:3px 0">
+          <span class="stat-name">🌟 Бонус на +15</span>
+          <span class="stat-val" style="color:#c9a961">${willBonus.icon} ${willBonus.display}</span>
+        </div>`;
+      }
     }
   }
 
@@ -1563,6 +1806,70 @@ export function showItemPopup(item, context) {
   });
 
 }
+
+
+
+
+function _openBuyDialog(info, buyFn) {
+  const popup = document.getElementById('item-popup');
+  const body = document.getElementById('item-popup-body');
+  if (!popup || !body) return;
+
+  let qty = 1;
+  const maxQty = Math.max(1, Math.floor(state.gold / info.price));
+
+  function render() {
+    const total = qty * info.price;
+    const canAfford = total <= state.gold;
+    body.innerHTML = `
+      <div class="item-icon-big">${iconHtml(info.icon, 48)}</div>
+      <h3 style="text-align:center;margin-bottom:4px">${info.title}</h3>
+      ${info.subtitle ? `<div style="text-align:center;font-size:11px;color:#94a3b8;margin-bottom:8px">${info.subtitle}</div>` : ''}
+
+      <div class="stat-row"><span class="stat-name">Цена за 1</span><span class="stat-val">${info.price.toLocaleString()}💰</span></div>
+      <div class="stat-row"><span class="stat-name">В кошельке</span><span class="stat-val">${state.gold.toLocaleString()}💰</span></div>
+
+      <div class="stat-row" style="align-items:center">
+        <span class="stat-name">Количество</span>
+        <span class="stat-val" style="display:flex;gap:4px;align-items:center">
+          <button class="qty-btn" id="qty-minus">−</button>
+          <input id="qty-input" type="number" min="1" max="${maxQty}" value="${qty}">
+          <button class="qty-btn" id="qty-plus">+</button>
+        </span>
+      </div>
+
+      <div class="stat-row" style="border-top:1px solid #d4af37;margin-top:6px;padding-top:6px">
+        <span class="stat-name" style="font-size:12px">ИТОГО</span>
+        <span class="stat-val" style="color:${canAfford ? '#fbbf24' : '#ef4444'};font-size:18px;font-weight:900">${total.toLocaleString()}💰</span>
+      </div>
+
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button class="popup-close" id="qty-buy" style="border-color:${canAfford ? '#4ade80' : '#64748b'};color:${canAfford ? '#4ade80' : '#64748b'};flex:1;font-size:13px;font-weight:bold" ${canAfford ? '' : 'disabled'}>✅ Купить</button>
+        <button class="popup-close" id="qty-max" style="border-color:#fbbf24;color:#fbbf24;flex:1;font-size:13px;font-weight:bold">Макс (${maxQty})</button>
+      </div>
+      <button class="popup-close" id="qty-cancel" style="border-color:#64748b;color:#64748b;margin-top:6px">Отмена</button>
+    `;
+
+    const input = document.getElementById('qty-input');
+    input.addEventListener('input', () => {
+      qty = Math.max(1, Math.min(maxQty || 1, parseInt(input.value) || 1));
+      render();
+    });
+    document.getElementById('qty-minus').onclick = () => { qty = Math.max(1, qty - 1); render(); };
+    document.getElementById('qty-plus').onclick  = () => { qty = Math.min(maxQty, qty + 1); render(); };
+    document.getElementById('qty-max').onclick   = () => { qty = maxQty; render(); };
+    document.getElementById('qty-buy').onclick   = () => {
+      if (qty * info.price > state.gold) return;
+      buyFn(qty);
+      hideItemPopup();
+    };
+    document.getElementById('qty-cancel').onclick = hideItemPopup;
+  }
+
+  render();
+  popup.classList.remove('hidden');
+}
+
 
 export function hideItemPopup() {
   document.getElementById('item-popup').classList.add('hidden');
@@ -2367,8 +2674,33 @@ export function renderCityScreen() {
       lsEl.classList.add('hidden');
     }
   }
-
+  // Кнопка "Справочник"
+  const wikiBtnWrap = document.getElementById('wiki-btn-wrap');
+  if (!wikiBtnWrap) {
+    const wrap = document.createElement('div');
+    wrap.id = 'wiki-btn-wrap';
+    wrap.style.cssText = 'display:flex;justify-content:center;margin:8px 0;width:100%;max-width:400px';
+    const btn = document.createElement('button');
+    btn.className = 'city-btn';
+    btn.textContent = '📖 Справочник';
+    btn.onclick = () => {
+      if (window.__openWiki) window.__openWiki();
+    };
+    wrap.appendChild(btn);
+    document.getElementById('city-zones').before(wrap);
+  }
   const zonesEl = document.getElementById('city-zones');
+    if (!document.getElementById('wiki-btn-wrap')) {
+    const wrap = document.createElement('div');
+    wrap.id = 'wiki-btn-wrap';
+    wrap.style.cssText = 'display:flex;justify-content:center;margin:8px 0;width:100%;max-width:400px';
+    const btn = document.createElement('button');
+    btn.className = 'city-btn';
+    btn.textContent = '📖 Справочник';
+    btn.onclick = () => openWiki();
+    wrap.appendChild(btn);
+    document.getElementById('city-zones').before(wrap);
+  }
   zonesEl.innerHTML = '';
 
   const hero = state.hero;

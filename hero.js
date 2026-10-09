@@ -1,7 +1,7 @@
 import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus, BUFF_SCROLLS, SKILLS, MAX_SKILL_LEVEL, SKILL_LEVEL_EFFECT, SKILL_LEVEL_DURATION, SKILL_LEVEL_COST, SKILL_LEVEL_CAST } from './config.js';
 import { itemStats } from './items.js';
 export { ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt };
-
+import { levelMultiplier } from './config.js';
 // ===== СОЗДАНИЕ ГЕРОЯ =====
 
 export function createHero(classType) {
@@ -406,7 +406,20 @@ export function applyLevelUp(hero) {
   recalcStats(hero);
   if (leveledUp) hero.mana = hero.maxMana;
 }
-export function addXp(hero, amount) { hero.xp += amount; applyLevelUp(hero); }
+   // ← добавить в начало файла
+
+
+// addXp принимает опциональный mobLevel.
+// Если он задан — XP умножается на levelMultiplier(hero.level, mobLevel).
+export function addXp(hero, amount, mobLevel = null) {
+  let final = amount;
+  if (mobLevel !== null && mobLevel !== undefined) {
+    final = Math.floor(amount * levelMultiplier(hero.level, mobLevel));
+  }
+  hero.xp += final;
+  applyLevelUp(hero);
+  return final;
+}
 
 // ===== УРОН =====
 
@@ -486,13 +499,20 @@ export function tryEnhance(hero, item, useBlessed = false) {
     return { ok:true, result:'success', newEnhance: item.enhance, blessedUsed };
   }
 
+  // ─── ПРОВАЛ С ОТКАТОМ ────────────────────────────────────────
+  // Вместо сгорания предмет возвращается на +6.
+  // Blessed по-прежнему спасает от отката.
   if (willBreak && !blessedUsed) {
-    const wasInSlot = hero.equipment[item.slot] === item;
-    if (wasInSlot) hero.equipment[item.slot] = null;
-    const idx = hero.backpack.indexOf(item);
-    if (idx >= 0) hero.backpack.splice(idx, 1);
+    const oldEnhance = item.enhance;
+    item.enhance = 6;
     recalcStats(hero);
-    return { ok:true, result:'destroyed', slot: item.slot, blessedUsed };
+    return {
+      ok:true,
+      result:'downgrade',
+      newEnhance: 6,
+      oldEnhance,
+      blessedUsed,
+    };
   }
 
   return { ok:true, result:'fail', blessedUsed };

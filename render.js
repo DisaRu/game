@@ -6,8 +6,13 @@ import { SKILLS } from './config.js';
 // ============================================================
 // ISO-ПРОЕКЦИЯ
 // ============================================================
-const TW = 38;   // ширина ромба (диагональ по X) — 4:3
-const TH = 28;   // высота ромба (диагональ по Y)
+// ─── Параметры изопроекции ───
+// TW : TH — соотношение сторон ромба.
+//   4:3 (38:28)  — текущий, классический L2-вид
+//   16:9 (38:21) — сплюснутый, видно больше «вперёд»
+//   2:1 (40:20)  — очень плоский, почти top-down
+const TW = 38;
+const TH = 22;    // было 28. Меньше = плоский угол = дальше обзор
 const HALF_W = TW / 2;
 const HALF_H = TH / 2;
 function project(x, y) {
@@ -340,6 +345,18 @@ function drawMob(ctx, m) {
   const size = m.size || 0.7;
   const scale = m.spawnAnim > 0 ? (1 - m.spawnAnim / 0.3) : 1;
   const shake = m.hitFlash > 0 ? (Math.random() - 0.5) * 4 : 0;
+
+  // Защита: если у моба битые координаты — лечим, не удаляем
+  if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) {
+    if (Number.isFinite(m.lairCx) && Number.isFinite(m.lairCy)) {
+      m.x = m.lairCx;
+      m.y = m.lairCy;
+    } else {
+      m.x = 25;
+      m.y = 25;
+    }
+    return;
+  }
 
   // Каст-глоу босса
   if (m.boss && m.castGlow > 0) {
@@ -1218,6 +1235,10 @@ function drawDebuffIcons(ctx, sx, sy, unit) {
 // ДЕКОР ЛАИРОВ (костёр, трава, кости, камни)
 // ============================================================
 function drawLairs(ctx, lairs) {
+  if (!Array.isArray(lairs)) {
+    console.warn('[render] drawLairs: lairs не массив:', lairs);
+    return;
+  }
   for (const lair of lairs) {
     const p = project(lair.cx, lair.cy);
     const seed = strHash(lair.id);

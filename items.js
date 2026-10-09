@@ -1,10 +1,9 @@
-import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, BUFF_SCROLLS, ARENA_PASS, SKILLS, MAX_SKILL_LEVEL } from './config.js';
-
+import { GRADES, GRADE_ORDER, GRADE_ITEMS, BASE_STATS, SLOTS, ENHANCE_STATS, PERCENT_STATS, BUFF_SCROLLS, ARENA_PASS, SKILLS, MAX_SKILL_LEVEL, SOURCE_MULT } from './config.js';
 let nextItemId = 1;
 
 // ===== СОЗДАНИЕ ПРЕДМЕТОВ =====
 
-export function createItem(grade, slot, weaponType = null, variant = null) {
+export function createItem(grade, slot, weaponType = null, variant = null, source = 'drop1') {
   let key;
   if (slot === 'weapon') {
     const wt = weaponType === 'staff' ? 'mage' : 'archer';
@@ -40,7 +39,8 @@ export function createItem(grade, slot, weaponType = null, variant = null) {
     weaponType: slot === 'weapon' ? (weaponType || 'bow') : null,
     name: def.name,
     icon: def.icon,
-    baseStats: { ...baseStats },
+  baseStats: { ...baseStats },
+    source,                    // ← добавили: 'shop' / 'drop1' / 'drop2'
   };
 }
 
@@ -160,6 +160,23 @@ export function itemStats(item) {
       res[k] = Math.floor(val);
     }
   }
+
+  // ── Множитель источника: shop ×0.6, drop1 ×1.0, drop2 ×1.3 ──
+  const srcMult = SOURCE_MULT[item.source] || 1.0;
+  if (srcMult !== 1.0) {
+    for (const k of Object.keys(res)) {
+      if (typeof res[k] !== 'number') continue;
+      res[k] = res[k] * srcMult;
+      if (k === 'range') {
+        res[k] = Math.round(res[k] * 100) / 100;
+      } else if (PERCENT_STATS.includes(k) || k === 'attackSpeed' || k === 'manaRegen') {
+        res[k] = Math.round(res[k] * 10) / 10;
+      } else {
+        res[k] = Math.floor(res[k]);
+      }
+    }
+  }
+
   return res;
 }
 

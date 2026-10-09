@@ -53,743 +53,735 @@
 
 export const CITIES = {
 
-  // ═════════════════════════════════════════════════════════════════════
-  //  TALKING ISLAND — стартовый остров (NG-грейд, tier 1)
-  // ═════════════════════════════════════════════════════════════════════
-  //  Для героя 1–10 уровня. Мобы слабые, дроп базовый.
-  //  Три зоны по сложности: easy → medium → hard.
-  //  В easy-зоне один босс — Король гремлинов.
-  // ═════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  //  TALKING ISLAND — стартовый остров (NG, tier 1)
+  // ═══════════════════════════════════════════════════════════════════
   talking_island: {
-    id: 'talking_island',
-    name: 'Talking Island',
-    sub: 'Стартовый остров',
-    grade: 'ng',                     // грейд магазина и дропа
-    tier: 1,
-    bg: '#1a2a10',                   // цвет фона
-    bgImage: 'sprites/bg/ground.png',
+    id:'talking_island', name:'Talking Island', sub:'Стартовый остров',
+    grade:'ng', tier:1,
+    bg:'#1a2a10', bgImage:'sprites/bg/ground.png',
 
     zones: [
-
-      // ═══════════════════════════════════════════════════════════════
-      //  ЗОНА 1 — Поля Гремлинов (ЛЁГКАЯ)
-      // ═══════════════════════════════════════════════════════════════
-      //  mult: 1 → мобы со стандартными статами.
-      //  Для героя 1–5 уровня. Тут 6 секторов с разными мобами.
-      // ═══════════════════════════════════════════════════════════════
-      {
-        id: 'ti_easy',
-        name: 'Поля Гремлинов',
-        diff: 'easy',
-        mult: 1,                      // базовый множитель статов мобов
-        teleportCost: 50,             // цена телепорта сюда
-
+      // ─── ZONE 1 — Поля Гремлинов (EASY) ─────────────────────────
+      { id:'ti_easy', name:'Поля Гремлинов', diff:'easy', mult:1, teleportCost:0,
         lairs: [
-          // ─── Сектор 1: лагерь гремлинов ─────────────────────────
-          //  Плотный стартовый сектор: гремлины и кельтиры.
-          //  Много мобов, быстрый респавн, низкий шанс чемпиона.
-          { id: 'gremlin_camp',
-            name: 'Лагерь гремлинов',
-            cx: 8, cy: 8,                 // левый верхний угол карты
-            radius: 5,                     // сектор 5 клеток радиусом
+          // 1. ПАССИВНЫЙ — для 1-3 уровня
+          { id:'ti1_passive', name:'Лужайка гремлинов',
+            cx:6, cy:6, radius:5,
+            mobs:['gremlin'], maxMobs:30, interval:1.5,
+            groupChance:0.15, champChance:0.03, aggroRange:0,
+            decor:'grass' },
 
-            mobs: ['gremlin', 'keltir'],   // кто спавнится (из MOBS)
-            maxMobs: 18,                   // максимум одновременно
-            interval: 1.8,                 // попытка спавна раз в 1.8 сек
-            groupChance: 0.20,             // 20% шанс группы 3-5 мобов
-            champChance: 0.05,             // 5% шанс чемпиона ⭐
-            aggroRange: 7,                 // агрится с 7 клеток
+          // 2. ПАССИВНЫЙ — для 3-6
+          { id:'ti1_passive2', name:'Логово кельтиров',
+            cx:36, cy:6, radius:5,
+            mobs:['keltir'], maxMobs:25, interval:1.8,
+            groupChance:0.20, champChance:0.04, aggroRange:0,
+            decor:'bones' },
 
-            decor: 'campfire',             // 🔥 костёр в центре
-          },
+          // 3. НИЗКОЕ АГРО — 4-7
+          { id:'ti1_low', name:'Лагерь разбойников',
+            cx:6, cy:36, radius:5,
+            mobs:['bandit_archer','gremlin'], maxMobs:22, interval:2.0,
+            groupChance:0.30, champChance:0.05, aggroRange:4,
+            decor:'campfire' },
 
-          // ─── Сектор 2: логово кельтиров ─────────────────────────
-          //  Чуть опаснее: только кельтиры, повыше шанс чемпиона.
-          { id: 'keltir_den',
-            name: 'Логово кельтиров',
-            cx: 22, cy: 10, radius: 5,
+          // 4. СРЕДНЕЕ АГРО — 6-9
+          { id:'ti1_mid', name:'Аутпост гоблинов',
+            cx:24, cy:20, radius:6,
+            mobs:['goblin_archer','goblin_mage','keltir'], maxMobs:25, interval:1.8,
+            groupChance:0.35, champChance:0.06, aggroRange:6,
+            decor:'rocks' },
 
-            mobs: ['keltir'],
-            maxMobs: 15,
-            interval: 2.2,
-            groupChance: 0.30,             // чаще группы
-            champChance: 0.06,
-            aggroRange: 8,
+          // 5. СРЕДНЕЕ АГРО — 7-10
+          { id:'ti1_mid2', name:'Лагерь магов',
+            cx:36, cy:36, radius:5,
+            mobs:['goblin_mage'], maxMobs:20, interval:2.2,
+            groupChance:0.40, champChance:0.08, aggroRange:7,
+            decor:'campfire' },
 
-            decor: 'grass',                // 🌿 трава
-          },
+          // 6. ВЫСОКОЕ АГРО — 9-12 (элита)
+          { id:'ti1_high', name:'Волчья яма',
+            cx:24, cy:38, radius:5,
+            mobs:['direwolf','werewolf'], maxMobs:18, interval:1.8,
+            groupChance:0.40, champChance:0.12, aggroRange:10,
+            decor:'bones' },
 
-          // ─── Сектор 3: волчья яма ───────────────────────────────
-          //  Опасный сектор: оборотни + кельтиры. Много чемпионов.
-          //  Также пример боссового сектора — тут сидит gremlin_king.
-          { id: 'werewolf_lair',
-            name: 'Волчья яма',
-            cx: 40, cy: 12, radius: 6,
+          // 7. БОСС — Король гремлинов
+          { id:'ti1_boss', name:'Трон Короля гремлинов',
+            cx:24, cy:6, radius:4,
+            mobs:['goblin_mage'], maxMobs:6, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99,
+            decor:'campfire',
+            bosses:[{ id:'gremlin_king', respawn:300 }] },  // 5 мин
+        ] },
 
-            mobs: ['werewolf', 'keltir'],
-            maxMobs: 20,
-            interval: 2.0,
-            groupChance: 0.40,             // 40% групп
-            champChance: 0.10,             // 10% чемпионов
-            aggroRange: 9,
-
-            decor: 'bones',                // 💀 кости
-
-            // ── БОССОВЫЙ СЕКТОР ──
-            //  Раз в 5 минут возрождается Король гремлинов.
-            //  Охрана берётся из bosses.js → BOSSES.gremlin_king.guards.
-            bosses: [
-              { id: 'gremlin_king',        // ключ из bosses.js
-                respawn: 5 },            // 5 минут = 300 сек
-            ],
-          },
-
-          // ─── Сектор 4: поляна охотников ─────────────────────────
-          //  Смешанный сектор: гремлины + оборотни, средние шансы.
-          { id: 'center_glade',
-            name: 'Поляна охотников',
-            cx: 25, cy: 25, radius: 5,
-
-            mobs: ['gremlin', 'werewolf'],
-            maxMobs: 15,
-            interval: 2.2,
-            groupChance: 0.25,
-            champChance: 0.08,
-            aggroRange: 8,
-
-            decor: 'grass',
-          },
-
-          // ─── Сектор 5: южный лагерь ────────────────────────────
-          //  Оборотни + големы (потом пригодятся для medium зоны).
-          //  Пример где большие интервалы — медленный респавн.
-          { id: 'south_camp',
-            name: 'Южный лагерь',
-            cx: 15, cy: 40, radius: 5,
-
-            mobs: ['werewolf', 'keltir'],
-            maxMobs: 15,
-            interval: 2.0,
-            groupChance: 0.35,
-            champChance: 0.10,
-            aggroRange: 9,
-
-            decor: 'rocks',                // 🪨 камни
-          },
-
-          // ─── Сектор 6: сектор с РЕЙНДЖ-мобом ────────────────────
-          //  Пример: гоблины-лучники. Стреляют с 7 клеток, отходят.
-          //  Отдельный сектор — чтобы протестировать дальний бой.
-          { id: 'goblin_outpost',
-            name: 'Аутпост гоблинов',
-            cx: 42, cy: 25, radius: 5,
-
-            mobs: ['goblin_archer', 'gremlin'],  // рейндж + мили вперемешку
-            maxMobs: 12,
-            interval: 2.5,
-            groupChance: 0.40,                   // часто группами (опасно)
-            champChance: 0.08,
-            aggroRange: 9,
-
-            decor: 'rocks',
-          },
-                    // ─── Сектор 7: лагерь лучников ──────────────────────────
-          //  Рейндж-мобы: стреляют издалека, отходят при подходе.
-          //  Опасен для мили-героя: подойти сложно.
-          { id: 'archer_camp',
-            name: 'Лагерь лучников',
-            cx: 12, cy: 25, radius: 5,
-
-            mobs: ['bandit_archer'],        // только лучники
-            maxMobs: 10,                    // немного — они опасные
-            interval: 3.0,                  // медленный респавн
-            groupChance: 0.5,               // 50% — стреляют залпами
-            champChance: 0.06,
-            aggroRange: 10,                 // агрятся издалека (дальний бой)
-
-            decor: 'rocks',                 // 🪨 камни
-          },
-
-          // ─── Сектор 8: лагерь магов ────────────────────────────
-          //  Рейндж-мобы: стреляют магией, стоят на месте.
-          //  Плотнее и опаснее — маги не отходят, держат позицию.
-          { id: 'mage_camp',
-            name: 'Лагерь магов',
-            cx: 8, cy: 35, radius: 5,
-
-            mobs: ['goblin_mage', 'gremlin'],  // маги + мелкие мили-помощники
-            maxMobs: 12,
-            interval: 2.5,
-            groupChance: 0.4,                  // группы магов
-            champChance: 0.08,
-            aggroRange: 9,
-
-            decor: 'campfire',                 // 🔥 магический костёр
-          },
-        ],
-        
-      },
-
-      // ═══════════════════════════════════════════════════════════════
-      //  ЗОНА 2 — Лес Кельтиров (СРЕДНЯЯ)
-      // ═══════════════════════════════════════════════════════════════
-      //  mult: 3 → мобы ×3 по статам. Для героя 5–10 уровня.
-      //  Пока можешь оставить как было — заполним в следующий раз.
-      // ═══════════════════════════════════════════════════════════════
-      {
-        id: 'ti_medium',
-        name: 'Лес Кельтиров',
-        diff: 'medium',
-        mult: 3,
-        teleportCost: 150,
+      // ─── ZONE 2 — Лес Кельтиров (MEDIUM) ────────────────────────
+      { id:'ti_medium', name:'Лес Кельтиров', diff:'medium', mult:3, teleportCost:150,
         lairs: [
-          // ... секторы заполним отдельно ...
-        ],
-      },
+          // Пассивный
+          { id:'ti2_passive', name:'Лесная опушка',
+            cx:8, cy:8, radius:5,
+            mobs:['direwolf'], maxMobs:22, interval:2.0,
+            groupChance:0.20, champChance:0.05, aggroRange:0,
+            decor:'grass' },
 
-      // ═══════════════════════════════════════════════════════════════
-      //  ЗОНА 3 — Пещера Оборотней (СЛОЖНАЯ)
-      // ═══════════════════════════════════════════════════════════════
-      //  mult: 8 → мобы ×8. Для героя 8–15 уровня.
-      // ═══════════════════════════════════════════════════════════════
-      {
-        id: 'ti_hard',
-        name: 'Пещера Оборотней',
-        diff: 'hard',
-        mult: 8,
-        teleportCost: 400,
+          // Средние
+          { id:'ti2_mid1', name:'Паучье гнездо',
+            cx:36, cy:10, radius:5,
+            mobs:['forest_spider','direwolf'], maxMobs:20, interval:1.8,
+            groupChance:0.35, champChance:0.08, aggroRange:6,
+            decor:'bones' },
+
+          { id:'ti2_mid2', name:'Лесная чаща',
+            cx:22, cy:22, radius:6,
+            mobs:['forest_spider','werewolf'], maxMobs:22, interval:1.8,
+            groupChance:0.35, champChance:0.10, aggroRange:7,
+            decor:'grass' },
+
+          { id:'ti2_mid3', name:'Волчья тропа',
+            cx:10, cy:38, radius:5,
+            mobs:['werewolf','direwolf'], maxMobs:20, interval:1.8,
+            groupChance:0.40, champChance:0.10, aggroRange:8,
+            decor:'bones' },
+
+          // Высокое агро
+          { id:'ti2_high', name:'Проклятая поляна',
+            cx:38, cy:38, radius:5,
+            mobs:['werewolf'], maxMobs:18, interval:1.6,
+            groupChance:0.45, champChance:0.14, aggroRange:11,
+            decor:'rocks' },
+
+          // Элита
+          { id:'ti2_elite', name:'Логово вожака',
+            cx:38, cy:22, radius:4,
+            mobs:['werewolf','stone_golem'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.20, aggroRange:99,
+            decor:'bones' },
+
+          // 2 БОССА
+          { id:'ti2_boss1', name:'Алтарь кельтиров',
+            cx:6, cy:22, radius:4,
+            mobs:['direwolf'], maxMobs:6, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99,
+            decor:'campfire',
+            bosses:[{ id:'keltir_alpha', respawn:480 }] },  // 8 мин
+
+          { id:'ti2_boss2', name:'Забытый храм',
+            cx:22, cy:6, radius:4,
+            mobs:['stone_golem'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99,
+            decor:'rocks',
+            bosses:[{ id:'stone_golem_king', respawn:720 }] },  // 12 мин
+        ] },
+
+      // ─── ZONE 3 — Пещера Оборотней (HARD) ────────────────────────
+      { id:'ti_hard', name:'Пещера Оборотней', diff:'hard', mult:8, teleportCost:400,
         lairs: [
-          // ... секторы заполним отдельно ...
-        ],
-      },
+          // Пассивный — летучие мыши
+          { id:'ti3_passive', name:'Вход в пещеру',
+            cx:8, cy:8, radius:5,
+            mobs:['cave_bat'], maxMobs:22, interval:1.5,
+            groupChance:0.20, champChance:0.06, aggroRange:0,
+            decor:'rocks' },
+
+          // Средние
+          { id:'ti3_mid1', name:'Костяной зал',
+            cx:36, cy:10, radius:6,
+            mobs:['cave_bat','stone_golem'], maxMobs:22, interval:1.5,
+            groupChance:0.40, champChance:0.10, aggroRange:7,
+            decor:'bones' },
+
+          { id:'ti3_mid2', name:'Тёмный туннель',
+            cx:22, cy:22, radius:5,
+            mobs:['werewolf','stone_golem'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.12, aggroRange:8,
+            decor:'rocks' },
+
+          // Высокое агро
+          { id:'ti3_high1', name:'Подземное озеро',
+            cx:8, cy:38, radius:6,
+            mobs:['cave_bat','stone_golem'], maxMobs:20, interval:1.5,
+            groupChance:0.45, champChance:0.14, aggroRange:11,
+            decor:'rocks' },
+
+          { id:'ti3_high2', name:'Кровавый зал',
+            cx:38, cy:38, radius:5,
+            mobs:['werewolf','stone_golem'], maxMobs:18, interval:1.5,
+            groupChance:0.45, champChance:0.16, aggroRange:12,
+            decor:'bones' },
+
+          // Элита — очень опасно
+          { id:'ti3_elite', name:'Алтарь оборотней',
+            cx:38, cy:22, radius:4,
+            mobs:['stone_golem'], maxMobs:12, interval:1.8,
+            groupChance:0.30, champChance:0.25, aggroRange:99,
+            decor:'campfire' },
+
+          // 2 БОССА
+          { id:'ti3_boss1', name:'Логово тролля',
+            cx:8, cy:22, radius:4,
+            mobs:['werewolf'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99,
+            decor:'campfire',
+            bosses:[{ id:'troll_chief', respawn:900 }] },  // 15 мин
+
+          { id:'ti3_boss2', name:'Сердце пещеры',
+            cx:22, cy:38, radius:5,
+            mobs:['stone_golem'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99,
+            decor:'bones',
+            bosses:[{ id:'cave_lord', respawn:1200 }] },  // 20 мин
+        ] },
     ],
   },
 
-  // ═════════════════════════════════════════════════════════════════════
-  //  ГЛАВА 2. GIRAN — портовый город, D-грейд, tier 2
-  // ═════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  //  GIRAN — портовый город (D, tier 2)
+  // ═══════════════════════════════════════════════════════════════════
   giran: {
     id:'giran', name:'Giran', sub:'Портовый город',
     grade:'d', tier:2,
     bg:'#0f1a2a', bgImage:'sprites/bg/grass.png',
 
     zones: [
-
-      // ─── Зона 2.1 — Порт (лёгкая, mult:6) ─────────────────────────
-      { id:'gi_easy', name:'Порт', diff:'easy', mult:6,
-        teleportCost:100,
+      { id:'gi_easy', name:'Порт', diff:'easy', mult:6, teleportCost:100,
         lairs: [
-          { id:'gi_port_1', name:'Доки',
-            cx:10, cy:10, radius:5,
-            mobs:['orc','skeleton'], maxMobs:18, interval:2.0,
-            groupChance:0.20, champChance:0.05, aggroRange:7, decor:'campfire' },
+          { id:'gi1_passive', name:'Пустой склад',
+            cx:8, cy:8, radius:5,
+            mobs:['orc'], maxMobs:25, interval:1.8,
+            groupChance:0.15, champChance:0.05, aggroRange:0, decor:'campfire' },
 
-          { id:'gi_port_2', name:'Склад',
-            cx:38, cy:12, radius:5,
-            mobs:['orc'], maxMobs:15, interval:2.2,
-            groupChance:0.30, champChance:0.06, aggroRange:8, decor:'bones' },
+          { id:'gi1_low', name:'Доки',
+            cx:36, cy:10, radius:5,
+            mobs:['orc','skeleton'], maxMobs:22, interval:2.0,
+            groupChance:0.25, champChance:0.06, aggroRange:4, decor:'rocks' },
 
-          { id:'gi_port_3', name:'Причал',
-            cx:12, cy:38, radius:5,
-            mobs:['skeleton','orc'], maxMobs:15, interval:2.0,
-            groupChance:0.25, champChance:0.08, aggroRange:8, decor:'grass' },
+          { id:'gi1_mid', name:'Причал',
+            cx:10, cy:36, radius:5,
+            mobs:['skeleton','orc_archer'], maxMobs:20, interval:1.8,
+            groupChance:0.30, champChance:0.08, aggroRange:6, decor:'grass' },
 
-          { id:'gi_boss_1', name:'Капитанский мостик',
-            cx:40, cy:42, radius:4,
-            mobs:['orc'], maxMobs:6, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'d', bossRespawn:300 },
+          { id:'gi1_high', name:'Заброшенный корабль',
+            cx:38, cy:36, radius:5,
+            mobs:['skeleton_archer','skeleton'], maxMobs:18, interval:1.8,
+            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'bones' },
+
+          { id:'gi1_elite', name:'Капитанский мостик',
+            cx:24, cy:22, radius:4,
+            mobs:['orc'], maxMobs:10, interval:2.5,
+            groupChance:0.30, champChance:0.20, aggroRange:99, decor:'campfire' },
+
+          { id:'gi1_boss', name:'Логово капитана',
+            cx:24, cy:6, radius:4,
+            mobs:['orc'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'pirate_captain', respawn:600 }] },
         ] },
 
-      // ─── Зона 2.2 — Болото (средняя, mult:18) ─────────────────────
-      { id:'gi_medium', name:'Болото', diff:'medium', mult:18,
-        teleportCost:300,
+      { id:'gi_medium', name:'Болото', diff:'medium', mult:18, teleportCost:300,
         lairs: [
-          { id:'gi_sw_1', name:'Топи',
-            cx:8, cy:15, radius:6,
-            mobs:['skeleton','spider'], maxMobs:20, interval:1.8,
-            groupChance:0.30, champChance:0.08, aggroRange:8, decor:'bones' },
+          { id:'gi2_passive', name:'Тихие топи',
+            cx:8, cy:8, radius:5,
+            mobs:['spider'], maxMobs:22, interval:2.0,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'grass' },
 
-          { id:'gi_sw_2', name:'Гнилой пень',
-            cx:25, cy:8, radius:5,
-            mobs:['spider'], maxMobs:18, interval:2.0,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'grass' },
+          { id:'gi2_mid1', name:'Гнилой пень',
+            cx:36, cy:10, radius:5,
+            mobs:['spider','skeleton'], maxMobs:20, interval:1.8,
+            groupChance:0.35, champChance:0.10, aggroRange:7, decor:'grass' },
 
-          { id:'gi_sw_3', name:'Затонувшая лодка',
-            cx:42, cy:25, radius:6,
-            mobs:['skeleton','spider'], maxMobs:22, interval:1.8,
-            groupChance:0.40, champChance:0.10, aggroRange:9, decor:'rocks' },
+          { id:'gi2_mid2', name:'Затонувшая лодка',
+            cx:22, cy:22, radius:6,
+            mobs:['skeleton_archer','spider'], maxMobs:22, interval:1.8,
+            groupChance:0.40, champChance:0.10, aggroRange:8, decor:'rocks' },
 
-          { id:'gi_sw_4', name:'Ведьмина яма',
-            cx:15, cy:40, radius:5,
-            mobs:['spider'], maxMobs:18, interval:2.0,
-            groupChance:0.30, champChance:0.08, aggroRange:8, decor:'bones' },
+          { id:'gi2_high', name:'Ведьмина яма',
+            cx:10, cy:36, radius:5,
+            mobs:['orc_shaman','spider'], maxMobs:18, interval:1.8,
+            groupChance:0.40, champChance:0.14, aggroRange:11, decor:'bones' },
 
-          { id:'gi_boss_2', name:'Логово трясины',
-            cx:40, cy:42, radius:5,
-            mobs:['spider'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'bones',
-            boss:'d', bossRespawn:360 },
+          { id:'gi2_elite', name:'Алтарь трясины',
+            cx:36, cy:36, radius:4,
+            mobs:['orc_shaman'], maxMobs:10, interval:2.5,
+            groupChance:0.30, champChance:0.22, aggroRange:99, decor:'campfire' },
+
+          { id:'gi2_boss1', name:'Логово ведьмы',
+            cx:24, cy:6, radius:4,
+            mobs:['spider'], maxMobs:6, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'swamp_witch', respawn:720 }] },
+
+          { id:'gi2_boss2', name:'Тёмный пруд',
+            cx:24, cy:38, radius:4,
+            mobs:['orc_shaman'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'orc_warlord', respawn:1080 }] },
         ] },
 
-      // ─── Зона 2.3 — Руины (сложная, mult:45) ──────────────────────
-      { id:'gi_hard', name:'Руины', diff:'hard', mult:45,
-        teleportCost:800,
+      { id:'gi_hard', name:'Руины', diff:'hard', mult:45, teleportCost:800,
         lairs: [
-          { id:'gi_ru_1', name:'Внешние стены',
-            cx:10, cy:10, radius:6,
+          { id:'gi3_passive', name:'Внешние стены',
+            cx:8, cy:8, radius:5,
+            mobs:['skeleton'], maxMobs:22, interval:1.6,
+            groupChance:0.20, champChance:0.08, aggroRange:0, decor:'rocks' },
+
+          { id:'gi3_mid1', name:'Внутренний двор',
+            cx:36, cy:10, radius:6,
             mobs:['ghost','golem'], maxMobs:22, interval:1.5,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'rocks' },
+            groupChance:0.35, champChance:0.12, aggroRange:7, decor:'bones' },
 
-          { id:'gi_ru_2', name:'Внутренний двор',
-            cx:25, cy:25, radius:6,
-            mobs:['ghost','golem'], maxMobs:25, interval:1.5,
-            groupChance:0.40, champChance:0.12, aggroRange:10, decor:'bones' },
+          { id:'gi3_mid2', name:'Подвал',
+            cx:22, cy:22, radius:5,
+            mobs:['golem'], maxMobs:20, interval:1.6,
+            groupChance:0.35, champChance:0.12, aggroRange:8, decor:'rocks' },
 
-          { id:'gi_ru_3', name:'Подвал',
-            cx:40, cy:15, radius:5,
-            mobs:['golem'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'campfire' },
+          { id:'gi3_high1', name:'Разрушенный алтарь',
+            cx:8, cy:36, radius:5,
+            mobs:['ghost','golem'], maxMobs:18, interval:1.5,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'bones' },
 
-          { id:'gi_ru_4', name:'Разрушенный алтарь',
-            cx:15, cy:40, radius:5,
-            mobs:['ghost','golem'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'bones' },
+          { id:'gi3_high2', name:'Тронный зал',
+            cx:36, cy:36, radius:5,
+            mobs:['ghost','golem'], maxMobs:20, interval:1.5,
+            groupChance:0.40, champChance:0.16, aggroRange:12, decor:'campfire' },
 
-          { id:'gi_boss_3', name:'Тронный зал',
-            cx:42, cy:42, radius:5,
-            mobs:['golem'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'c', bossRespawn:420 },
+          { id:'gi3_elite', name:'Катакомбы',
+            cx:22, cy:6, radius:4,
+            mobs:['ghost'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.25, aggroRange:99, decor:'bones' },
+
+          { id:'gi3_boss1', name:'Проклятый склеп',
+            cx:22, cy:38, radius:4,
+            mobs:['skeleton_lord'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'skeleton_lord_boss', respawn:900 }] },
+
+          { id:'gi3_boss2', name:'Сердце руин',
+            cx:8, cy:22, radius:5,
+            mobs:['golem'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'stone_colossus', respawn:1500 }] },
         ] },
     ],
   },
 
-  // ═════════════════════════════════════════════════════════════════════
-  //  ГЛАВА 3. DION — поля и фермы, C-грейд, tier 3
-  // ═════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  //  DION — поля и фермы (C, tier 3)
+  // ═══════════════════════════════════════════════════════════════════
   dion: {
     id:'dion', name:'Dion', sub:'Поля и фермы',
     grade:'c', tier:3,
     bg:'#2a1a10',
 
     zones: [
-
-      // ─── Зона 3.1 — Фермы (лёгкая, mult:30) ───────────────────────
-      { id:'di_easy', name:'Фермы', diff:'easy', mult:30,
-        teleportCost:150,
+      { id:'di_easy', name:'Фермы', diff:'easy', mult:30, teleportCost:150,
         lairs: [
-          { id:'di_fm_1', name:'Амбары',
-            cx:10, cy:12, radius:5,
-            mobs:['spider','warg'], maxMobs:18, interval:2.0,
-            groupChance:0.25, champChance:0.06, aggroRange:7, decor:'grass' },
-
-          { id:'di_fm_2', name:'Пастбище',
-            cx:38, cy:15, radius:6,
-            mobs:['warg'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.08, aggroRange:8, decor:'grass' },
-
-          { id:'di_fm_3', name:'Овин',
-            cx:15, cy:38, radius:5,
-            mobs:['spider','warg'], maxMobs:18, interval:2.0,
-            groupChance:0.30, champChance:0.08, aggroRange:8, decor:'bones' },
-
-          { id:'di_boss_1', name:'Дом старосты',
-            cx:40, cy:40, radius:4,
+          { id:'di1_passive', name:'Пастбище',
+            cx:8, cy:8, radius:5,
+            mobs:['warg'], maxMobs:25, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'grass' },
+          { id:'di1_mid', name:'Амбары',
+            cx:36, cy:10, radius:5,
+            mobs:['spider','warg'], maxMobs:22, interval:2.0,
+            groupChance:0.30, champChance:0.08, aggroRange:6, decor:'grass' },
+          { id:'di1_high', name:'Овин',
+            cx:10, cy:36, radius:5,
+            mobs:['wraith','spider'], maxMobs:20, interval:1.8,
+            groupChance:0.35, champChance:0.12, aggroRange:9, decor:'bones' },
+          { id:'di1_elite', name:'Мельница',
+            cx:36, cy:36, radius:4,
+            mobs:['wraith'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.22, aggroRange:99, decor:'rocks' },
+          { id:'di1_boss', name:'Дом старосты',
+            cx:22, cy:22, radius:4,
             mobs:['warg'], maxMobs:6, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'c', bossRespawn:360 },
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'farm_lord', respawn:600 }] },
         ] },
 
-      // ─── Зона 3.2 — Поля (средняя, mult:80) ───────────────────────
-      { id:'di_medium', name:'Поля', diff:'medium', mult:80,
-        teleportCost:450,
+      { id:'di_medium', name:'Поля', diff:'medium', mult:80, teleportCost:450,
         lairs: [
-          { id:'di_pf_1', name:'Пшеничные поля',
-            cx:10, cy:10, radius:6,
-            mobs:['warg','ghost'], maxMobs:22, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'grass' },
-
-          { id:'di_pf_2', name:'Перекрёсток',
-            cx:25, cy:20, radius:5,
-            mobs:['ghost','warg'], maxMobs:20, interval:2.0,
-            groupChance:0.30, champChance:0.08, aggroRange:9, decor:'rocks' },
-
-          { id:'di_pf_3', name:'Заброшенная мельница',
-            cx:42, cy:12, radius:5,
-            mobs:['ghost'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'bones' },
-
-          { id:'di_pf_4', name:'Развалины',
-            cx:15, cy:42, radius:6,
-            mobs:['warg','ghost'], maxMobs:22, interval:1.6,
-            groupChance:0.40, champChance:0.10, aggroRange:10, decor:'rocks' },
-
-          { id:'di_boss_2', name:'Подземный ход',
-            cx:42, cy:40, radius:5,
+          { id:'di2_passive', name:'Тихие поля',
+            cx:8, cy:8, radius:5,
+            mobs:['warg'], maxMobs:22, interval:2.0,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'grass' },
+          { id:'di2_mid', name:'Перекрёсток',
+            cx:36, cy:10, radius:5,
+            mobs:['ghost','warg'], maxMobs:22, interval:1.8,
+            groupChance:0.35, champChance:0.10, aggroRange:7, decor:'rocks' },
+          { id:'di2_high', name:'Заброшенная мельница',
+            cx:8, cy:36, radius:5,
+            mobs:['wraith','ghost'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.14, aggroRange:10, decor:'bones' },
+          { id:'di2_elite', name:'Развалины',
+            cx:36, cy:36, radius:4,
+            mobs:['wraith'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.24, aggroRange:99, decor:'rocks' },
+          { id:'di2_boss1', name:'Подземный ход',
+            cx:22, cy:6, radius:4,
             mobs:['ghost'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'c', bossRespawn:420 },
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'ghost_king', respawn:720 }] },
+          { id:'di2_boss2', name:'Древний курган',
+            cx:22, cy:38, radius:4,
+            mobs:['wraith'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'wraith_lord', respawn:1080 }] },
         ] },
 
-      // ─── Зона 3.3 — Паучье логово (сложная, mult:200) ─────────────
-      { id:'di_hard', name:'Паучье логово', diff:'hard', mult:200,
-        teleportCost:1200,
+      { id:'di_hard', name:'Паучье логово', diff:'hard', mult:200, teleportCost:1200,
         lairs: [
-          { id:'di_sp_1', name:'Вход в пещеру',
-            cx:12, cy:10, radius:6,
-            mobs:['ghost','golem'], maxMobs:22, interval:1.5,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'di_sp_2', name:'Коконы',
-            cx:25, cy:25, radius:6,
-            mobs:['golem','ghost'], maxMobs:25, interval:1.5,
-            groupChance:0.40, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'di_sp_3', name:'Глубина',
-            cx:40, cy:15, radius:5,
-            mobs:['golem'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'campfire' },
-
-          { id:'di_sp_4', name:'Тёмный туннель',
-            cx:15, cy:42, radius:5,
-            mobs:['ghost','golem'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.10, aggroRange:10, decor:'rocks' },
-
-          { id:'di_boss_3', name:'Логово матки',
-            cx:42, cy:42, radius:5,
-            mobs:['golem'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'bones',
-            boss:'b', bossRespawn:480 },
+          { id:'di3_passive', name:'Вход',
+            cx:8, cy:8, radius:5,
+            mobs:['spider'], maxMobs:22, interval:1.6,
+            groupChance:0.25, champChance:0.08, aggroRange:0, decor:'rocks' },
+          { id:'di3_mid', name:'Коконы',
+            cx:36, cy:10, radius:6,
+            mobs:['spider','treant'], maxMobs:22, interval:1.5,
+            groupChance:0.40, champChance:0.12, aggroRange:7, decor:'bones' },
+          { id:'di3_high1', name:'Глубина',
+            cx:22, cy:22, radius:5,
+            mobs:['treant','spider'], maxMobs:20, interval:1.5,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'rocks' },
+          { id:'di3_high2', name:'Тёмный туннель',
+            cx:8, cy:36, radius:5,
+            mobs:['treant','ghost'], maxMobs:18, interval:1.6,
+            groupChance:0.45, champChance:0.16, aggroRange:12, decor:'bones' },
+          { id:'di3_elite', name:'Кристальный зал',
+            cx:36, cy:36, radius:4,
+            mobs:['treant'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.26, aggroRange:99, decor:'campfire' },
+          { id:'di3_boss1', name:'Логово матки',
+            cx:22, cy:6, radius:4,
+            mobs:['spider'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'spider_queen', respawn:1200 }] },
+          { id:'di3_boss2', name:'Корни мирового древа',
+            cx:22, cy:38, radius:5,
+            mobs:['treant'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'elder_treant', respawn:1500 }] },
         ] },
     ],
   },
-    // ═════════════════════════════════════════════════════════════════════
-  //  ГЛАВА 4. OREN — лес и руины, B-грейд, tier 4
-  // ═════════════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  OREN — лес и руины (B, tier 4)
+  // ═══════════════════════════════════════════════════════════════════
   oren: {
     id:'oren', name:'Oren', sub:'Лес и руины',
     grade:'b', tier:4,
     bg:'#1a0f2a',
 
     zones: [
-
-      // ─── Зона 4.1 — Тёмный лес (лёгкая, mult:150) ─────────────────
-      { id:'or_easy', name:'Тёмный лес', diff:'easy', mult:150,
-        teleportCost:200,
+      { id:'or_easy', name:'Тёмный лес', diff:'easy', mult:150, teleportCost:200,
         lairs: [
-          { id:'or_ts_1', name:'Поляна',
-            cx:12, cy:12, radius:5,
-            mobs:['golem','ghost'], maxMobs:18, interval:2.0,
-            groupChance:0.25, champChance:0.06, aggroRange:8, decor:'grass' },
-
-          { id:'or_ts_2', name:'Гуща',
-            cx:38, cy:15, radius:6,
-            mobs:['ghost','golem'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.08, aggroRange:9, decor:'grass' },
-
-          { id:'or_ts_3', name:'Чаща',
-            cx:15, cy:38, radius:5,
-            mobs:['golem'], maxMobs:18, interval:2.0,
-            groupChance:0.30, champChance:0.08, aggroRange:8, decor:'rocks' },
-
-          { id:'or_boss_1', name:'Логово теней',
-            cx:40, cy:40, radius:4,
-            mobs:['golem'], maxMobs:6, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'b', bossRespawn:420 },
+          { id:'or1_passive', name:'Поляна',
+            cx:8, cy:8, radius:5,
+            mobs:['ghost'], maxMobs:22, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'grass' },
+          { id:'or1_mid', name:'Гуща',
+            cx:36, cy:10, radius:6,
+            mobs:['ghost','golem'], maxMobs:22, interval:1.8,
+            groupChance:0.35, champChance:0.10, aggroRange:7, decor:'grass' },
+          { id:'or1_high', name:'Чаща',
+            cx:8, cy:36, radius:5,
+            mobs:['nightshade','golem'], maxMobs:18, interval:1.6,
+            groupChance:0.40, champChance:0.14, aggroRange:10, decor:'rocks' },
+          { id:'or1_elite', name:'Логово тени',
+            cx:36, cy:36, radius:4,
+            mobs:['nightshade'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.24, aggroRange:99, decor:'bones' },
+          { id:'or1_boss', name:'Тёмный трон',
+            cx:22, cy:22, radius:4,
+            mobs:['ghost'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'forest_shade', respawn:720 }] },
         ] },
 
-      // ─── Зона 4.2 — Древние руины (средняя, mult:400) ─────────────
-      { id:'or_medium', name:'Древние руины', diff:'medium', mult:400,
-        teleportCost:600,
+      { id:'or_medium', name:'Древние руины', diff:'medium', mult:400, teleportCost:600,
         lairs: [
-          { id:'or_ru_1', name:'Колоннада',
-            cx:10, cy:10, radius:6,
-            mobs:['ghost','demon'], maxMobs:22, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'rocks' },
-
-          { id:'or_ru_2', name:'Внутренний храм',
-            cx:25, cy:22, radius:6,
+          { id:'or2_passive', name:'Колоннада',
+            cx:8, cy:8, radius:5,
+            mobs:['ghost'], maxMobs:22, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'rocks' },
+          { id:'or2_mid', name:'Внутренний храм',
+            cx:36, cy:10, radius:6,
             mobs:['demon','ghost'], maxMobs:22, interval:1.8,
-            groupChance:0.40, champChance:0.10, aggroRange:9, decor:'bones' },
-
-          { id:'or_ru_3', name:'Подземелье',
-            cx:42, cy:12, radius:5,
-            mobs:['demon'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'campfire' },
-
-          { id:'or_ru_4', name:'Разбитый алтарь',
-            cx:15, cy:42, radius:6,
-            mobs:['ghost','demon'], maxMobs:22, interval:1.6,
-            groupChance:0.40, champChance:0.10, aggroRange:10, decor:'bones' },
-
-          { id:'or_boss_2', name:'Тёмный трон',
-            cx:42, cy:40, radius:5,
+            groupChance:0.40, champChance:0.10, aggroRange:7, decor:'bones' },
+          { id:'or2_high', name:'Подземелье',
+            cx:8, cy:36, radius:5,
+            mobs:['demon','nightshade'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'campfire' },
+          { id:'or2_elite', name:'Разбитый алтарь',
+            cx:36, cy:36, radius:4,
+            mobs:['demon'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.26, aggroRange:99, decor:'bones' },
+          { id:'or2_boss1', name:'Забытый склеп',
+            cx:22, cy:6, radius:4,
             mobs:['demon'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'a', bossRespawn:480 },
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'fallen_priest', respawn:900 }] },
+          { id:'or2_boss2', name:'Проклятый трон',
+            cx:22, cy:38, radius:5,
+            mobs:['demon'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'demon_general', respawn:1200 }] },
         ] },
 
-      // ─── Зона 4.3 — Шахта големов (сложная, mult:1000) ────────────
-      { id:'or_hard', name:'Шахта големов', diff:'hard', mult:1000,
-        teleportCost:1500,
+      { id:'or_hard', name:'Шахта големов', diff:'hard', mult:1000, teleportCost:1500,
         lairs: [
-          { id:'or_sh_1', name:'Штольня',
-            cx:12, cy:12, radius:6,
-            mobs:['golem','demon'], maxMobs:22, interval:1.5,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'rocks' },
-
-          { id:'or_sh_2', name:'Кристальный зал',
-            cx:25, cy:22, radius:6,
-            mobs:['demon','golem'], maxMobs:25, interval:1.5,
-            groupChance:0.40, champChance:0.12, aggroRange:10, decor:'campfire' },
-
-          { id:'or_sh_3', name:'Забой',
-            cx:42, cy:15, radius:5,
-            mobs:['golem'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'rocks' },
-
-          { id:'or_sh_4', name:'Дно шахты',
-            cx:15, cy:42, radius:5,
-            mobs:['demon','golem'], maxMobs:22, interval:1.6,
-            groupChance:0.40, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'or_boss_3', name:'Сердце шахты',
-            cx:42, cy:42, radius:5,
+          { id:'or3_passive', name:'Штольня',
+            cx:8, cy:8, radius:5,
+            mobs:['golem'], maxMobs:22, interval:1.6,
+            groupChance:0.25, champChance:0.08, aggroRange:0, decor:'rocks' },
+          { id:'or3_mid', name:'Кристальный зал',
+            cx:36, cy:10, radius:6,
+            mobs:['golem','medusa'], maxMobs:22, interval:1.5,
+            groupChance:0.40, champChance:0.12, aggroRange:7, decor:'campfire' },
+          { id:'or3_high1', name:'Забой',
+            cx:22, cy:22, radius:5,
+            mobs:['medusa','golem'], maxMobs:20, interval:1.5,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'rocks' },
+          { id:'or3_high2', name:'Дно шахты',
+            cx:8, cy:36, radius:5,
+            mobs:['medusa','demon'], maxMobs:20, interval:1.6,
+            groupChance:0.45, champChance:0.16, aggroRange:12, decor:'bones' },
+          { id:'or3_elite', name:'Сокровищница',
+            cx:36, cy:36, radius:4,
+            mobs:['medusa'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.28, aggroRange:99, decor:'campfire' },
+          { id:'or3_boss1', name:'Сердце шахты',
+            cx:22, cy:6, radius:4,
             mobs:['golem'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'a', bossRespawn:540 },
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'rocks',
+            bosses:[{ id:'iron_colossus', respawn:1200 }] },
+          { id:'or3_boss2', name:'Логово медузы',
+            cx:22, cy:38, radius:5,
+            mobs:['medusa'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'medusa_queen', respawn:1500 }] },
         ] },
     ],
   },
 
-  // ═════════════════════════════════════════════════════════════════════
-  //  ГЛАВА 5. ADEN — столица, A-грейд, tier 5
-  // ═════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  //  ADEN — столица (A, tier 5)
+  // ═══════════════════════════════════════════════════════════════════
   aden: {
     id:'aden', name:'Aden', sub:'Столица',
     grade:'a', tier:5,
     bg:'#2a0a0a',
 
     zones: [
-
-      // ─── Зона 5.1 — Предместья (лёгкая, mult:800) ─────────────────
-      { id:'ad_easy', name:'Предместья', diff:'easy', mult:800,
-        teleportCost:300,
+      { id:'ad_easy', name:'Предместья', diff:'easy', mult:800, teleportCost:300,
         lairs: [
-          { id:'ad_pm_1', name:'Дозорная башня',
-            cx:10, cy:12, radius:5,
-            mobs:['demon','dragon'], maxMobs:18, interval:2.0,
-            groupChance:0.25, champChance:0.06, aggroRange:8, decor:'rocks' },
-
-          { id:'ad_pm_2', name:'Караванный путь',
-            cx:38, cy:12, radius:6,
-            mobs:['demon','dragon'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.08, aggroRange:9, decor:'grass' },
-
-          { id:'ad_pm_3', name:'Разрушенный мост',
-            cx:15, cy:38, radius:5,
-            mobs:['demon'], maxMobs:18, interval:2.0,
-            groupChance:0.30, champChance:0.08, aggroRange:8, decor:'bones' },
-
-          { id:'ad_boss_1', name:'Осадный лагерь',
-            cx:40, cy:40, radius:4,
-            mobs:['demon'], maxMobs:6, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'a', bossRespawn:480 },
+          { id:'ad1_passive', name:'Дозорная башня',
+            cx:8, cy:8, radius:5,
+            mobs:['demon'], maxMobs:22, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'rocks' },
+          { id:'ad1_mid', name:'Караванный путь',
+            cx:36, cy:10, radius:6,
+            mobs:['demon','drake_rider'], maxMobs:22, interval:1.8,
+            groupChance:0.35, champChance:0.10, aggroRange:7, decor:'grass' },
+          { id:'ad1_high', name:'Разрушенный мост',
+            cx:8, cy:36, radius:5,
+            mobs:['drake_rider','wyvern'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.14, aggroRange:10, decor:'bones' },
+          { id:'ad1_elite', name:'Осадный лагерь',
+            cx:36, cy:36, radius:4,
+            mobs:['wyvern'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.24, aggroRange:99, decor:'campfire' },
+          { id:'ad1_boss', name:'Командный пункт',
+            cx:22, cy:22, radius:4,
+            mobs:['demon'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'siege_captain', respawn:900 }] },
         ] },
 
-      // ─── Зона 5.2 — Столичные поля (средняя, mult:2000) ───────────
-      { id:'ad_medium', name:'Столичные поля', diff:'medium', mult:2000,
-        teleportCost:800,
+      { id:'ad_medium', name:'Столичные поля', diff:'medium', mult:2000, teleportCost:800,
         lairs: [
-          { id:'ad_sp_1', name:'Императорский тракт',
-            cx:10, cy:10, radius:6,
-            mobs:['dragon','demon'], maxMobs:22, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'rocks' },
-
-          { id:'ad_sp_2', name:'Пшеничные поля',
-            cx:25, cy:22, radius:6,
-            mobs:['demon','dragon'], maxMobs:22, interval:1.8,
-            groupChance:0.40, champChance:0.10, aggroRange:9, decor:'grass' },
-
-          { id:'ad_sp_3', name:'Крепость',
-            cx:42, cy:12, radius:5,
-            mobs:['dragon'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'rocks' },
-
-          { id:'ad_sp_4', name:'Забытый лагерь',
-            cx:15, cy:42, radius:6,
-            mobs:['demon','dragon'], maxMobs:22, interval:1.6,
-            groupChance:0.40, champChance:0.10, aggroRange:10, decor:'bones' },
-
-          { id:'ad_boss_2', name:'Главный лагерь',
-            cx:42, cy:40, radius:5,
-            mobs:['dragon'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'s', bossRespawn:600 },
+          { id:'ad2_passive', name:'Императорский тракт',
+            cx:8, cy:8, radius:5,
+            mobs:['drake_rider'], maxMobs:22, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'rocks' },
+          { id:'ad2_mid', name:'Пшеничные поля',
+            cx:36, cy:10, radius:6,
+            mobs:['wyvern','drake_rider'], maxMobs:22, interval:1.8,
+            groupChance:0.40, champChance:0.10, aggroRange:7, decor:'grass' },
+          { id:'ad2_high', name:'Крепость',
+            cx:8, cy:36, radius:5,
+            mobs:['wyvern','fire_djinn'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'rocks' },
+          { id:'ad2_elite', name:'Забытый лагерь',
+            cx:36, cy:36, radius:4,
+            mobs:['fire_djinn'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.26, aggroRange:99, decor:'bones' },
+          { id:'ad2_boss1', name:'Главный лагерь',
+            cx:22, cy:6, radius:4,
+            mobs:['wyvern'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'wyvern_king', respawn:1080 }] },
+          { id:'ad2_boss2', name:'Дворец джинна',
+            cx:22, cy:38, radius:5,
+            mobs:['fire_djinn'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'djinn_sultan', respawn:1500 }] },
         ] },
 
-      // ─── Зона 5.3 — Драконье логово (сложная, mult:5000) ──────────
-      { id:'ad_hard', name:'Драконье логово', diff:'hard', mult:5000,
-        teleportCost:2000,
+      { id:'ad_hard', name:'Драконье логово', diff:'hard', mult:5000, teleportCost:2000,
         lairs: [
-          { id:'ad_dl_1', name:'Пепелище',
-            cx:12, cy:12, radius:6,
-            mobs:['dragon'], maxMobs:22, interval:1.5,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'rocks' },
-
-          { id:'ad_dl_2', name:'Кости драконов',
-            cx:25, cy:25, radius:6,
-            mobs:['dragon'], maxMobs:25, interval:1.5,
-            groupChance:0.40, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'ad_dl_3', name:'Гнездо',
-            cx:40, cy:15, radius:5,
-            mobs:['dragon'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'campfire' },
-
-          { id:'ad_dl_4', name:'Сокровищница',
-            cx:15, cy:42, radius:5,
-            mobs:['dragon'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'campfire' },
-
-          { id:'ad_boss_3', name:'Логово тирана',
-            cx:42, cy:42, radius:5,
+          { id:'ad3_passive', name:'Пепелище',
+            cx:8, cy:8, radius:5,
+            mobs:['dragon'], maxMobs:22, interval:1.6,
+            groupChance:0.25, champChance:0.08, aggroRange:0, decor:'rocks' },
+          { id:'ad3_mid', name:'Кости драконов',
+            cx:36, cy:10, radius:6,
+            mobs:['dragon','dark_angel'], maxMobs:22, interval:1.5,
+            groupChance:0.40, champChance:0.12, aggroRange:7, decor:'bones' },
+          { id:'ad3_high1', name:'Гнездо',
+            cx:22, cy:22, radius:5,
+            mobs:['dark_angel','dragon'], maxMobs:20, interval:1.5,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'campfire' },
+          { id:'ad3_high2', name:'Сокровищница',
+            cx:8, cy:36, radius:5,
+            mobs:['dark_angel','titan'], maxMobs:20, interval:1.6,
+            groupChance:0.45, champChance:0.16, aggroRange:12, decor:'campfire' },
+          { id:'ad3_elite', name:'Титанический зал',
+            cx:36, cy:36, radius:4,
+            mobs:['titan'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.28, aggroRange:99, decor:'rocks' },
+          { id:'ad3_boss1', name:'Логово тирана',
+            cx:22, cy:6, radius:4,
             mobs:['dragon'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'bones',
-            boss:'s', bossRespawn:720 },
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'dragon_tyrant', respawn:1500 }] },
+          { id:'ad3_boss2', name:'Тёмный трон',
+            cx:22, cy:38, radius:5,
+            mobs:['dark_angel'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'dark_archangel', respawn:1800 }] },
         ] },
     ],
   },
 
-  // ═════════════════════════════════════════════════════════════════════
-  //  ГЛАВА 6. GODDARD — ледяные земли, S-грейд, tier 6
-  // ═════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  //  GODDARD — ледяные земли (S, tier 6)
+  // ═══════════════════════════════════════════════════════════════════
   goddard: {
     id:'goddard', name:'Goddard', sub:'Ледяные земли',
     grade:'s', tier:6,
     bg:'#0a1a2a',
 
     zones: [
-
-      // ─── Зона 6.1 — Ледяные поля (лёгкая, mult:4000) ──────────────
-      { id:'gd_easy', name:'Ледяные поля', diff:'easy', mult:4000,
-        teleportCost:500,
+      { id:'gd_easy', name:'Ледяные поля', diff:'easy', mult:4000, teleportCost:500,
         lairs: [
-          { id:'gd_lp_1', name:'Замёрзшее озеро',
-            cx:12, cy:12, radius:5,
-            mobs:['ice_golem','archdemon'], maxMobs:18, interval:2.0,
-            groupChance:0.25, champChance:0.06, aggroRange:8, decor:'rocks' },
-
-          { id:'gd_lp_2', name:'Ледяной лес',
-            cx:38, cy:15, radius:6,
-            mobs:['ice_golem'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.08, aggroRange:9, decor:'rocks' },
-
-          { id:'gd_lp_3', name:'Снежная буря',
-            cx:15, cy:38, radius:5,
-            mobs:['ice_golem','archdemon'], maxMobs:18, interval:2.0,
-            groupChance:0.30, champChance:0.08, aggroRange:8, decor:'bones' },
-
-          { id:'gd_boss_1', name:'Ледяной трон',
-            cx:40, cy:40, radius:4,
-            mobs:['ice_golem'], maxMobs:6, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'s', bossRespawn:600 },
+          { id:'gd1_passive', name:'Замёрзшее озеро',
+            cx:8, cy:8, radius:5,
+            mobs:['ice_golem'], maxMobs:22, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'rocks' },
+          { id:'gd1_mid', name:'Ледяной лес',
+            cx:36, cy:10, radius:6,
+            mobs:['ice_golem','frost_wolf'], maxMobs:22, interval:1.8,
+            groupChance:0.35, champChance:0.10, aggroRange:7, decor:'rocks' },
+          { id:'gd1_high', name:'Снежная буря',
+            cx:8, cy:36, radius:5,
+            mobs:['frost_wolf','archdemon'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.14, aggroRange:10, decor:'bones' },
+          { id:'gd1_elite', name:'Ледяной трон',
+            cx:36, cy:36, radius:4,
+            mobs:['archdemon'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.24, aggroRange:99, decor:'campfire' },
+          { id:'gd1_boss', name:'Замок зимы',
+            cx:22, cy:22, radius:4,
+            mobs:['ice_golem'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'frost_titan', respawn:1200 }] },
         ] },
 
-      // ─── Зона 6.2 — Замёрзшие руины (средняя, mult:10000) ─────────
-      { id:'gd_medium', name:'Замёрзшие руины', diff:'medium', mult:10000,
-        teleportCost:1500,
+      { id:'gd_medium', name:'Замёрзшие руины', diff:'medium', mult:10000, teleportCost:1500,
         lairs: [
-          { id:'gd_zr_1', name:'Ледяной храм',
-            cx:10, cy:10, radius:6,
-            mobs:['archdemon','ice_golem'], maxMobs:22, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'rocks' },
-
-          { id:'gd_zr_2', name:'Проклятый зал',
-            cx:25, cy:22, radius:6,
-            mobs:['archdemon'], maxMobs:22, interval:1.8,
-            groupChance:0.40, champChance:0.10, aggroRange:9, decor:'bones' },
-
-          { id:'gd_zr_3', name:'Подлёдный туннель',
-            cx:42, cy:12, radius:5,
-            mobs:['ice_golem','archdemon'], maxMobs:20, interval:1.8,
-            groupChance:0.35, champChance:0.10, aggroRange:9, decor:'rocks' },
-
-          { id:'gd_zr_4', name:'Кристальный сад',
-            cx:15, cy:42, radius:6,
-            mobs:['archdemon','ice_golem'], maxMobs:22, interval:1.6,
-            groupChance:0.40, champChance:0.10, aggroRange:10, decor:'rocks' },
-
-          { id:'gd_boss_2', name:'Проклятый трон',
-            cx:42, cy:40, radius:5,
+          { id:'gd2_passive', name:'Ледяной храм',
+            cx:8, cy:8, radius:5,
+            mobs:['ice_golem'], maxMobs:22, interval:1.8,
+            groupChance:0.20, champChance:0.06, aggroRange:0, decor:'rocks' },
+          { id:'gd2_mid', name:'Проклятый зал',
+            cx:36, cy:10, radius:6,
+            mobs:['archdemon','fallen_angel'], maxMobs:22, interval:1.8,
+            groupChance:0.40, champChance:0.10, aggroRange:7, decor:'bones' },
+          { id:'gd2_high', name:'Подлёдный туннель',
+            cx:8, cy:36, radius:5,
+            mobs:['fallen_angel','archdemon'], maxMobs:20, interval:1.6,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'rocks' },
+          { id:'gd2_elite', name:'Кристальный сад',
+            cx:36, cy:36, radius:4,
+            mobs:['fallen_angel'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.26, aggroRange:99, decor:'rocks' },
+          { id:'gd2_boss1', name:'Проклятый трон',
+            cx:22, cy:6, radius:4,
             mobs:['archdemon'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'s', bossRespawn:720 },
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'fallen_archangel', respawn:1500 }] },
+          { id:'gd2_boss2', name:'Сердце зимы',
+            cx:22, cy:38, radius:5,
+            mobs:['fallen_angel'], maxMobs:10, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'winter_queen', respawn:1800 }] },
         ] },
 
-      // ─── Зона 6.3 — Логово архидемонов (сложная, mult:25000) ──────
-      { id:'gd_hard', name:'Логово архидемонов', diff:'hard', mult:25000,
-        teleportCost:4000,
+      { id:'gd_hard', name:'Логово архидемонов', diff:'hard', mult:25000, teleportCost:4000,
         lairs: [
-          { id:'gd_la_1', name:'Врата ада',
-            cx:12, cy:12, radius:6,
-            mobs:['archdemon','dragon'], maxMobs:22, interval:1.5,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'campfire' },
-
-          { id:'gd_la_2', name:'Тронный зал',
-            cx:25, cy:25, radius:6,
-            mobs:['archdemon'], maxMobs:25, interval:1.5,
-            groupChance:0.40, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'gd_la_3', name:'Пыточная',
-            cx:40, cy:15, radius:5,
-            mobs:['archdemon','dragon'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'gd_la_4', name:'Костяной зал',
-            cx:15, cy:42, radius:5,
-            mobs:['archdemon'], maxMobs:20, interval:1.6,
-            groupChance:0.35, champChance:0.12, aggroRange:10, decor:'bones' },
-
-          { id:'gd_boss_3', name:'Сердце бездны',
-            cx:42, cy:42, radius:5,
-            mobs:['archdemon'], maxMobs:8, interval:5.0,
-            groupChance:1.0, champChance:0, aggroRange:12, decor:'campfire',
-            boss:'s', bossRespawn:900 },
+          { id:'gd3_passive', name:'Врата ада',
+            cx:8, cy:8, radius:5,
+            mobs:['archdemon'], maxMobs:22, interval:1.6,
+            groupChance:0.25, champChance:0.08, aggroRange:0, decor:'campfire' },
+          { id:'gd3_mid', name:'Тронный зал',
+            cx:36, cy:10, radius:6,
+            mobs:['archdemon','void_walker'], maxMobs:22, interval:1.5,
+            groupChance:0.40, champChance:0.12, aggroRange:7, decor:'bones' },
+          { id:'gd3_high1', name:'Пыточная',
+            cx:22, cy:22, radius:5,
+            mobs:['void_walker','archdemon'], maxMobs:20, interval:1.5,
+            groupChance:0.40, champChance:0.15, aggroRange:10, decor:'bones' },
+          { id:'gd3_high2', name:'Костяной зал',
+            cx:8, cy:36, radius:5,
+            mobs:['void_walker','frost_dragon'], maxMobs:20, interval:1.6,
+            groupChance:0.45, champChance:0.16, aggroRange:12, decor:'bones' },
+          { id:'gd3_elite', name:'Зал бездны',
+            cx:36, cy:36, radius:4,
+            mobs:['void_walker'], maxMobs:12, interval:2.0,
+            groupChance:0.30, champChance:0.28, aggroRange:99, decor:'campfire' },
+          { id:'gd3_boss1', name:'Сердце бездны',
+            cx:22, cy:6, radius:4,
+            mobs:['frost_dragon'], maxMobs:8, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'bones',
+            bosses:[{ id:'frost_dragon_boss', respawn:1800 }] },
+          { id:'gd3_boss2', name:'Тёмная бездна',
+            cx:22, cy:38, radius:5,
+            mobs:['void_walker'], maxMobs:12, interval:5.0,
+            groupChance:1.0, champChance:0, aggroRange:99, decor:'campfire',
+            bosses:[{ id:'void_lord', respawn:2400 }] },
         ] },
     ],
   },
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-//  ХЕЛПЕРЫ И СЛУЖЕБНОЕ
-// ═══════════════════════════════════════════════════════════════════════
-
-// Порядок городов в UI (список телепорта, мир, сортировка).
+// ─── Вспомогательные (не трогаем) ────────────────────────────────
 export const CITY_ORDER = ['talking_island','giran','dion','oren','aden','goddard'];
 
-// Стоимость телепорта между городами разных tier.
-// Разница tier 0 (тот же город) = 0.
-// Формула: [0, 200, 500, 1200, 3000, 7500][|tier1 - tier2|]
-// Если больше — 10000.
 export function cityTeleportCost(fromTier, toTier) {
   const diff = Math.abs(fromTier - toTier);
   if (diff === 0) return 0;
   return [0, 200, 500, 1200, 3000, 7500][diff] || 10000;
 }
 
-// Найти зону по id города и зоны.
 export function findZone(cityId, zoneId) {
   const city = CITIES[cityId];
   if (!city) return null;
   return city.zones.find(z => z.id === zoneId);
 }
 
-// Отображаемая метка сложности зоны.
 export function zoneDifficultyLabel(diff) {
   if (diff === 'easy')   return '🟢 Лёгкая';
   if (diff === 'medium') return '🟡 Средняя';

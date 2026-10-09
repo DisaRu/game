@@ -14,7 +14,6 @@
 //
 // ═══════════════════════════════════════════════════════════════════════
 
-
 // ───────────────────────────────────────────────────────────────────────
 //  1. КАРТА И ОТРИСОВКА
 // ───────────────────────────────────────────────────────────────────────
@@ -79,8 +78,8 @@ export const CONFIG = {
 //    80 ур.: 50 × 1.35^79 ≈ 3 000 000
 // ───────────────────────────────────────────────────────────────────────
   level: {
-    baseXp: 50,               // XP для перехода на 2-й уровень.
-    xpGrowth: 1.35,           // Множитель роста XP.
+    baseXp: 30,               // XP для перехода на 2-й уровень.
+   xpGrowth: 1.7,           // Множитель роста XP.
                               // 1.20 = лёгкая прокачка, до 80 быстро.
                               // 1.35 = стандарт.
                               // 1.50 = хардкор, до 80 идут месяцы.
@@ -150,11 +149,11 @@ export const PERCENT_STATS = [
 // ───────────────────────────────────────────────────────────────────────
 export const GRADES = {
   ng: { name:'No-Grade', short:'NG', color:'#94a3b8', mult:1.0,   tier:1, levelReq: 1  },
-  d:  { name:'D-Grade',  short:'D',  color:'#22c55e', mult:2.5,   tier:2, levelReq: 5  },
-  c:  { name:'C-Grade',  short:'C',  color:'#3b82f6', mult:6.0,   tier:3, levelReq: 15 },
-  b:  { name:'B-Grade',  short:'B',  color:'#a855f7', mult:15.0,  tier:4, levelReq: 30 },
-  a:  { name:'A-Grade',  short:'A',  color:'#f59e0b', mult:40.0,  tier:5, levelReq: 45 },
-  s:  { name:'S-Grade',  short:'S',  color:'#ef4444', mult:100.0, tier:6, levelReq: 60 },
+  d:  { name:'D-Grade',  short:'D',  color:'#22c55e', mult:2.5,   tier:2, levelReq: 20  },
+  c:  { name:'C-Grade',  short:'C',  color:'#3b82f6', mult:6.0,   tier:3, levelReq: 40 },
+  b:  { name:'B-Grade',  short:'B',  color:'#a855f7', mult:15.0,  tier:4, levelReq: 52 },
+  a:  { name:'A-Grade',  short:'A',  color:'#f59e0b', mult:40.0,  tier:5, levelReq: 62 },
+  s:  { name:'S-Grade',  short:'S',  color:'#ef4444', mult:100.0, tier:6, levelReq: 75 },
 };
 
 export const GRADE_ORDER = ['ng','d','c','b','a','s'];
@@ -167,6 +166,9 @@ export const GRADE_ORDER = ['ng','d','c','b','a','s'];
 //  Первая стата в массиве — «главная», растёт от заточки быстрее.
 // ───────────────────────────────────────────────────────────────────────
 export const ENHANCE_STATS = {
+    shop:  0.6,   // магазинные — слабее на 40%
+  drop1: 1.0,   // обычный дроп с мобов
+  drop2: 1.3,   // топовый дроп с боссов
   weapon: {
     speed: ['attackSpeed','attack'],
     range: ['range','critDamage'],
@@ -212,6 +214,31 @@ export const ENHANCE_STATS = {
   },
 };
 
+// ═══════════════════════════════════════════════════════════════════════
+//  ИСТОЧНИК ВАРИАНТА — откуда берётся каждый вариант экипировки
+// ═══════════════════════════════════════════════════════════════════════
+//
+//  'shop'   — продаётся в магазине города, статы ×0.6, без бонуса +15
+//  'drop1'  — падает с обычных мобов (редко), статы ×1.0, бонус +15
+//  'drop2'  — падает с боссов (очень редко), статы ×1.3, бонус +15 усиленный
+//
+//  Порядок вариантов в ENHANCE_STATS — определяет роль:
+//    первый  → shop
+//    второй  → drop1
+//    третий  → drop2
+// ═══════════════════════════════════════════════════════════════════════
+export const VARIANT_ROLE = {
+  shop:  0,     // индекс в списке вариантов слота
+  drop1: 1,
+  drop2: 2,
+};
+
+// Множители статов по источнику
+export const SOURCE_MULT = {
+  shop:  0.6,   // магазинные — на 40% слабее
+  drop1: 1.0,   // обычные дроп-предметы
+  drop2: 1.3,   // топовые — на 30% сильнее
+};
 // ───────────────────────────────────────────────────────────────────────
 //  10. БАЗОВЫЕ СТАТЫ ПРЕДМЕТОВ
 // ───────────────────────────────────────────────────────────────────────
@@ -483,16 +510,24 @@ export const BREAK_START_LEVEL = 6; // С какого уровня возмож
                                     // Меньше → опасно точить раньше.
                                     // Больше → безопасная заточка до +N.
 
-// Шансы успеха. Индекс = текущий уровень (ENHANCE_CHANCE[0] = +0→+1).
-export const ENHANCE_CHANCE = [
-  1.00, 1.00, 1.00,        // +0→+3 — гарантировано
-  0.95, 0.95, 0.95,        // +3→+6 — почти всегда
-  0.90, 0.90, 0.90,        // +6→+9 — ещё легко
-  0.80, 0.75, 0.70,        // +9→+12 — уже риск
-  0.60, 0.55, 0.50,        // +12→+15 — сложно
-  0.45, 0.40, 0.35,        // +15→+18 — очень сложно
-  0.30, 0.20,              // +18→+20 — легендарно
-];
+// Шансы заточки зависят от грейда предмета — топ-гир точить сложнее
+export const ENHANCE_CHANCE_BY_GRADE = {
+  ng: [1.00,1.00,1.00,1.00,0.98,0.95,0.92,0.88,0.85,0.80,0.75,0.68,0.60,0.50,0.40,0.30,0.22,0.15,0.10,0.05],
+  d:  [1.00,1.00,1.00,0.98,0.95,0.92,0.88,0.85,0.80,0.75,0.68,0.60,0.50,0.42,0.34,0.26,0.18,0.12,0.08,0.04],
+  c:  [1.00,1.00,0.98,0.95,0.92,0.88,0.85,0.80,0.75,0.70,0.62,0.55,0.47,0.38,0.30,0.22,0.15,0.10,0.06,0.03],
+  b:  [1.00,0.98,0.95,0.92,0.88,0.85,0.80,0.75,0.70,0.63,0.56,0.48,0.40,0.32,0.25,0.18,0.12,0.08,0.05,0.02],
+  a:  [1.00,0.96,0.92,0.88,0.85,0.80,0.75,0.70,0.63,0.56,0.48,0.40,0.33,0.27,0.20,0.14,0.09,0.05,0.03,0.01],
+  s:  [1.00,0.95,0.90,0.85,0.80,0.75,0.70,0.63,0.56,0.48,0.40,0.33,0.25,0.18,0.12,0.08,0.05,0.03,0.01,0.005],
+};
+
+// Старый плоский массив — оставляем для совместимости (код его использует)
+export const ENHANCE_CHANCE = ENHANCE_CHANCE_BY_GRADE.c;
+
+export function getEnhanceChance(grade, level) {
+  const arr = ENHANCE_CHANCE_BY_GRADE[grade] || ENHANCE_CHANCE_BY_GRADE.c;
+  if (level >= arr.length) return 0;
+  return arr[level];
+}
 
 // Хелпер: сломается ли предмет при провале на этом уровне.
 export function willBreakAt(level) {
@@ -565,14 +600,24 @@ export function getBonusKey(item) { return item.slot; }
 
 export function getEnhanceBonus(item) {
   if (!item) return null;
+
+  // Магазинный предмет (source: 'shop') — БЕЗ бонуса +15.
+  if (item.source === 'shop') return null;
+
   const key = getBonusKey(item);
   const def = ENHANCE_BONUSES[key];
   if (!def) return null;
   const value = def.getValue(item.enhance);
   if (value <= 0) return null;
+
+  // drop2 — усиленный бонус (×1.5)
+  const boost = item.source === 'drop2' ? 1.5 : 1.0;
+
   return {
-    name: def.name, icon: def.icon, value,
-    display: def.format(value),
+    name: def.name,
+    icon: def.icon,
+    value: value * boost,
+    display: def.format(value * boost),
     apply: def.apply,
   };
 }
@@ -663,345 +708,1297 @@ export const BOSS_AOE_PERCENT = 0.25;      // AoE-удар босса — 25% HP
 //
 // ═══════════════════════════════════════════════════════════════════════
 
+
 export const MOBS = {
-
   // ═════════════════════════════════════════════════════════════════════
-  //  ПЕРВАЯ ЗОНА — Talking Island → Поля Гремлинов
-  //  Грейд: NG. Для героя 1–5 уровня. Дроп — базовый стартовый.
+  //  NG TIER — Talking Island (уровни 1-20)
+  //  Easy: 4 моба  |  Medium: 4 моба  |  Hard: 4 моба
   // ═════════════════════════════════════════════════════════════════════
 
-  // ─── Гремлин — МИЛИ-моб, базовый враг ─────────────────────────────
+  // ══ EASY ═════════════════════════════════════════════════════════════
   gremlin: {
-    id: 'gremlin',
-    name: 'Гремлин',
-    emoji: 'sprites/mobs/gremlin.png',   // PNG или эмодзи '👹'
-    hp: 40,
-    attack: 3,
-    speed: 2.2,                          // шустрый, догоняет быстро
-    xp: 150,
-    size: 0.7,
-    // attackRange НЕ указан → мили (0.8 клетки)
-
+    id:'gremlin', name:'Гремлин', emoji:'sprites/mobs/gremlin.png',
+    level:1, hp:40, attack:4, speed:2.2, xp:10, size:0.7,
     drops: [
-      // Золото — всегда
-      { id:'gold',              chance:1.0,    min:5,   max:15  },
-      // Зелья
-      { id:'potion_small',      chance:0.10,   min:1,   max:2   },
-      // Свитки заточки NG
-      { id:'scroll_weapon_ng',  chance:0.02,   min:1,   max:1   },
-      { id:'scroll_armor_ng',   chance:0.03,   min:1,   max:1   },
-      // Случайный предмет NG-грейда
-      { id:'equip_random',      chance:0.01,   min:1,   max:1   },
-      // Книжки скиллов — очень редкие (0.1%)
-      { id:'book_double_shot',  chance:0.0010, min:1,   max:1   },
-      { id:'book_hawk_eye',     chance:0.0010, min:1,   max:1   },
-      { id:'book_dodge',        chance:0.0010, min:1,   max:1   },
-      { id:'book_heal',         chance:0.0010, min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:4,  max:8  },
+      { id:'potion_small',     chance:0.05, min:1,  max:1  },
+      { id:'soulshot_ng',      chance:0.10, min:3,  max:8  },
+      { id:'scroll_weapon_ng', chance:0.04, min:1,  max:1  },
+      { id:'scroll_armor_ng',  chance:0.04, min:1,  max:1  },
+      { id:'equip_random',     chance:0.003,min:1,  max:1  },
+      { id:'book_multishot',   chance:0.0005,min:1, max:1  },
+      { id:'book_dodge',       chance:0.0005,min:1, max:1  },
     ],
     championDrops: [
-      // Чемпион — ×10 щедрее
-      { id:'gold',              chance:1.0,    min:40,  max:80  },
-      { id:'potion_small',      chance:0.5,    min:3,   max:6   },
-      { id:'scroll_weapon_ng',  chance:0.15,   min:2,   max:5   },
-      { id:'scroll_armor_ng',   chance:0.20,   min:2,   max:5   },
-      { id:'blessed_scroll',    chance:0.05,   min:1,   max:1   },
-      { id:'arena_pass',        chance:0.05,   min:1,   max:1   },
-      { id:'book_summon_shadow',chance:0.005,  min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:80, max:150 },
+      { id:'potion_small',     chance:0.80, min:3,  max:6   },
+      { id:'soulshot_ng',      chance:1.00, min:20, max:40  },
+      { id:'scroll_weapon_ng', chance:0.35, min:2,  max:5   },
+      { id:'scroll_armor_ng',  chance:0.35, min:2,  max:5   },
+      { id:'blessed_scroll',   chance:0.05, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.05, min:1,  max:1   },
+      { id:'equip_random',     chance:0.05, min:1,  max:1   },
+      { id:'book_multishot',   chance:0.005,min:1,  max:1   },
+      { id:'book_heal',        chance:0.005,min:1,  max:1   },
     ],
   },
 
-  // ─── Кельтир — МИЛИ-моб, чуть сильнее ─────────────────────────────
   keltir: {
-    id: 'keltir',
-    name: 'Кельтир',
-    emoji: '🐺',
-    hp: 60,
-    attack: 5,
-    speed: 1.4,
-    xp: 8,
-    size: 0.6,
-
+    id:'keltir', name:'Кельтир', emoji:'🐺',
+    level:4, hp:60, attack:6, speed:1.6, xp:16, size:0.6,
     drops: [
-      { id:'gold',              chance:1.0,    min:8,   max:20  },
-      { id:'potion_small',      chance:0.12,   min:1,   max:2   },
-      { id:'scroll_weapon_ng',  chance:0.03,   min:1,   max:1   },
-      { id:'scroll_armor_ng',   chance:0.03,   min:1,   max:1   },
-      { id:'book_precise_shot', chance:0.0008, min:1,   max:1   },
-      { id:'book_slow_arrow',   chance:0.0008, min:1,   max:1   },
-      { id:'book_poison_arrow', chance:0.0008, min:1,   max:1   },
-      { id:'book_cleanse',      chance:0.0008, min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:16, max:32  },
+      { id:'potion_small',     chance:0.25, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.40, min:4,  max:10  },
+      { id:'scroll_weapon_ng', chance:0.05, min:1,  max:1   },
+      { id:'scroll_armor_ng',  chance:0.05, min:1,  max:1   },
+      { id:'equip_random',     chance:0.003,min:1,  max:1   },
+      { id:'book_fireball',    chance:0.0005,min:1, max:1   },
+      { id:'book_frost',       chance:0.0005,min:1, max:1   },
     ],
     championDrops: [
-      { id:'gold',              chance:1.0,    min:60,  max:120 },
-      { id:'potion_small',      chance:0.6,    min:3,   max:8   },
-      { id:'scroll_weapon_ng',  chance:0.2,    min:2,   max:6   },
-      { id:'scroll_armor_ng',   chance:0.2,    min:2,   max:6   },
-      { id:'blessed_scroll',    chance:0.08,   min:1,   max:1   },
-      { id:'arena_pass',        chance:0.08,   min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:120, max:200 },
+      { id:'potion_small',     chance:0.80, min:3,  max:8   },
+      { id:'soulshot_ng',      chance:1.00, min:25, max:50  },
+      { id:'scroll_weapon_ng', chance:0.40, min:3,  max:6   },
+      { id:'scroll_armor_ng',  chance:0.40, min:3,  max:6   },
+      { id:'blessed_scroll',   chance:0.06, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.06, min:1,  max:1   },
+      { id:'book_double_shot', chance:0.006,min:1,  max:1   },
     ],
   },
 
-  // ─── Гоблин-лучник — РЕЙНДЖ-моб, пример дальней атаки ─────────────
-  // Держит дистанцию 6–7 клеток, стреляет зелёными стрелами.
-  // Если герой подбегает ближе 3 клеток — отходит.
-  goblin_archer: {
-    id: 'goblin_archer',
-    name: 'Гоблин-лучник',
-    emoji: '🏹',
-    hp: 45,
-    attack: 4,
-    speed: 1.6,
-    xp: 12,
-    size: 0.65,
-
-    // ── ДАЛЬНИЙ БОЙ ──
-    attackRange: 7,                       // стреляет с 7 клеток
-    attackProjectile: {
-      type: 'bow',                        // тип снаряда (рисуется стрелкой)
-      color: '#4ade80',                   // зелёный
-      speed: 16,                          // клеток/сек
-    },
-    keepDistance: true,                   // отходит когда герой ближе 3 клеток
-
-    drops: [
-      { id:'gold',              chance:1.0,    min:6,   max:18  },
-      { id:'potion_small',      chance:0.10,   min:1,   max:2   },
-      { id:'scroll_weapon_ng',  chance:0.03,   min:1,   max:1   },
-      // Книжки лучника — базовые
-      { id:'book_multishot',    chance:0.0008, min:1,   max:1   },
-      { id:'book_precise_shot', chance:0.0008, min:1,   max:1   },
-    ],
-    championDrops: [
-      { id:'gold',              chance:1.0,    min:50,  max:100 },
-      { id:'potion_small',      chance:0.5,    min:2,   max:5   },
-      { id:'scroll_weapon_ng',  chance:0.15,   min:2,   max:4   },
-      { id:'blessed_scroll',    chance:0.05,   min:1,   max:1   },
-      { id:'arena_pass',        chance:0.05,   min:1,   max:1   },
-    ],
-  },
-
-  // ─── Оборотень — МИЛИ-моб для средней зоны (пример апгрейда) ─────
-  werewolf: {
-    id: 'werewolf',
-    name: 'Оборотень',
-    emoji: '🐺',
-    hp: 200,
-    attack: 12,
-    speed: 1.5,
-    xp: 25,
-    size: 0.7,
-
-    drops: [
-      { id:'gold',              chance:1.0,    min:30,  max:80  },
-      { id:'potion_small',      chance:0.15,   min:1,   max:3   },
-      { id:'potion_medium',     chance:0.05,   min:1,   max:1   },
-      { id:'scroll_weapon_ng',  chance:0.05,   min:1,   max:2   },
-      { id:'scroll_armor_ng',   chance:0.05,   min:1,   max:2   },
-      { id:'book_multishot',    chance:0.0006, min:1,   max:1   },
-      { id:'book_stun_shot',    chance:0.0006, min:1,   max:1   },
-      { id:'book_focus',        chance:0.0006, min:1,   max:1   },
-      { id:'book_haste',        chance:0.0006, min:1,   max:1   },
-    ],
-    championDrops: [
-      { id:'gold',              chance:1.0,    min:200, max:400 },
-      { id:'potion_small',      chance:0.7,    min:5,   max:10  },
-      { id:'scroll_weapon_ng',  chance:0.25,   min:3,   max:8   },
-      { id:'scroll_armor_ng',   chance:0.25,   min:3,   max:8   },
-      { id:'blessed_scroll',    chance:0.1,    min:1,   max:1   },
-      { id:'arena_pass',        chance:0.1,    min:1,   max:1   },
-    ],
-  },
-  // ─── Разбойник-лучник — РЕЙНДЖ-моб (стреляет стрелами) ────────────
-  // ИИ: подходит на 7 клеток, стреляет, отходит если герой ближе 3.
-  // Дальний бой → указаны attackRange + attackProjectile + keepDistance.
   bandit_archer: {
-    id: 'bandit_archer',
-    name: 'Разбойник-лучник',
-    emoji: '🏹',
-    hp: 50,
-    attack: 5,
-    speed: 1.7,
-    xp: 15,
-    size: 0.65,
-
-    // ── ДАЛЬНИЙ БОЙ ──
-    attackRange: 7,                          // стреляет с 7 клеток
-    attackProjectile: {
-      type: 'bow',                           // рисуется стрелкой
-      color: '#fbbf24',                      // жёлтая стрела
-      speed: 16,                             // клеток/сек
-    },
-    keepDistance: true,                      // отходит если герой вплотную
-
+    id:'bandit_archer', name:'Разбойник-лучник', emoji:'🏹',
+    level:5, hp:55, attack:6, speed:1.7, xp:18, size:0.65,
+    attackRange: 7,
+    attackProjectile: { type:'bow', color:'#fbbf24', speed:16 },
+    keepDistance: true,
     drops: [
-      { id:'gold',              chance:1.0,    min:8,   max:22  },
-      { id:'potion_small',      chance:0.12,   min:1,   max:2   },
-      { id:'scroll_weapon_ng',  chance:0.03,   min:1,   max:1   },
-      { id:'book_multishot',    chance:0.0008, min:1,   max:1   },
-      { id:'book_precise_shot', chance:0.0008, min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:20, max:40  },
+      { id:'potion_small',     chance:0.25, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.45, min:4,  max:10  },
+      { id:'scroll_weapon_ng', chance:0.05, min:1,  max:1   },
+      { id:'scroll_armor_ng',  chance:0.05, min:1,  max:1   },
+      { id:'equip_random',     chance:0.003,min:1,  max:1   },
+      { id:'book_hawk_eye',    chance:0.0005,min:1, max:1   },
     ],
     championDrops: [
-      { id:'gold',              chance:1.0,    min:60,  max:120 },
-      { id:'potion_small',      chance:0.5,    min:2,   max:5   },
-      { id:'scroll_weapon_ng',  chance:0.15,   min:2,   max:4   },
-      { id:'blessed_scroll',    chance:0.05,   min:1,   max:1   },
-      { id:'arena_pass',        chance:0.05,   min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:150, max:250 },
+      { id:'potion_small',     chance:0.80, min:3,  max:8   },
+      { id:'soulshot_ng',      chance:1.00, min:25, max:50  },
+      { id:'scroll_weapon_ng', chance:0.40, min:3,  max:6   },
+      { id:'scroll_armor_ng',  chance:0.40, min:3,  max:6   },
+      { id:'blessed_scroll',   chance:0.06, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.06, min:1,  max:1   },
+      { id:'book_hawk_eye',    chance:0.006,min:1,  max:1   },
     ],
   },
 
-  // ─── Гоблин-маг — РЕЙНДЖ-моб (стреляет магией) ────────────────────
-  // ИИ: подходит на 6 клеток, стреляет заклинанием (медленный снаряд),
-  // НЕ отходит (маги стоят на месте).
+  wolf_pup: {
+    id:'wolf_pup', name:'Волчонок', emoji:'🐕',
+    level:6, hp:70, attack:7, speed:1.8, xp:20, size:0.55,
+    drops: [
+      { id:'gold',             chance:1.00, min:24, max:48  },
+      { id:'potion_small',     chance:0.28, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.45, min:5,  max:12  },
+      { id:'scroll_weapon_ng', chance:0.05, min:1,  max:1   },
+      { id:'scroll_armor_ng',  chance:0.05, min:1,  max:1   },
+      { id:'book_double_shot', chance:0.0005,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:180, max:300 },
+      { id:'soulshot_ng',      chance:1.00, min:30, max:55  },
+      { id:'scroll_weapon_ng', chance:0.40, min:3,  max:7   },
+      { id:'scroll_armor_ng',  chance:0.40, min:3,  max:7   },
+      { id:'blessed_scroll',   chance:0.06, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.06, min:1,  max:1   },
+    ],
+  },
+
+  // ══ MEDIUM ═══════════════════════════════════════════════════════════
+  goblin_archer: {
+    id:'goblin_archer', name:'Гоблин-лучник', emoji:'🏹',
+    level:7, hp:65, attack:7, speed:1.6, xp:22, size:0.65,
+    attackRange: 7,
+    attackProjectile: { type:'bow', color:'#4ade80', speed:16 },
+    keepDistance: true,
+    drops: [
+      { id:'gold',             chance:1.00, min:24, max:48  },
+      { id:'potion_small',     chance:0.28, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.45, min:5,  max:12  },
+      { id:'scroll_weapon_ng', chance:0.05, min:1,  max:1   },
+      { id:'scroll_weapon_d',  chance:0.03, min:1,  max:1   },
+      { id:'equip_random',     chance:0.004,min:1,  max:1   },
+      { id:'equip_d',          chance:0.0005,min:1, max:1   },
+      { id:'book_precise_shot',chance:0.0008,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:180, max:300 },
+      { id:'potion_small',     chance:0.80, min:4,  max:10  },
+      { id:'soulshot_ng',      chance:1.00, min:30, max:60  },
+      { id:'scroll_weapon_ng', chance:0.40, min:3,  max:7   },
+      { id:'scroll_weapon_d',  chance:0.08, min:1,  max:3   },
+      { id:'blessed_scroll',   chance:0.06, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.06, min:1,  max:1   },
+      { id:'book_precise_shot',chance:0.008,min:1,  max:1   },
+    ],
+  },
+
   goblin_mage: {
-    id: 'goblin_mage',
-    name: 'Гоблин-маг',
-    emoji: '🔮',
-    hp: 55,
-    attack: 6,
-    speed: 1.0,
-    xp: 18,
-    size: 0.7,
-
-    // ── ДАЛЬНИЙ БОЙ ──
-    attackRange: 6,                          // стреляет с 6 клеток
-    attackProjectile: {
-      type: 'staff',                         // рисуется заклинанием
-      color: '#c084fc',                      // фиолетовый
-      speed: 11,                             // медленнее стрелы
-    },
-    // keepDistance НЕ указан → стоит и стреляет, не отходит
-
+    id:'goblin_mage', name:'Гоблин-маг', emoji:'🔮',
+    level:8, hp:70, attack:8, speed:1.0, xp:24, size:0.7,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#c084fc', speed:11 },
     drops: [
-      { id:'gold',              chance:1.0,    min:10,  max:25  },
-      { id:'potion_small',      chance:0.12,   min:1,   max:2   },
-      { id:'potion_medium',     chance:0.03,   min:1,   max:1   },
-      { id:'scroll_weapon_ng',  chance:0.03,   min:1,   max:1   },
-      { id:'scroll_armor_ng',   chance:0.03,   min:1,   max:1   },
-      { id:'book_fireball',     chance:0.0008, min:1,   max:1   },
-      { id:'book_ice_bolt',     chance:0.0008, min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:28, max:56  },
+      { id:'potion_small',     chance:0.30, min:1,  max:2   },
+      { id:'potion_medium',    chance:0.05, min:1,  max:1   },
+      { id:'soulshot_ng',      chance:0.45, min:5,  max:12  },
+      { id:'scroll_weapon_ng', chance:0.05, min:1,  max:1   },
+      { id:'scroll_weapon_d',  chance:0.03, min:1,  max:1   },
+      { id:'equip_random',     chance:0.004,min:1,  max:1   },
+      { id:'book_ice_bolt',    chance:0.0008,min:1, max:1   },
+      { id:'book_focus',       chance:0.0008,min:1, max:1   },
     ],
     championDrops: [
-      { id:'gold',              chance:1.0,    min:70,  max:150 },
-      { id:'potion_small',      chance:0.5,    min:2,   max:5   },
-      { id:'scroll_weapon_ng',  chance:0.15,   min:2,   max:4   },
-      { id:'scroll_armor_ng',   chance:0.15,   min:2,   max:4   },
-      { id:'blessed_scroll',    chance:0.05,   min:1,   max:1   },
-      { id:'arena_pass',        chance:0.05,   min:1,   max:1   },
+      { id:'gold',             chance:1.00, min:200, max:340 },
+      { id:'potion_small',     chance:0.80, min:4,  max:10  },
+      { id:'potion_medium',    chance:0.20, min:1,  max:3   },
+      { id:'soulshot_ng',      chance:1.00, min:30, max:60  },
+      { id:'scroll_weapon_ng', chance:0.40, min:3,  max:7   },
+      { id:'scroll_weapon_d',  chance:0.08, min:1,  max:3   },
+      { id:'blessed_scroll',   chance:0.06, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.06, min:1,  max:1   },
+      { id:'book_ice_bolt',    chance:0.008,min:1,  max:1   },
     ],
   },
-  // ═══ GIRAN (D-грейд) ═══════════════════════════════════════════════
+
+  goblin_warrior: {
+    id:'goblin_warrior', name:'Гоблин-воин', emoji:'👹',
+    level:9, hp:100, attack:10, speed:1.3, xp:26, size:0.65,
+    drops: [
+      { id:'gold',             chance:1.00, min:32, max:64  },
+      { id:'potion_small',     chance:0.30, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.45, min:6,  max:14  },
+      { id:'scroll_weapon_ng', chance:0.06, min:1,  max:1   },
+      { id:'scroll_weapon_d',  chance:0.03, min:1,  max:1   },
+      { id:'equip_random',     chance:0.004,min:1,  max:1   },
+      { id:'book_haste',       chance:0.0008,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:220, max:380 },
+      { id:'soulshot_ng',      chance:1.00, min:32, max:65  },
+      { id:'scroll_weapon_ng', chance:0.40, min:3,  max:8   },
+      { id:'scroll_weapon_d',  chance:0.10, min:1,  max:3   },
+      { id:'blessed_scroll',   chance:0.07, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.07, min:1,  max:1   },
+      { id:'book_haste',       chance:0.008,min:1,  max:1   },
+    ],
+  },
+
+  direwolf: {
+    id:'direwolf', name:'Дикий волк', emoji:'🐺',
+    level:10, hp:120, attack:11, speed:1.8, xp:30, size:0.7,
+    drops: [
+      { id:'gold',             chance:1.00, min:36, max:72  },
+      { id:'potion_small',     chance:0.30, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.45, min:6,  max:14  },
+      { id:'scroll_weapon_ng', chance:0.06, min:1,  max:1   },
+      { id:'scroll_weapon_d',  chance:0.04, min:1,  max:1   },
+      { id:'scroll_armor_d',   chance:0.04, min:1,  max:1   },
+      { id:'equip_random',     chance:0.005,min:1,  max:1   },
+      { id:'equip_d',          chance:0.0008,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:240, max:400 },
+      { id:'potion_small',     chance:0.80, min:5,  max:10  },
+      { id:'soulshot_ng',      chance:1.00, min:35, max:70  },
+      { id:'scroll_weapon_d',  chance:0.10, min:2,  max:4   },
+      { id:'scroll_armor_d',   chance:0.10, min:2,  max:4   },
+      { id:'blessed_scroll',   chance:0.08, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.08, min:1,  max:1   },
+      { id:'equip_d',          chance:0.05, min:1,  max:1   },
+    ],
+  },
+
+  // ══ HARD ═════════════════════════════════════════════════════════════
+  werewolf: {
+    id:'werewolf', name:'Оборотень', emoji:'🐺',
+    level:12, hp:200, attack:14, speed:1.5, xp:44, size:0.7,
+    drops: [
+      { id:'gold',             chance:1.00, min:48, max:96  },
+      { id:'potion_small',     chance:0.32, min:1,  max:2   },
+      { id:'potion_medium',    chance:0.06, min:1,  max:1   },
+      { id:'soulshot_ng',      chance:0.50, min:8,  max:16  },
+      { id:'scroll_weapon_ng', chance:0.06, min:1,  max:1   },
+      { id:'scroll_weapon_d',  chance:0.06, min:1,  max:1   },
+      { id:'scroll_armor_d',   chance:0.06, min:1,  max:1   },
+      { id:'equip_random',     chance:0.006,min:1,  max:1   },
+      { id:'equip_d',          chance:0.002,min:1,  max:1   },
+      { id:'book_slow_arrow',  chance:0.0015,min:1, max:1   },
+      { id:'book_poison_arrow',chance:0.0015,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:400, max:700 },
+      { id:'potion_small',     chance:0.80, min:5,  max:12  },
+      { id:'potion_medium',    chance:0.30, min:2,  max:5   },
+      { id:'soulshot_ng',      chance:1.00, min:40, max:80  },
+      { id:'scroll_weapon_d',  chance:0.15, min:2,  max:5   },
+      { id:'scroll_armor_d',   chance:0.15, min:2,  max:5   },
+      { id:'blessed_scroll',   chance:0.10, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.10, min:1,  max:1   },
+      { id:'equip_d',          chance:0.08, min:1,  max:1   },
+      { id:'book_stun_shot',   chance:0.015,min:1,  max:1   },
+    ],
+  },
+
+  forest_spider: {
+    id:'forest_spider', name:'Лесной паук', emoji:'🕷️',
+    level:14, hp:240, attack:16, speed:1.4, xp:52, size:0.65,
+    drops: [
+      { id:'gold',             chance:1.00, min:56, max:112 },
+      { id:'potion_small',     chance:0.32, min:1,  max:3   },
+      { id:'potion_medium',    chance:0.08, min:1,  max:1   },
+      { id:'soulshot_ng',      chance:0.50, min:8,  max:18  },
+      { id:'scroll_weapon_d',  chance:0.07, min:1,  max:1   },
+      { id:'scroll_armor_d',   chance:0.07, min:1,  max:1   },
+      { id:'equip_random',     chance:0.007,min:1,  max:1   },
+      { id:'equip_d',          chance:0.002,min:1,  max:1   },
+      { id:'book_cleanse',     chance:0.0015,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:500, max:850 },
+      { id:'potion_small',     chance:0.80, min:5,  max:12  },
+      { id:'potion_medium',    chance:0.30, min:2,  max:5   },
+      { id:'soulshot_ng',      chance:1.00, min:40, max:80  },
+      { id:'scroll_weapon_d',  chance:0.18, min:2,  max:5   },
+      { id:'scroll_armor_d',   chance:0.18, min:2,  max:5   },
+      { id:'blessed_scroll',   chance:0.10, min:1,  max:1   },
+      { id:'arena_pass',       chance:0.10, min:1,  max:1   },
+      { id:'equip_d',          chance:0.10, min:1,  max:1   },
+    ],
+  },
+
+  cave_bat: {
+    id:'cave_bat', name:'Пещерная мышь', emoji:'🦇',
+    level:16, hp:280, attack:18, speed:2.0, xp:60, size:0.6,
+    drops: [
+      { id:'gold',             chance:1.00, min:64, max:128 },
+      { id:'potion_small',     chance:0.32, min:1,  max:3   },
+      { id:'potion_medium',    chance:0.10, min:1,  max:2   },
+      { id:'soulshot_ng',      chance:0.55, min:10, max:20  },
+      { id:'scroll_weapon_d',  chance:0.08, min:1,  max:1   },
+      { id:'scroll_armor_d',   chance:0.08, min:1,  max:1   },
+      { id:'equip_random',     chance:0.008,min:1,  max:1   },
+      { id:'equip_d',          chance:0.003,min:1,  max:1   },
+      { id:'book_stun',        chance:0.0015,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:600, max:1000 },
+      { id:'potion_small',     chance:0.80, min:6,  max:14   },
+      { id:'potion_medium',    chance:0.35, min:2,  max:6    },
+      { id:'soulshot_ng',      chance:1.00, min:45, max:90   },
+      { id:'scroll_weapon_d',  chance:0.20, min:3,  max:6    },
+      { id:'scroll_armor_d',   chance:0.20, min:3,  max:6    },
+      { id:'blessed_scroll',   chance:0.12, min:1,  max:2    },
+      { id:'arena_pass',       chance:0.12, min:1,  max:1    },
+      { id:'equip_d',          chance:0.12, min:1,  max:1    },
+    ],
+  },
+
+  stone_golem: {
+    id:'stone_golem', name:'Каменный голем', emoji:'🗿',
+    level:18, hp:500, attack:26, speed:0.6, xp:90, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:80, max:160 },
+      { id:'potion_medium',    chance:0.30, min:1,  max:2   },
+      { id:'potion_large',     chance:0.05, min:1,  max:1   },
+      { id:'soulshot_ng',      chance:0.60, min:12, max:25  },
+      { id:'scroll_weapon_d',  chance:0.10, min:1,  max:1   },
+      { id:'scroll_armor_d',   chance:0.10, min:1,  max:1   },
+      { id:'equip_d',          chance:0.004,min:1,  max:1   },
+      { id:'book_iron_skin',   chance:0.0018,min:1, max:1   },
+      { id:'book_reflect',     chance:0.0018,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:1000, max:1800 },
+      { id:'potion_medium',    chance:0.80, min:5,   max:12   },
+      { id:'potion_large',     chance:0.30, min:2,   max:5    },
+      { id:'soulshot_ng',      chance:1.00, min:60,  max:120  },
+      { id:'scroll_weapon_d',  chance:0.25, min:4,   max:8    },
+      { id:'scroll_armor_d',   chance:0.25, min:4,   max:8    },
+      { id:'blessed_scroll',   chance:0.15, min:1,   max:2    },
+      { id:'arena_pass',       chance:0.15, min:1,   max:1    },
+      { id:'equip_d',          chance:0.20, min:1,   max:1    },
+      { id:'book_iron_skin',   chance:0.020,min:1,   max:1    },
+    ],
+  },
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  D TIER — Giran (уровни 20-32)
+  // ═════════════════════════════════════════════════════════════════════
+
+  // ══ EASY ═════════════════════════════════════════════════════════════
   orc: {
     id:'orc', name:'Орк', emoji:'👺',
-    hp:120, attack:8, speed:1.0, xp:15, size:0.65,
+    level:22, hp:260, attack:22, speed:1.0, xp:110, size:0.65,
     drops: [
-      { id:'book_power_shot', chance:0.0005, min:1, max:1 },
-      { id:'book_panther',    chance:0.0005, min:1, max:1 },
-      { id:'book_ice_bolt',   chance:0.0005, min:1, max:1 },
-      { id:'book_iron_skin',  chance:0.0005, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:110, max:220 },
+      { id:'potion_medium',    chance:0.30, min:1,   max:2   },
+      { id:'potion_large',     chance:0.05, min:1,   max:1   },
+      { id:'soulshot_d',       chance:0.45, min:8,   max:18  },
+      { id:'scroll_weapon_d',  chance:0.06, min:1,   max:1   },
+      { id:'scroll_armor_d',   chance:0.06, min:1,   max:1   },
+      { id:'equip_d',          chance:0.004,min:1,   max:1   },
+      { id:'book_power_shot',  chance:0.0012,min:1,  max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:1400, max:2400 },
+      { id:'potion_medium',    chance:0.80, min:5,   max:12   },
+      { id:'soulshot_d',       chance:1.00, min:50,  max:100  },
+      { id:'scroll_weapon_d',  chance:0.30, min:4,   max:9    },
+      { id:'scroll_armor_d',   chance:0.30, min:4,   max:9    },
+      { id:'blessed_scroll',   chance:0.12, min:1,   max:1    },
+      { id:'arena_pass',       chance:0.12, min:1,   max:1    },
+      { id:'equip_d',          chance:0.15, min:1,   max:1    },
+      { id:'book_power_shot',  chance:0.015,min:1,   max:1    },
+    ],
+  },
+
+  orc_archer: {
+    id:'orc_archer', name:'Орк-лучник', emoji:'🏹',
+    level:23, hp:220, attack:24, speed:1.3, xp:115, size:0.65,
+    attackRange: 7,
+    attackProjectile: { type:'bow', color:'#dc2626', speed:18 },
+    keepDistance: true,
+    drops: [
+      { id:'gold',             chance:1.00, min:120, max:240 },
+      { id:'potion_medium',    chance:0.30, min:1,   max:2   },
+      { id:'soulshot_d',       chance:0.45, min:8,   max:18  },
+      { id:'scroll_weapon_d',  chance:0.06, min:1,   max:1   },
+      { id:'scroll_armor_d',   chance:0.06, min:1,   max:1   },
+      { id:'equip_d',          chance:0.004,min:1,   max:1   },
+      { id:'book_lethal_shot', chance:0.0012,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:1500, max:2600 },
+      { id:'soulshot_d',       chance:1.00, min:55,  max:110  },
+      { id:'scroll_weapon_d',  chance:0.30, min:4,   max:9    },
+      { id:'scroll_armor_d',   chance:0.30, min:4,   max:9    },
+      { id:'blessed_scroll',   chance:0.12, min:1,   max:1    },
+      { id:'arena_pass',       chance:0.12, min:1,   max:1    },
+      { id:'book_lethal_shot', chance:0.015,min:1,   max:1    },
+    ],
   },
 
   skeleton: {
     id:'skeleton', name:'Скелет', emoji:'💀',
-    hp:90, attack:7, speed:1.2, xp:12, size:0.6,
+    level:24, hp:240, attack:26, speed:1.2, xp:120, size:0.6,
     drops: [
-      { id:'book_lethal_shot', chance:0.0004, min:1, max:1 },
-      { id:'book_arrow_rain',  chance:0.0004, min:1, max:1 },
-      { id:'book_silence',     chance:0.0004, min:1, max:1 },
-      { id:'book_vampiric',    chance:0.0004, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:130, max:260 },
+      { id:'potion_medium',    chance:0.30, min:1,   max:2   },
+      { id:'soulshot_d',       chance:0.45, min:8,   max:18  },
+      { id:'scroll_weapon_d',  chance:0.06, min:1,   max:1   },
+      { id:'scroll_armor_d',   chance:0.06, min:1,   max:1   },
+      { id:'equip_d',          chance:0.005,min:1,   max:1   },
+      { id:'book_reflect',     chance:0.0012,min:1,  max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:1600, max:2700 },
+      { id:'soulshot_d',       chance:1.00, min:55,  max:110  },
+      { id:'scroll_weapon_d',  chance:0.32, min:4,   max:10   },
+      { id:'scroll_armor_d',   chance:0.32, min:4,   max:10   },
+      { id:'blessed_scroll',   chance:0.13, min:1,   max:1    },
+      { id:'arena_pass',       chance:0.13, min:1,   max:1    },
+      { id:'equip_d',          chance:0.15, min:1,   max:1    },
+    ],
+  },
+
+  // ══ MEDIUM ═══════════════════════════════════════════════════════════
+  skeleton_archer: {
+    id:'skeleton_archer', name:'Скелет-лучник', emoji:'💀',
+    level:26, hp:210, attack:28, speed:1.4, xp:135, size:0.6,
+    attackRange: 7,
+    attackProjectile: { type:'bow', color:'#a5f3fc', speed:18 },
+    keepDistance: true,
+    drops: [
+      { id:'gold',             chance:1.00, min:150, max:300 },
+      { id:'potion_medium',    chance:0.32, min:1,   max:2   },
+      { id:'soulshot_d',       chance:0.50, min:10,  max:22  },
+      { id:'scroll_weapon_d',  chance:0.07, min:1,   max:1   },
+      { id:'scroll_weapon_c',  chance:0.03, min:1,   max:1   },
+      { id:'equip_d',          chance:0.005,min:1,   max:1   },
+      { id:'equip_c',          chance:0.0005,min:1,  max:1   },
+      { id:'book_vampiric',    chance:0.0012,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:1900, max:3200 },
+      { id:'soulshot_d',       chance:1.00, min:60,  max:120  },
+      { id:'scroll_weapon_d',  chance:0.35, min:5,   max:10   },
+      { id:'scroll_weapon_c',  chance:0.10, min:1,   max:3    },
+      { id:'blessed_scroll',   chance:0.13, min:1,   max:1    },
+      { id:'arena_pass',       chance:0.13, min:1,   max:1    },
+      { id:'book_vampiric',    chance:0.015,min:1,   max:1    },
+    ],
+  },
+
+  orc_shaman: {
+    id:'orc_shaman', name:'Орк-шаман', emoji:'🧙',
+    level:27, hp:230, attack:30, speed:1.0, xp:140, size:0.7,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#22c55e', speed:12 },
+    drops: [
+      { id:'gold',             chance:1.00, min:160, max:320 },
+      { id:'potion_medium',    chance:0.32, min:1,   max:2   },
+      { id:'potion_large',     chance:0.05, min:1,   max:1   },
+      { id:'soulshot_d',       chance:0.50, min:10,  max:22  },
+      { id:'scroll_weapon_d',  chance:0.07, min:1,   max:1   },
+      { id:'scroll_weapon_c',  chance:0.03, min:1,   max:1   },
+      { id:'equip_d',          chance:0.005,min:1,   max:1   },
+      { id:'book_panther',     chance:0.0012,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:2000, max:3400 },
+      { id:'potion_medium',    chance:0.80, min:5,   max:12   },
+      { id:'soulshot_d',       chance:1.00, min:60,  max:120  },
+      { id:'scroll_weapon_d',  chance:0.35, min:5,   max:10   },
+      { id:'scroll_weapon_c',  chance:0.10, min:1,   max:3    },
+      { id:'blessed_scroll',   chance:0.14, min:1,   max:2    },
+      { id:'arena_pass',       chance:0.14, min:1,   max:1    },
+      { id:'book_panther',     chance:0.015,min:1,   max:1    },
+    ],
   },
 
   spider: {
-    id:'spider', name:'Паук', emoji:'🕷️',
-    hp:180, attack:12, speed:1.5, xp:22, size:0.6,
+    id:'spider', name:'Гигантский паук', emoji:'🕷️',
+    level:28, hp:300, attack:32, speed:1.5, xp:150, size:0.65,
     drops: [
-      { id:'book_fireball',      chance:0.0003, min:1, max:1 },
-      { id:'book_arcane_shield', chance:0.0003, min:1, max:1 },
-      { id:'book_reflect',       chance:0.0003, min:1, max:1 },
-      { id:'book_berserk',       chance:0.0003, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:170, max:340 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.05, min:1,   max:1   },
+      { id:'soulshot_d',       chance:0.50, min:10,  max:22  },
+      { id:'scroll_weapon_d',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_weapon_c',  chance:0.04, min:1,   max:1   },
+      { id:'scroll_armor_c',   chance:0.04, min:1,   max:1   },
+      { id:'equip_d',          chance:0.006,min:1,   max:1   },
+      { id:'book_stun',        chance:0.0012,min:1,  max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:2200, max:3800 },
+      { id:'potion_medium',    chance:0.80, min:6,   max:14   },
+      { id:'soulshot_d',       chance:1.00, min:65,  max:130  },
+      { id:'scroll_weapon_d',  chance:0.38, min:5,   max:11   },
+      { id:'scroll_weapon_c',  chance:0.12, min:1,   max:3    },
+      { id:'blessed_scroll',   chance:0.14, min:1,   max:2    },
+      { id:'arena_pass',       chance:0.14, min:1,   max:1    },
+      { id:'equip_d',          chance:0.18, min:1,   max:1    },
+    ],
   },
 
-  // ═══ DION (C-грейд) ════════════════════════════════════════════════
+  // ══ HARD ═════════════════════════════════════════════════════════════
+  werewolf_alpha: {
+    id:'werewolf_alpha', name:'Альфа-оборотень', emoji:'🐺',
+    level:30, hp:600, attack:42, speed:1.7, xp:220, size:0.8,
+    drops: [
+      { id:'gold',             chance:1.00, min:240, max:480 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.08, min:1,   max:2   },
+      { id:'soulshot_d',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_d',  chance:0.10, min:1,   max:2   },
+      { id:'scroll_weapon_c',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_armor_c',   chance:0.08, min:1,   max:1   },
+      { id:'equip_d',          chance:0.008,min:1,   max:1   },
+      { id:'equip_c',          chance:0.002,min:1,   max:1   },
+      { id:'book_arrow_rain',  chance:0.0018,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:3000, max:5000 },
+      { id:'potion_medium',    chance:0.80, min:6,   max:14   },
+      { id:'soulshot_d',       chance:1.00, min:70,  max:140  },
+      { id:'scroll_weapon_d',  chance:0.40, min:6,   max:12   },
+      { id:'scroll_weapon_c',  chance:0.18, min:2,   max:5    },
+      { id:'scroll_armor_c',   chance:0.18, min:2,   max:5    },
+      { id:'blessed_scroll',   chance:0.15, min:2,   max:3    },
+      { id:'arena_pass',       chance:0.15, min:1,   max:2    },
+      { id:'equip_c',          chance:0.10, min:1,   max:1    },
+      { id:'book_arrow_rain',  chance:0.020,min:1,   max:1    },
+    ],
+  },
+
+  skeleton_lord: {
+    id:'skeleton_lord', name:'Скелет-лорд', emoji:'☠️',
+    level:31, hp:750, attack:46, speed:1.0, xp:240, size:0.75,
+    drops: [
+      { id:'gold',             chance:1.00, min:260, max:520 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.08, min:1,   max:2   },
+      { id:'soulshot_d',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_d',  chance:0.10, min:1,   max:2   },
+      { id:'scroll_weapon_c',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_armor_c',   chance:0.08, min:1,   max:1   },
+      { id:'equip_d',          chance:0.008,min:1,   max:1   },
+      { id:'book_silence',     chance:0.0018,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:3200, max:5500 },
+      { id:'potion_medium',    chance:0.80, min:6,   max:14   },
+      { id:'soulshot_d',       chance:1.00, min:75,  max:150  },
+      { id:'scroll_weapon_d',  chance:0.42, min:6,   max:13   },
+      { id:'scroll_weapon_c',  chance:0.20, min:2,   max:5    },
+      { id:'scroll_armor_c',   chance:0.20, min:2,   max:5    },
+      { id:'blessed_scroll',   chance:0.16, min:2,   max:3    },
+      { id:'arena_pass',       chance:0.16, min:1,   max:2    },
+      { id:'equip_c',          chance:0.12, min:1,   max:1    },
+      { id:'book_silence',     chance:0.020,min:1,   max:1    },
+    ],
+  },
+
+  gargoyle: {
+    id:'gargoyle', name:'Гаргулья', emoji:'🦇',
+    level:32, hp:900, attack:48, speed:1.3, xp:270, size:0.8,
+    drops: [
+      { id:'gold',             chance:1.00, min:280, max:560 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.10, min:1,   max:2   },
+      { id:'soulshot_d',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_d',  chance:0.12, min:1,   max:2   },
+      { id:'scroll_weapon_c',  chance:0.10, min:1,   max:2   },
+      { id:'scroll_armor_c',   chance:0.10, min:1,   max:2   },
+      { id:'equip_d',          chance:0.010,min:1,   max:1   },
+      { id:'equip_c',          chance:0.003,min:1,   max:1   },
+      { id:'book_lightning',   chance:0.0020,min:1,  max:1   },
+      { id:'book_summon_shadow',chance:0.0010,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:3600, max:6000 },
+      { id:'potion_medium',    chance:0.80, min:7,   max:15   },
+      { id:'soulshot_d',       chance:1.00, min:80,  max:160  },
+      { id:'scroll_weapon_d',  chance:0.45, min:6,   max:14   },
+      { id:'scroll_weapon_c',  chance:0.22, min:3,   max:6    },
+      { id:'scroll_armor_c',   chance:0.22, min:3,   max:6    },
+      { id:'blessed_scroll',   chance:0.18, min:2,   max:4    },
+      { id:'arena_pass',       chance:0.18, min:1,   max:2    },
+      { id:'equip_c',          chance:0.15, min:1,   max:1    },
+      { id:'book_summon_shadow',chance:0.015,min:1,  max:1    },
+    ],
+  },
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  C TIER — Dion (уровни 32-45)
+  // ═════════════════════════════════════════════════════════════════════
+
   warg: {
     id:'warg', name:'Варг', emoji:'🐕',
-    hp:240, attack:15, speed:1.4, xp:28, size:0.65,
-    drops: [],
+    level:34, hp:1000, attack:55, speed:1.6, xp:300, size:0.7,
+    drops: [
+      { id:'gold',             chance:1.00, min:340, max:680 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.10, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_c',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_armor_c',   chance:0.08, min:1,   max:1   },
+      { id:'equip_c',          chance:0.006,min:1,   max:1   },
+      { id:'book_sleep',       chance:0.0012,min:1,  max:1   },
+    ],
     championDrops: [
-      { id:'book_lightning',       chance:0.0003, min:1, max:1 },
-      { id:'book_chain_lightning', chance:0.0003, min:1, max:1 },
-      { id:'book_frost_nova',      chance:0.0003, min:1, max:1 },
-      { id:'book_last_stand',      chance:0.0003, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:4500, max:7500 },
+      { id:'soulshot_c',       chance:1.00, min:80,  max:160  },
+      { id:'scroll_weapon_c',  chance:0.40, min:6,   max:12   },
+      { id:'scroll_armor_c',   chance:0.40, min:6,   max:12   },
+      { id:'blessed_scroll',   chance:0.18, min:2,   max:3    },
+      { id:'arena_pass',       chance:0.18, min:1,   max:2    },
+      { id:'equip_c',          chance:0.20, min:1,   max:1    },
+    ],
+  },
+
+  banshee: {
+    id:'banshee', name:'Банши', emoji:'👻',
+    level:35, hp:900, attack:58, speed:1.2, xp:310, size:0.7,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#a5f3fc', speed:12 },
+    drops: [
+      { id:'gold',             chance:1.00, min:360, max:720 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.10, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_c',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_armor_c',   chance:0.08, min:1,   max:1   },
+      { id:'equip_c',          chance:0.006,min:1,   max:1   },
+      { id:'book_arcane_shield',chance:0.0012,min:1, max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:4800, max:8000 },
+      { id:'soulshot_c',       chance:1.00, min:85,  max:170  },
+      { id:'scroll_weapon_c',  chance:0.42, min:6,   max:13   },
+      { id:'scroll_armor_c',   chance:0.42, min:6,   max:13   },
+      { id:'blessed_scroll',   chance:0.20, min:2,   max:4    },
+      { id:'arena_pass',       chance:0.18, min:1,   max:2    },
+      { id:'book_arcane_shield',chance:0.015,min:1,  max:1    },
     ],
   },
 
   ghost: {
     id:'ghost', name:'Призрак', emoji:'👻',
-    hp:300, attack:18, speed:1.3, xp:40, size:0.65,
+    level:37, hp:1100, attack:64, speed:1.3, xp:340, size:0.65,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#c084fc', speed:12 },
     drops: [
-      { id:'book_sleep',  chance:0.0002, min:1, max:1 },
-      { id:'book_shadow', chance:0.0002, min:1, max:1 },
-      { id:'book_focus',  chance:0.0002, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:400, max:800 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.10, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_c',  chance:0.10, min:1,   max:1   },
+      { id:'scroll_weapon_b',  chance:0.03, min:1,   max:1   },
+      { id:'equip_c',          chance:0.006,min:1,   max:1   },
+      { id:'book_shadow',      chance:0.0012,min:1,  max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:5200, max:8800 },
+      { id:'soulshot_c',       chance:1.00, min:90,  max:180  },
+      { id:'scroll_weapon_c',  chance:0.42, min:6,   max:13   },
+      { id:'scroll_weapon_b',  chance:0.10, min:1,   max:3    },
+      { id:'blessed_scroll',   chance:0.20, min:2,   max:4    },
+      { id:'arena_pass',       chance:0.20, min:1,   max:2    },
+      { id:'book_shadow',      chance:0.015,min:1,   max:1    },
+    ],
   },
 
-  // ═══ OREN (B-грейд) ════════════════════════════════════════════════
-  golem: {
-    id:'golem', name:'Голем', emoji:'🗿',
-    hp:500, attack:22, speed:0.8, xp:55, size:0.8,
+  troll: {
+    id:'troll', name:'Тролль', emoji:'🧌',
+    level:38, hp:1400, attack:68, speed:0.9, xp:360, size:0.85,
     drops: [
-      { id:'book_meteor', chance:0.0001, min:1, max:1 },
-      { id:'book_sleep',  chance:0.0002, min:1, max:1 },
-      { id:'book_shadow', chance:0.0002, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:420, max:840 },
+      { id:'potion_medium',    chance:0.35, min:1,   max:3   },
+      { id:'potion_large',     chance:0.12, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.55, min:12,  max:26  },
+      { id:'scroll_weapon_c',  chance:0.10, min:1,   max:1   },
+      { id:'scroll_weapon_b',  chance:0.03, min:1,   max:1   },
+      { id:'equip_c',          chance:0.008,min:1,   max:1   },
+      { id:'equip_b',          chance:0.0005,min:1,  max:1   },
+      { id:'book_sleep',       chance:0.0012,min:1,  max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:5600, max:9500 },
+      { id:'soulshot_c',       chance:1.00, min:90,  max:180  },
+      { id:'scroll_weapon_c',  chance:0.45, min:7,   max:14   },
+      { id:'scroll_weapon_b',  chance:0.12, min:1,   max:3    },
+      { id:'blessed_scroll',   chance:0.22, min:2,   max:4    },
+      { id:'arena_pass',       chance:0.20, min:1,   max:2    },
+      { id:'equip_c',          chance:0.20, min:1,   max:1    },
+    ],
+  },
+
+  wraith: {
+    id:'wraith', name:'Тень смерти', emoji:'☠️',
+    level:41, hp:1800, attack:80, speed:1.3, xp:440, size:0.75,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#7f1d1d', speed:13 },
+    drops: [
+      { id:'gold',             chance:1.00, min:500, max:1000 },
+      { id:'potion_large',     chance:0.30, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.60, min:15,  max:30  },
+      { id:'scroll_weapon_c',  chance:0.12, min:1,   max:2   },
+      { id:'scroll_weapon_b',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_armor_b',   chance:0.08, min:1,   max:1   },
+      { id:'equip_c',          chance:0.010,min:1,   max:1   },
+      { id:'equip_b',          chance:0.002,min:1,   max:1   },
+      { id:'book_chain_lightning',chance:0.0018,min:1, max:1 },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:7500, max:12000 },
+      { id:'soulshot_c',       chance:1.00, min:100, max:200   },
+      { id:'scroll_weapon_c',  chance:0.48, min:8,   max:16    },
+      { id:'scroll_weapon_b',  chance:0.20, min:3,   max:6     },
+      { id:'scroll_armor_b',   chance:0.20, min:3,   max:6     },
+      { id:'blessed_scroll',   chance:0.25, min:3,   max:5     },
+      { id:'arena_pass',       chance:0.22, min:1,   max:2     },
+      { id:'equip_b',          chance:0.15, min:1,   max:1     },
+      { id:'book_chain_lightning',chance:0.020,min:1, max:1    },
+    ],
+  },
+
+  treant: {
+    id:'treant', name:'Древень', emoji:'🌳',
+    level:43, hp:2200, attack:88, speed:0.7, xp:480, size:0.9,
+    drops: [
+      { id:'gold',             chance:1.00, min:550, max:1100 },
+      { id:'potion_large',     chance:0.30, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.60, min:15,  max:30  },
+      { id:'scroll_weapon_c',  chance:0.12, min:1,   max:2   },
+      { id:'scroll_weapon_b',  chance:0.08, min:1,   max:1   },
+      { id:'scroll_armor_b',   chance:0.08, min:1,   max:1   },
+      { id:'equip_c',          chance:0.012,min:1,   max:1   },
+      { id:'equip_b',          chance:0.002,min:1,   max:1   },
+      { id:'book_last_stand',  chance:0.0015,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:8500, max:14000 },
+      { id:'soulshot_c',       chance:1.00, min:100, max:200   },
+      { id:'scroll_weapon_c',  chance:0.50, min:8,   max:18    },
+      { id:'scroll_weapon_b',  chance:0.22, min:3,   max:7     },
+      { id:'scroll_armor_b',   chance:0.22, min:3,   max:7     },
+      { id:'blessed_scroll',   chance:0.25, min:3,   max:6     },
+      { id:'arena_pass',       chance:0.22, min:1,   max:2     },
+      { id:'equip_b',          chance:0.18, min:1,   max:1     },
+      { id:'book_last_stand',  chance:0.018,min:1,   max:1     },
+    ],
+  },
+
+  nightshade: {
+    id:'nightshade', name:'Ночная тень', emoji:'🥷',
+    level:44, hp:1500, attack:98, speed:1.8, xp:520, size:0.7,
+    drops: [
+      { id:'gold',             chance:1.00, min:600, max:1200 },
+      { id:'potion_large',     chance:0.30, min:1,   max:2   },
+      { id:'soulshot_c',       chance:0.60, min:15,  max:30  },
+      { id:'scroll_weapon_c',  chance:0.15, min:1,   max:2   },
+      { id:'scroll_weapon_b',  chance:0.10, min:1,   max:1   },
+      { id:'scroll_armor_b',   chance:0.10, min:1,   max:1   },
+      { id:'equip_c',          chance:0.012,min:1,   max:1   },
+      { id:'equip_b',          chance:0.003,min:1,   max:1   },
+      { id:'book_berserk',     chance:0.0018,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:9500, max:16000 },
+      { id:'soulshot_c',       chance:1.00, min:110, max:220   },
+      { id:'scroll_weapon_c',  chance:0.50, min:9,   max:20    },
+      { id:'scroll_weapon_b',  chance:0.25, min:3,   max:8     },
+      { id:'scroll_armor_b',   chance:0.25, min:3,   max:8     },
+      { id:'blessed_scroll',   chance:0.28, min:3,   max:6     },
+      { id:'arena_pass',       chance:0.24, min:1,   max:2     },
+      { id:'equip_b',          chance:0.20, min:1,   max:1     },
+      { id:'book_berserk',     chance:0.020,min:1,   max:1     },
+    ],
+  },
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  B TIER — Oren (уровни 45-58)
+  // ═════════════════════════════════════════════════════════════════════
+
+  golem: {
+    id:'golem', name:'Железный голем', emoji:'🗿',
+    level:47, hp:3000, attack:110, speed:0.8, xp:700, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:700, max:1400 },
+      { id:'potion_large',     chance:0.30, min:1,   max:2   },
+      { id:'soulshot_b',       chance:0.55, min:15,  max:32  },
+      { id:'scroll_weapon_b',  chance:0.10, min:1,   max:1   },
+      { id:'scroll_armor_b',   chance:0.10, min:1,   max:1   },
+      { id:'equip_b',          chance:0.008,min:1,   max:1   },
+      { id:'book_frost_nova',  chance:0.0012,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:12000, max:20000 },
+      { id:'soulshot_b',       chance:1.00, min:100, max:200    },
+      { id:'scroll_weapon_b',  chance:0.45, min:8,   max:16     },
+      { id:'scroll_armor_b',   chance:0.45, min:8,   max:16     },
+      { id:'blessed_scroll',   chance:0.25, min:3,   max:6      },
+      { id:'arena_pass',       chance:0.22, min:1,   max:2      },
+      { id:'equip_b',          chance:0.20, min:1,   max:1      },
+      { id:'book_frost_nova',  chance:0.018,min:1,   max:1      },
+    ],
+  },
+
+  harpy: {
+    id:'harpy', name:'Гарпия', emoji:'🦅',
+    level:48, hp:2200, attack:118, speed:1.9, xp:730, size:0.75,
+    attackRange: 6,
+    attackProjectile: { type:'bow', color:'#fbbf24', speed:20 },
+    keepDistance: true,
+    drops: [
+      { id:'gold',             chance:1.00, min:720, max:1440 },
+      { id:'potion_large',     chance:0.30, min:1,   max:2   },
+      { id:'soulshot_b',       chance:0.55, min:15,  max:32  },
+      { id:'scroll_weapon_b',  chance:0.10, min:1,   max:1   },
+      { id:'scroll_armor_b',   chance:0.10, min:1,   max:1   },
+      { id:'equip_b',          chance:0.008,min:1,   max:1   },
+      { id:'book_frost_nova',  chance:0.0012,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:13000, max:22000 },
+      { id:'soulshot_b',       chance:1.00, min:105, max:210    },
+      { id:'scroll_weapon_b',  chance:0.45, min:8,   max:17     },
+      { id:'scroll_armor_b',   chance:0.45, min:8,   max:17     },
+      { id:'blessed_scroll',   chance:0.25, min:3,   max:6      },
+      { id:'arena_pass',       chance:0.22, min:1,   max:2      },
+      { id:'equip_b',          chance:0.20, min:1,   max:1      },
+    ],
   },
 
   demon: {
     id:'demon', name:'Демон', emoji:'😈',
-    hp:700, attack:30, speed:1.4, xp:90, size:0.75,
+    level:50, hp:3500, attack:130, speed:1.4, xp:800, size:0.75,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#dc2626', speed:14 },
     drops: [
-      { id:'book_meteor', chance:0.0001,  min:1, max:1 },
-      { id:'book_sleep',  chance:0.00015, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:800, max:1600 },
+      { id:'potion_large',     chance:0.30, min:1,   max:2   },
+      { id:'soulshot_b',       chance:0.55, min:15,  max:32  },
+      { id:'scroll_weapon_b',  chance:0.12, min:1,   max:2   },
+      { id:'scroll_weapon_a',  chance:0.03, min:1,   max:1   },
+      { id:'equip_b',          chance:0.008,min:1,   max:1   },
+      { id:'book_berserk',     chance:0.0012,min:1,  max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:15000, max:25000 },
+      { id:'soulshot_b',       chance:1.00, min:110, max:220    },
+      { id:'scroll_weapon_b',  chance:0.48, min:9,   max:18     },
+      { id:'scroll_weapon_a',  chance:0.10, min:1,   max:3      },
+      { id:'blessed_scroll',   chance:0.28, min:3,   max:6      },
+      { id:'arena_pass',       chance:0.24, min:1,   max:2      },
+      { id:'book_berserk',     chance:0.018,min:1,   max:1      },
+    ],
   },
 
-  // ═══ ADEN (A-грейд) ════════════════════════════════════════════════
+  medusa: {
+    id:'medusa', name:'Медуза', emoji:'🐍',
+    level:52, hp:4000, attack:140, speed:1.2, xp:880, size:0.8,
+    attackRange: 7,
+    attackProjectile: { type:'staff', color:'#a855f7', speed:15 },
+    drops: [
+      { id:'gold',             chance:1.00, min:880, max:1760 },
+      { id:'potion_large',     chance:0.32, min:1,   max:2   },
+      { id:'soulshot_b',       chance:0.55, min:15,  max:32  },
+      { id:'scroll_weapon_b',  chance:0.12, min:1,   max:2   },
+      { id:'scroll_weapon_a',  chance:0.03, min:1,   max:1   },
+      { id:'equip_b',          chance:0.010,min:1,   max:1   },
+      { id:'book_last_stand',  chance:0.0012,min:1,  max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:17000, max:28000 },
+      { id:'soulshot_b',       chance:1.00, min:115, max:230    },
+      { id:'scroll_weapon_b',  chance:0.50, min:9,   max:19     },
+      { id:'scroll_weapon_a',  chance:0.12, min:1,   max:3      },
+      { id:'blessed_scroll',   chance:0.30, min:3,   max:7      },
+      { id:'arena_pass',       chance:0.24, min:1,   max:2      },
+      { id:'book_last_stand',  chance:0.018,min:1,   max:1      },
+    ],
+  },
+
+  lich: {
+    id:'lich', name:'Древний лич', emoji:'☠️',
+    level:54, hp:5000, attack:160, speed:1.0, xp:1000, size:0.9,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#7f1d1d', speed:15 },
+    drops: [
+      { id:'gold',             chance:1.00, min:1000, max:2000 },
+      { id:'potion_large',     chance:0.32, min:1,    max:2   },
+      { id:'soulshot_b',       chance:0.60, min:18,   max:36  },
+      { id:'scroll_weapon_b',  chance:0.14, min:1,    max:2   },
+      { id:'scroll_weapon_a',  chance:0.08, min:1,    max:1   },
+      { id:'scroll_armor_a',   chance:0.08, min:1,    max:1   },
+      { id:'equip_b',          chance:0.012,min:1,    max:1   },
+      { id:'equip_a',          chance:0.002,min:1,    max:1   },
+      { id:'book_meteor',      chance:0.0018,min:1,   max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:22000, max:36000 },
+      { id:'soulshot_b',       chance:1.00, min:130, max:260    },
+      { id:'scroll_weapon_b',  chance:0.55, min:10,  max:20     },
+      { id:'scroll_weapon_a',  chance:0.20, min:3,   max:6      },
+      { id:'scroll_armor_a',   chance:0.20, min:3,   max:6      },
+      { id:'blessed_scroll',   chance:0.32, min:4,   max:8      },
+      { id:'arena_pass',       chance:0.28, min:1,   max:3      },
+      { id:'equip_a',          chance:0.15, min:1,   max:1      },
+      { id:'book_meteor',      chance:0.025,min:1,   max:1      },
+    ],
+  },
+
+  infernal_guard: {
+    id:'infernal_guard', name:'Адская стража', emoji:'👹',
+    level:56, hp:6000, attack:180, speed:1.3, xp:1100, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:1100, max:2200 },
+      { id:'potion_large',     chance:0.32, min:1,    max:2   },
+      { id:'soulshot_b',       chance:0.60, min:18,   max:36  },
+      { id:'scroll_weapon_b',  chance:0.15, min:1,    max:2   },
+      { id:'scroll_weapon_a',  chance:0.08, min:1,    max:1   },
+      { id:'scroll_armor_a',   chance:0.08, min:1,    max:1   },
+      { id:'equip_b',          chance:0.012,min:1,    max:1   },
+      { id:'equip_a',          chance:0.002,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:24000, max:40000 },
+      { id:'soulshot_b',       chance:1.00, min:135, max:270    },
+      { id:'scroll_weapon_b',  chance:0.55, min:10,  max:22     },
+      { id:'scroll_weapon_a',  chance:0.22, min:3,   max:6      },
+      { id:'scroll_armor_a',   chance:0.22, min:3,   max:6      },
+      { id:'blessed_scroll',   chance:0.35, min:4,   max:8      },
+      { id:'arena_pass',       chance:0.28, min:1,   max:3      },
+      { id:'equip_a',          chance:0.18, min:1,   max:1      },
+    ],
+  },
+
+  shadow_knight: {
+    id:'shadow_knight', name:'Рыцарь тени', emoji:'🗡️',
+    level:58, hp:7000, attack:200, speed:1.2, xp:1250, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:1200, max:2400 },
+      { id:'potion_large',     chance:0.35, min:1,    max:3   },
+      { id:'soulshot_b',       chance:0.60, min:18,   max:36  },
+      { id:'scroll_weapon_b',  chance:0.15, min:1,    max:2   },
+      { id:'scroll_weapon_a',  chance:0.10, min:1,    max:1   },
+      { id:'scroll_armor_a',   chance:0.10, min:1,    max:1   },
+      { id:'equip_b',          chance:0.014,min:1,    max:1   },
+      { id:'equip_a',          chance:0.003,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:26000, max:44000 },
+      { id:'soulshot_b',       chance:1.00, min:140, max:280    },
+      { id:'scroll_weapon_b',  chance:0.55, min:10,  max:22     },
+      { id:'scroll_weapon_a',  chance:0.25, min:4,   max:8      },
+      { id:'scroll_armor_a',   chance:0.25, min:4,   max:8      },
+      { id:'blessed_scroll',   chance:0.35, min:4,   max:8      },
+      { id:'arena_pass',       chance:0.30, min:2,   max:4      },
+      { id:'equip_a',          chance:0.20, min:1,   max:1      },
+    ],
+  },
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  A TIER — Aden (уровни 58-72)
+  // ═════════════════════════════════════════════════════════════════════
+
   dragon: {
     id:'dragon', name:'Дракон', emoji:'🐉',
-    hp:1200, attack:45, speed:1.0, xp:180, size:0.95,
+    level:60, hp:9000, attack:240, speed:1.0, xp:1600, size:0.95,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#ea580c', speed:15 },
     drops: [
-      { id:'book_meteor', chance:0.0001, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:1400, max:2800 },
+      { id:'potion_epic',      chance:0.20, min:1,    max:1   },
+      { id:'soulshot_a',       chance:0.55, min:18,   max:36  },
+      { id:'scroll_weapon_a',  chance:0.12, min:1,    max:2   },
+      { id:'scroll_armor_a',   chance:0.12, min:1,    max:2   },
+      { id:'equip_a',          chance:0.010,min:1,    max:1   },
+      { id:'book_meteor',      chance:0.0012,min:1,   max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:30000, max:50000 },
+      { id:'soulshot_a',       chance:1.00, min:130, max:260    },
+      { id:'scroll_weapon_a',  chance:0.55, min:10,  max:22     },
+      { id:'scroll_armor_a',   chance:0.55, min:10,  max:22     },
+      { id:'blessed_scroll',   chance:0.35, min:5,   max:10     },
+      { id:'arena_pass',       chance:0.32, min:2,   max:4      },
+      { id:'equip_a',          chance:0.22, min:1,   max:1      },
+      { id:'book_meteor',      chance:0.020,min:1,   max:1      },
+    ],
   },
 
-  // ═══ GODDARD (S-грейд) ═════════════════════════════════════════════
+  drake_rider: {
+    id:'drake_rider', name:'Наездник на дрейке', emoji:'🦎',
+    level:62, hp:7500, attack:260, speed:1.7, xp:1700, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:1500, max:3000 },
+      { id:'potion_epic',      chance:0.20, min:1,    max:1   },
+      { id:'soulshot_a',       chance:0.55, min:18,   max:36  },
+      { id:'scroll_weapon_a',  chance:0.12, min:1,    max:2   },
+      { id:'scroll_armor_a',   chance:0.12, min:1,    max:2   },
+      { id:'equip_a',          chance:0.010,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:32000, max:54000 },
+      { id:'soulshot_a',       chance:1.00, min:135, max:270    },
+      { id:'scroll_weapon_a',  chance:0.55, min:10,  max:22     },
+      { id:'scroll_armor_a',   chance:0.55, min:10,  max:22     },
+      { id:'blessed_scroll',   chance:0.38, min:5,   max:10     },
+      { id:'arena_pass',       chance:0.32, min:2,   max:4      },
+      { id:'equip_a',          chance:0.22, min:1,   max:1      },
+    ],
+  },
+
+  wyvern: {
+    id:'wyvern', name:'Виверна', emoji:'🐲',
+    level:64, hp:8000, attack:280, speed:1.3, xp:1800, size:0.9,
+    attackRange: 7,
+    attackProjectile: { type:'bow', color:'#84cc16', speed:22 },
+    keepDistance: true,
+    drops: [
+      { id:'gold',             chance:1.00, min:1600, max:3200 },
+      { id:'potion_epic',      chance:0.22, min:1,    max:2   },
+      { id:'soulshot_a',       chance:0.60, min:20,   max:40  },
+      { id:'scroll_weapon_a',  chance:0.14, min:1,    max:2   },
+      { id:'scroll_weapon_s',  chance:0.04, min:1,    max:1   },
+      { id:'scroll_armor_a',   chance:0.14, min:1,    max:2   },
+      { id:'equip_a',          chance:0.012,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:36000, max:60000 },
+      { id:'soulshot_a',       chance:1.00, min:140, max:280    },
+      { id:'scroll_weapon_a',  chance:0.55, min:10,  max:22     },
+      { id:'scroll_weapon_s',  chance:0.15, min:2,   max:4      },
+      { id:'blessed_scroll',   chance:0.40, min:5,   max:10     },
+      { id:'arena_pass',       chance:0.35, min:2,   max:4      },
+      { id:'equip_a',          chance:0.25, min:1,   max:1      },
+    ],
+  },
+
+  fire_djinn: {
+    id:'fire_djinn', name:'Огненный джинн', emoji:'🔥',
+    level:66, hp:8500, attack:300, speed:1.4, xp:1900, size:0.85,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#f97316', speed:16 },
+    drops: [
+      { id:'gold',             chance:1.00, min:1700, max:3400 },
+      { id:'potion_epic',      chance:0.24, min:1,    max:2   },
+      { id:'soulshot_a',       chance:0.60, min:20,   max:40  },
+      { id:'scroll_weapon_a',  chance:0.14, min:1,    max:2   },
+      { id:'scroll_weapon_s',  chance:0.04, min:1,    max:1   },
+      { id:'scroll_armor_s',   chance:0.04, min:1,    max:1   },
+      { id:'equip_a',          chance:0.012,min:1,    max:1   },
+      { id:'equip_s',          chance:0.0008,min:1,   max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:40000, max:68000 },
+      { id:'soulshot_a',       chance:1.00, min:145, max:290    },
+      { id:'scroll_weapon_a',  chance:0.55, min:10,  max:22     },
+      { id:'scroll_weapon_s',  chance:0.18, min:2,   max:5      },
+      { id:'scroll_armor_s',   chance:0.18, min:2,   max:5      },
+      { id:'blessed_scroll',   chance:0.42, min:6,   max:12     },
+      { id:'arena_pass',       chance:0.35, min:2,   max:5      },
+      { id:'equip_s',          chance:0.08, min:1,   max:1      },
+    ],
+  },
+
+  dragon_lord: {
+    id:'dragon_lord', name:'Владыка драконов', emoji:'🐲',
+    level:68, hp:12000, attack:340, speed:1.2, xp:2200, size:1.0,
+    attackRange: 7,
+    attackProjectile: { type:'staff', color:'#dc2626', speed:17 },
+    drops: [
+      { id:'gold',             chance:1.00, min:2000, max:4000 },
+      { id:'potion_epic',      chance:0.28, min:1,    max:2   },
+      { id:'soulshot_a',       chance:0.60, min:20,   max:40  },
+      { id:'scroll_weapon_a',  chance:0.16, min:1,    max:2   },
+      { id:'scroll_weapon_s',  chance:0.08, min:1,    max:1   },
+      { id:'scroll_armor_s',   chance:0.08, min:1,    max:1   },
+      { id:'equip_a',          chance:0.014,min:1,    max:1   },
+      { id:'equip_s',          chance:0.002,min:1,    max:1   },
+      { id:'book_meteor',      chance:0.0018,min:1,   max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:50000, max:85000 },
+      { id:'soulshot_a',       chance:1.00, min:160, max:320    },
+      { id:'scroll_weapon_a',  chance:0.60, min:12,  max:25     },
+      { id:'scroll_weapon_s',  chance:0.25, min:4,   max:8      },
+      { id:'scroll_armor_s',   chance:0.25, min:4,   max:8      },
+      { id:'blessed_scroll',   chance:0.45, min:6,   max:12     },
+      { id:'arena_pass',       chance:0.40, min:3,   max:5      },
+      { id:'equip_s',          chance:0.15, min:1,   max:1      },
+      { id:'book_meteor',      chance:0.025,min:1,   max:1      },
+    ],
+  },
+
+  titan: {
+    id:'titan', name:'Титан', emoji:'🗿',
+    level:70, hp:16000, attack:400, speed:0.7, xp:2400, size:1.1,
+    drops: [
+      { id:'gold',             chance:1.00, min:2200, max:4400 },
+      { id:'potion_epic',      chance:0.30, min:1,    max:2   },
+      { id:'soulshot_a',       chance:0.60, min:20,   max:40  },
+      { id:'scroll_weapon_s',  chance:0.10, min:1,    max:2   },
+      { id:'scroll_armor_s',   chance:0.10, min:1,    max:2   },
+      { id:'equip_a',          chance:0.016,min:1,    max:1   },
+      { id:'equip_s',          chance:0.003,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:60000, max:100000 },
+      { id:'soulshot_a',       chance:1.00, min:170, max:340     },
+      { id:'scroll_weapon_s',  chance:0.30, min:5,   max:10      },
+      { id:'scroll_armor_s',   chance:0.30, min:5,   max:10      },
+      { id:'blessed_scroll',   chance:0.48, min:8,   max:15      },
+      { id:'arena_pass',       chance:0.42, min:3,   max:6       },
+      { id:'equip_s',          chance:0.20, min:1,   max:1       },
+    ],
+  },
+
+  dark_angel: {
+    id:'dark_angel', name:'Тёмный ангел', emoji:'😇',
+    level:72, hp:10000, attack:450, speed:1.8, xp:2600, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:2400, max:4800 },
+      { id:'potion_epic',      chance:0.32, min:1,    max:2   },
+      { id:'soulshot_a',       chance:0.60, min:20,   max:40  },
+      { id:'scroll_weapon_s',  chance:0.12, min:1,    max:2   },
+      { id:'scroll_armor_s',   chance:0.12, min:1,    max:2   },
+      { id:'equip_a',          chance:0.018,min:1,    max:1   },
+      { id:'equip_s',          chance:0.004,min:1,    max:1   },
+      { id:'book_meteor',      chance:0.0020,min:1,   max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:65000, max:110000 },
+      { id:'soulshot_a',       chance:1.00, min:180, max:360     },
+      { id:'scroll_weapon_s',  chance:0.35, min:6,   max:12      },
+      { id:'scroll_armor_s',   chance:0.35, min:6,   max:12      },
+      { id:'blessed_scroll',   chance:0.50, min:8,   max:16      },
+      { id:'arena_pass',       chance:0.45, min:3,   max:6       },
+      { id:'equip_s',          chance:0.25, min:1,   max:1       },
+      { id:'book_meteor',      chance:0.028,min:1,   max:1       },
+    ],
+  },
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  S TIER — Goddard (уровни 72-80)
+  // ═════════════════════════════════════════════════════════════════════
+
   ice_golem: {
     id:'ice_golem', name:'Ледяной голем', emoji:'❄️',
-    hp:2000, attack:60, speed:0.7, xp:300, size:0.85,
+    level:74, hp:20000, attack:500, speed:0.7, xp:3000, size:0.9,
     drops: [
-      { id:'book_meteor',        chance:0.0001, min:1, max:1 },
-      { id:'book_arcane_shield', chance:0.0001, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:3000, max:6000 },
+      { id:'potion_epic',      chance:0.35, min:1,    max:3   },
+      { id:'soulshot_s',       chance:0.60, min:20,   max:42  },
+      { id:'scroll_weapon_s',  chance:0.14, min:1,    max:2   },
+      { id:'scroll_armor_s',   chance:0.14, min:1,    max:2   },
+      { id:'equip_s',          chance:0.012,min:1,    max:1   },
+      { id:'book_meteor',      chance:0.0015,min:1,   max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:85000, max:140000 },
+      { id:'soulshot_s',       chance:1.00, min:180, max:360     },
+      { id:'scroll_weapon_s',  chance:0.55, min:10,  max:22      },
+      { id:'scroll_armor_s',   chance:0.55, min:10,  max:22      },
+      { id:'blessed_scroll',   chance:0.50, min:8,   max:16      },
+      { id:'arena_pass',       chance:0.45, min:3,   max:6       },
+      { id:'equip_s',          chance:0.28, min:1,   max:1       },
+      { id:'book_meteor',      chance:0.030,min:1,   max:1       },
+    ],
+  },
+
+  frost_wolf: {
+    id:'frost_wolf', name:'Ледяной волк', emoji:'🐺',
+    level:75, hp:16000, attack:520, speed:2.0, xp:3100, size:0.85,
+    drops: [
+      { id:'gold',             chance:1.00, min:3200, max:6400 },
+      { id:'potion_epic',      chance:0.35, min:1,    max:3   },
+      { id:'soulshot_s',       chance:0.60, min:20,   max:42  },
+      { id:'scroll_weapon_s',  chance:0.14, min:1,    max:2   },
+      { id:'scroll_armor_s',   chance:0.14, min:1,    max:2   },
+      { id:'equip_s',          chance:0.012,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:90000, max:150000 },
+      { id:'soulshot_s',       chance:1.00, min:190, max:380     },
+      { id:'scroll_weapon_s',  chance:0.55, min:10,  max:24      },
+      { id:'scroll_armor_s',   chance:0.55, min:10,  max:24      },
+      { id:'blessed_scroll',   chance:0.52, min:8,   max:16      },
+      { id:'arena_pass',       chance:0.48, min:3,   max:6       },
+      { id:'equip_s',          chance:0.30, min:1,   max:1       },
+    ],
   },
 
   archdemon: {
     id:'archdemon', name:'Архидемон', emoji:'👿',
-    hp:3000, attack:90, speed:1.2, xp:600, size:1.0,
+    level:77, hp:24000, attack:600, speed:1.4, xp:3600, size:1.0,
+    attackRange: 6,
+    attackProjectile: { type:'staff', color:'#7f1d1d', speed:16 },
     drops: [
-      { id:'book_meteor', chance:0.00008, min:1, max:1 },
+      { id:'gold',             chance:1.00, min:3800, max:7600 },
+      { id:'potion_epic',      chance:0.40, min:1,    max:3   },
+      { id:'soulshot_s',       chance:0.65, min:22,   max:46  },
+      { id:'scroll_weapon_s',  chance:0.16, min:1,    max:2   },
+      { id:'scroll_armor_s',   chance:0.16, min:1,    max:2   },
+      { id:'equip_s',          chance:0.014,min:1,    max:1   },
+      { id:'book_meteor',      chance:0.0018,min:1,   max:1   },
     ],
-    championDrops: [],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:110000, max:180000 },
+      { id:'soulshot_s',       chance:1.00, min:200, max:400      },
+      { id:'scroll_weapon_s',  chance:0.58, min:12,  max:25       },
+      { id:'scroll_armor_s',   chance:0.58, min:12,  max:25       },
+      { id:'blessed_scroll',   chance:0.55, min:10,  max:20       },
+      { id:'arena_pass',       chance:0.50, min:4,   max:8        },
+      { id:'equip_s',          chance:0.32, min:1,   max:1        },
+      { id:'book_meteor',      chance:0.032,min:1,   max:1        },
+    ],
+  },
+
+  fallen_angel: {
+    id:'fallen_angel', name:'Падший ангел', emoji:'😈',
+    level:78, hp:22000, attack:640, speed:1.6, xp:3800, size:0.9,
+    attackRange: 7,
+    attackProjectile: { type:'bow', color:'#fbbf24', speed:22 },
+    keepDistance: true,
+    drops: [
+      { id:'gold',             chance:1.00, min:4000, max:8000 },
+      { id:'potion_epic',      chance:0.40, min:1,    max:3   },
+      { id:'soulshot_s',       chance:0.65, min:22,   max:46  },
+      { id:'scroll_weapon_s',  chance:0.18, min:1,    max:2   },
+      { id:'scroll_armor_s',   chance:0.18, min:1,    max:2   },
+      { id:'equip_s',          chance:0.016,min:1,    max:1   },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:120000, max:190000 },
+      { id:'soulshot_s',       chance:1.00, min:210, max:420      },
+      { id:'scroll_weapon_s',  chance:0.60, min:12,  max:26       },
+      { id:'scroll_armor_s',   chance:0.60, min:12,  max:26       },
+      { id:'blessed_scroll',   chance:0.58, min:10,  max:20       },
+      { id:'arena_pass',       chance:0.55, min:4,   max:8        },
+      { id:'equip_s',          chance:0.35, min:1,   max:1        },
+    ],
+  },
+
+  frost_dragon: {
+    id:'frost_dragon', name:'Ледяной дракон', emoji:'🧊',
+    level:80, hp:30000, attack:720, speed:1.2, xp:4500, size:1.1,
+    attackRange: 7,
+    attackProjectile: { type:'staff', color:'#22d3ee', speed:18 },
+    drops: [
+      { id:'gold',             chance:1.00, min:5000, max:10000 },
+      { id:'potion_epic',      chance:0.45, min:1,    max:3    },
+      { id:'soulshot_s',       chance:0.70, min:25,   max:50   },
+      { id:'scroll_weapon_s',  chance:0.20, min:1,    max:2    },
+      { id:'scroll_armor_s',   chance:0.20, min:1,    max:2    },
+      { id:'equip_s',          chance:0.018,min:1,    max:1    },
+      { id:'book_meteor',      chance:0.0020,min:1,   max:1    },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:180000, max:300000 },
+      { id:'soulshot_s',       chance:1.00, min:240, max:480      },
+      { id:'scroll_weapon_s',  chance:0.65, min:15,  max:30       },
+      { id:'scroll_armor_s',   chance:0.65, min:15,  max:30       },
+      { id:'blessed_scroll',   chance:0.65, min:15,  max:25       },
+      { id:'arena_pass',       chance:0.60, min:5,   max:10       },
+      { id:'equip_s',          chance:0.40, min:1,   max:2        },
+      { id:'book_meteor',      chance:0.040,min:1,   max:1        },
+    ],
+  },
+
+  void_walker: {
+    id:'void_walker', name:'Ходок пустоты', emoji:'👁️',
+    level:80, hp:26000, attack:800, speed:1.9, xp:4800, size:0.9,
+    drops: [
+      { id:'gold',             chance:1.00, min:5500, max:11000 },
+      { id:'potion_epic',      chance:0.45, min:1,    max:3    },
+      { id:'soulshot_s',       chance:0.70, min:25,   max:50   },
+      { id:'scroll_weapon_s',  chance:0.22, min:1,    max:2    },
+      { id:'scroll_armor_s',   chance:0.22, min:1,    max:2    },
+      { id:'equip_s',          chance:0.020,min:1,    max:1    },
+      { id:'book_meteor',      chance:0.0020,min:1,   max:1    },
+    ],
+    championDrops: [
+      { id:'gold',             chance:1.00, min:200000, max:340000 },
+      { id:'soulshot_s',       chance:1.00, min:260, max:520      },
+      { id:'scroll_weapon_s',  chance:0.68, min:15,  max:32       },
+      { id:'scroll_armor_s',   chance:0.68, min:15,  max:32       },
+      { id:'blessed_scroll',   chance:0.70, min:15,  max:28       },
+      { id:'arena_pass',       chance:0.65, min:5,   max:10       },
+      { id:'equip_s',          chance:0.45, min:1,   max:2        },
+      { id:'book_meteor',      chance:0.045,min:1,   max:1        },
+    ],
   },
 };
+
+// ═══════════════════════════════════════════════════════════════════════
+//  XP МОБОВ — единая формула
+// ═══════════════════════════════════════════════════════════════════════
+//  mobXP(level) = round(2 × 1.11^level)
+//  Убийств на уровень: 25–50 по всей игре.
+//  Меняешь 1.11 → меняется весь темп прокачки.
+// ═══════════════════════════════════════════════════════════════════════
+export function getMobXp(level) {
+  return Math.max(1, Math.round(2 * Math.pow(1.11, level || 1)));
+}
 
 // ───────────────────────────────────────────────────────────────────────
 //  19. ЧЕМПИОНЫ — усиленные версии мобов
@@ -1450,3 +2447,50 @@ export const START_ITEMS = {
   potions:   { small: 5,  medium: 0, large: 0, epic: 0 },
   soulshots: { ng: 20,    d: 0,      c: 0,     b: 0, a: 0, s: 0 },
 };
+// ═══════════════════════════════════════════════════════════════════════
+//  LEVEL-SCALING — зависимость XP и дропа от разницы уровней
+// ═══════════════════════════════════════════════════════════════════════
+//
+//  diff = playerLevel - mobLevel
+//
+//  Множитель применяется к XP и ко ВСЕМ шансам дропа.
+//  Диапазон: 0.10 (пол) … 1.40 (кап).
+//
+//  diff = 0    → 1.00  (моб = игроку)
+//  diff = +5   → 0.80  (игрок выше)
+//  diff = +15  → 0.40
+//  diff = +25  → 0.10  (пол)
+//  diff = -5   → 1.20  (игрок ниже)
+//  diff = -10  → 1.40  (кап)
+// ═══════════════════════════════════════════════════════════════════════
+
+export const LEVEL_SCALING = {
+  perLevelDiff: 0.04,   // −4% за каждый уровень разницы
+  min: 0.10,            // минимум 10% (не 0 — топ-игрок всё равно что-то получает)
+  max: 1.40,            // максимум 140% (за риск дают бонус)
+};
+
+// Функция расчёта множителя от разницы уровней.
+// Используется в hero.js (XP) и loot.js (дроп).
+export function levelMultiplier(playerLevel, mobLevel) {
+  const diff = (playerLevel || 1) - (mobLevel || 1);
+  const raw = 1 - diff * LEVEL_SCALING.perLevelDiff;
+  return Math.max(LEVEL_SCALING.min, Math.min(LEVEL_SCALING.max, raw));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  XP МОБОВ — единая формула
+// ═══════════════════════════════════════════════════════════════════════
+//
+//  mobXP = round(2 × 1.11^level)
+//
+//  Убийств на уровень:
+//    1 ур.  → 25 убийств
+//    40 ур. → 36 убийств
+//    80 ур. → 50 убийств
+//
+//  Меняешь формулу — весь XP-баланс меняется сразу.
+//  Хочешь особенного моба (элита/босс) — прописывай xpOverride.
+// ═══════════════════════════════════════════════════════════════════════
+

@@ -101,12 +101,18 @@ export function updateBattle(dt, world) {
 
       m.aoeTimer -= dt;
       if (m.aoeTimer <= 0) {
-        const grade = m.grade || 'ng';
-        const aoeDef = BOSS_AOE[grade] || BOSS_AOE.ng;
-        m.aoeTimer = aoeDef.interval[0] + Math.random() * (aoeDef.interval[1] - aoeDef.interval[0]);
-        m.castGlow = 0.6;
-        const aoe = castBossAoe(m, heroes[0]);
-        if (aoe) aoeList.push(aoe);
+        // ── AoE кастуется ТОЛЬКО если герой рядом (≤ 12 клеток) ──
+        const heroDist = Math.hypot(heroes[0].x - m.x, heroes[0].y - m.y);
+        if (heroDist > 12) {
+          m.aoeTimer = 1.0;   // проверим через секунду
+        } else {
+          const grade = m.grade || 'ng';
+          const aoeDef = BOSS_AOE[grade] || BOSS_AOE.ng;
+          m.aoeTimer = aoeDef.interval[0] + Math.random() * (aoeDef.interval[1] - aoeDef.interval[0]);
+          m.castGlow = 0.6;
+          const aoe = castBossAoe(m, heroes[0]);
+          if (aoe) aoeList.push(aoe);
+        }
       }
 
       const call = GUARD_CALL[m.grade || 'ng'] || GUARD_CALL.ng;

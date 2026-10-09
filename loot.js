@@ -7,7 +7,7 @@
 //   applyDrops(drops, hero, state, cityGrade);
 //
 // ctx = { cityGrade, heroWeaponType, heroWeaponGrade }
-
+import { levelMultiplier } from './config.js';
 import { GRADE_ORDER, SLOTS, ENHANCE_STATS, POTIONS, POTION_ORDER, BUFF_SCROLLS } from './config.js';
 import {
   createItem, createBlessedScroll, createBuffScroll,
@@ -200,23 +200,41 @@ function resolveEntry(def, ctx) {
 // Принимает список записей дропа, возвращает массив
 // разрешённых дропов: [{ kind, amount|item|... }]
 // Каждая запись бросает кубик независимо.
+
 export function rollDrops(entries, ctx) {
   if (!Array.isArray(entries) || entries.length === 0) return [];
+
+  // ─── Штраф за оверлевел ────────────────────────────────────────
+  const heroLvl = ctx.heroLevel || 1;
+  const mobLvl  = ctx.mobLevel  || 1;
+  const diff    = heroLvl - mobLvl;
+  let dropMult;
+  if (diff <= 5)       dropMult = 1.00;
+  else if (diff <= 8)  dropMult = 0.75;
+  else if (diff <= 11) dropMult = 0.50;
+  else if (diff <= 15) dropMult = 0.15;
+  else                 dropMult = 0.00;
+
   const out = [];
   for (const e of entries) {
     if (!e || !e.id) continue;
-    if (Math.random() > (e.chance ?? 0)) continue;
+
+    // Золото всегда падает, но с penalty на количество
+    const isGold = e.id === 'gold';
+    const baseChance = e.chance ?? 0;
+    const adjChance = isGold ? baseChance : (baseChance * dropMult);
+    if (Math.random() > adjChance) continue;
 
     const min = e.min ?? 1;
     const max = e.max ?? min;
-    const amount = min + Math.floor(Math.random() * (max - min + 1));
+    let amount = min + Math.floor(Math.random() * (max - min + 1));
+    if (isGold && dropMult < 1) {
+      amount = Math.max(1, Math.floor(amount * Math.max(0.1, dropMult)));
+    }
     if (amount <= 0) continue;
 
     const def = ITEM_REGISTRY[e.id];
-    if (!def) {
-      console.warn('[loot] unknown id:', e.id);
-      continue;
-    }
+    if (!def) continue;
 
     const resolved = resolveEntry(def, ctx);
     if (!resolved) continue;
