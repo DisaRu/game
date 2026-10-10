@@ -1,7 +1,7 @@
 import { CONFIG, SLOTS, GRADES, POTIONS, POTION_AUTO_HP_PERCENT, POTION_COOLDOWN, ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt, MOB_DAMAGE_PERCENT, BOSS_DAMAGE_PERCENT, BOSS_AOE_PERCENT, getEnhanceBonus, BUFF_SCROLLS, SKILLS, MAX_SKILL_LEVEL, SKILL_LEVEL_EFFECT, SKILL_LEVEL_DURATION, SKILL_LEVEL_COST, SKILL_LEVEL_CAST } from './config.js';
 import { itemStats } from './items.js';
 export { ENHANCE_CHANCE, MAX_ENHANCE, willBreakAt };
-import { levelMultiplier } from './config.js';
+import { levelMultiplier ,BUFF_ORDER} from './config.js';
 // ===== СОЗДАНИЕ ГЕРОЯ =====
 
 export function createHero(classType) {
@@ -148,7 +148,30 @@ export function recalcStats(hero) {
     frost: 'slow_arrow',
     summon_shadow: hero.classType === 'mage' ? 'shadow' : 'panther',
   };
-
+  // ═══ Убираем у игрока 7 скиллов, ушедших боссам ═══
+  const _BOSS_ONLY_SKILLS = ['haste','iron_skin','reflect','focus','last_stand','vampiric','hawk_eye'];
+  if (hero.skills && typeof hero.skills === 'object') {
+    for (const id of _BOSS_ONLY_SKILLS) {
+      delete hero.skills[id];
+    }
+  }
+  // Чистим слоты от этих скиллов
+  if (Array.isArray(hero.skillSlots)) {
+    for (let i = 0; i < hero.skillSlots.length; i++) {
+      const s = hero.skillSlots[i];
+      if (!s) continue;
+      if (typeof s === 'string' && s.indexOf('skill:') === 0) {
+        const sid = s.slice(6);
+        if (_BOSS_ONLY_SKILLS.includes(sid)) hero.skillSlots[i] = null;
+      }
+    }
+  }
+  // Чистим книжки этих скиллов из рюкзака (если остались)
+  if (Array.isArray(hero.backpack)) {
+    hero.backpack = hero.backpack.filter(
+      it => !(it.kind === 'book' && _BOSS_ONLY_SKILLS.includes(it.skillId))
+    );
+  }
   // 1) Переименование ключей в hero.skills + чистка мусора
   if (hero.skills && typeof hero.skills === 'object') {
     const newSkills = {};
@@ -276,12 +299,21 @@ export function recalcStats(hero) {
   hero.castSpeed = Math.min(70, bCastSpeed);
   hero.castStability = Math.min(80, bCastStability);
 
+  // ── Бафф-свитки (10 штук) ──
   if (hero.activeBuffs) {
     const now = Date.now();
-    if (hero.activeBuffs.attack && hero.activeBuffs.attack > now) hero.attack *= 1.20;
-    if (hero.activeBuffs.crit && hero.activeBuffs.crit > now) hero.critChance = Math.min(75, hero.critChance + 15);
-    if (hero.activeBuffs.speed && hero.activeBuffs.speed > now) hero.attackSpeed *= 1.50;
-    if (hero.activeBuffs.range && hero.activeBuffs.range > now) hero.range *= 1.50;
+    const ab = hero.activeBuffs;
+
+    if (ab.attack   && ab.attack   > now) hero.attack *= 1.20;                          // +20% atk
+    if (ab.crit     && ab.crit     > now) hero.critChance = Math.min(75, hero.critChance + 15);
+    if (ab.speed    && ab.speed    > now) hero.attackSpeed *= 1.30;                     // +30% atk.spd
+    if (ab.range    && ab.range    > now) hero.range *= 1.40;                           // +40% range
+    if (ab.defense  && ab.defense  > now) hero.defense = Math.floor(hero.defense * 1.20); // +20% def
+    if (ab.evasion  && ab.evasion  > now) hero.dodge = Math.min(60, hero.dodge + 15);   // +15% dodge
+    if (ab.critdmg  && ab.critdmg  > now) hero.critDamage = Math.min(300, hero.critDamage + 30); // +30% crit dmg
+    if (ab.vampiric && ab.vampiric > now) hero.lifesteal = Math.min(30, hero.lifesteal + 10);    // +10% ls
+    if (ab.accuracy && ab.accuracy > now) hero.accuracy += 15;                          // +15% acc
+    if (ab.mana     && ab.mana     > now) hero.manaRegen *= 1.30;                       // +30% regen
   }
 
   if (oldMax > 0 && hero.maxHp !== oldMax) {
@@ -838,6 +870,14 @@ export function getSkillManaCost(hero, skillId) {
 export function getSkillCooldown(hero, skillId) {
   const def = SKILLS[skillId];
   if (!def) return 0;
+
+  // Если у героя-босса задан свой cd в skills[id].cd — используем его
+  const customCd = hero.skills?.[skillId]?.cd;
+  if (customCd && typeof customCd === 'number') {
+    const lvl = hero.skills?.[skillId]?.level || 1;
+    return customCd * getCooldownMultiplier(lvl);
+  }
+
   const lvl = hero.skills?.[skillId]?.level || 1;
   return def.cooldown * getCooldownMultiplier(lvl);
 }
@@ -858,47 +898,95 @@ export function getSkillEffect(hero, skillId) {
   if (!def) return null;
   const lvl = hero.skills?.[skillId]?.level || 1;
 
-  // Разные множители для урона и длительности
-  const valMult = 1 + SKILL_LEVEL_EFFECT * (lvl - 1);      // ×2.98 на 100
-  let durMult  = 1 + SKILL_LEVEL_DURATION * (lvl - 1);     // ×5.46 на 100
+  // ─── Множители от уровня ───
+  const valMult = 1 + SKILL_LEVEL_EFFECT * (lvl - 1);
+  let durMult  = 1 + SKILL_LEVEL_DURATION * (lvl - 1);
 
-  // Milestone 100: легендарный — +50% к длительности
+  // Milestone 100: +50% к длительности
   if (hasSkillMilestone(lvl, 'legend')) durMult *= 1.5;
+
+  // Шанс дебаффа — растёт от уровня
+  const chanceMult = 1 + 0.005 * (lvl - 1);
 
   const out = { ...def.effect };
 
-  // value × valMult
+  // ─── Value (урон/хил/сила) ───
   if (typeof def.effect.value === 'number') {
     out.value = def.effect.value * valMult;
   }
-  // duration × durMult
+
+  // ─── Duration (buff/debuff/shield/dot) ───
   if (typeof def.effect.duration === 'number') {
     out.duration = def.effect.duration * durMult;
   }
-  // Встроенный дебафф (ice_bolt → slow)
-  if (def.effect.debuff && typeof def.effect.debuff.duration === 'number') {
-    out.debuff = { ...def.effect.debuff, duration: def.effect.debuff.duration * durMult };
+
+  // ─── Count (multishot — стрелы) ───
+  if (typeof def.effect.count === 'number') {
+    out.count = def.effect.count + Math.floor((lvl - 1) / 25);
   }
-  // dotDuration (arrow_rain — поле дождя) — растёт как duration
+
+  // ─── Ticks (DoT) ───
+  if (typeof def.effect.ticks === 'number') {
+    out.ticks = Math.floor(def.effect.ticks * durMult);
+  }
+
+  // ─── Встроенный дебафф (ice_bolt → slow) ───
+  if (def.effect.debuff) {
+    out.debuff = { ...def.effect.debuff };
+    if (typeof out.debuff.duration === 'number') {
+      out.debuff.duration *= durMult;
+    }
+    if (typeof out.debuff.value === 'number') {
+      out.debuff.value *= valMult;
+    }
+  }
+
+  // ─── dotDuration / dotValue (arrow_rain) ───
   if (typeof def.effect.dotDuration === 'number') {
     out.dotDuration = def.effect.dotDuration * durMult;
   }
-  // dotValue (урон тика дождя) — растёт как урон
   if (typeof def.effect.dotValue === 'number') {
     out.dotValue = def.effect.dotValue * valMult;
   }
-  // AoE +1 от milestone 50
-  if (hasSkillMilestone(lvl, 'aoe1') && def.effect.aoe) {
-    out.aoe = def.effect.aoe + 1;
-  } else if (hasSkillMilestone(lvl, 'aoe1') && typeof def.effect.value === 'number') {
-    out.value = out.value * 1.15;
+
+  // ─── AoE радиус (растёт от уровня) ───
+  if (typeof def.effect.aoe === 'number' && def.effect.aoe > 0) {
+    const extraAoe = Math.floor((lvl - 1) / 25) * 0.5;
+    out.aoe = def.effect.aoe + extraAoe;
   }
-  // Chain +1 от milestone 50
-  if (hasSkillMilestone(lvl, 'aoe1') && def.effect.chain) {
-    out.chain = def.effect.chain + 1;
+
+  // ─── Milestone 50: +1 AoE / +1 chain ───
+  if (hasSkillMilestone(lvl, 'aoe1')) {
+    if (def.effect.aoe) out.aoe = (out.aoe || def.effect.aoe) + 1;
+    if (def.effect.chain) out.chain = def.effect.chain + 1;
   }
+
+  // ─── Crit / execute bonus ───
+  if (typeof def.effect.critBonus === 'number') {
+    out.critBonus = def.effect.critBonus * valMult;
+  }
+  if (typeof def.effect.executeBonus === 'number') {
+    out.executeBonus = def.effect.executeBonus * valMult;
+  }
+
+  // ─── Summon (pet) ───
+  if (def.effect.type === 'summon' && typeof def.effect.damagePercent === 'number') {
+    out.damagePercent = def.effect.damagePercent * valMult;
+  }
+
+  // ─── Reflect ───
+  if (typeof def.effect.reflectValue === 'number') {
+    out.reflectValue = def.effect.reflectValue * valMult;
+  }
+
+  // ─── Шанс дебаффа ───
+  if (typeof def.effect.chance === 'number') {
+    out.chance = Math.min(1.0, def.effect.chance * chanceMult);
+  }
+
+  // ─── Milestones: pierce + crit bonus ───
   out.pierce = getSkillPierce(lvl);
-  out.critBonus = getSkillCritBonus(lvl);
+  out.critBonus = (out.critBonus || 0) + getSkillCritBonus(lvl);
 
   return out;
 }
@@ -1021,7 +1109,9 @@ export function setSlotAction(hero, slotIndex, kind, id) {
     if (kind === 'skill' && !hero.skills?.[id]) return { ok: false, reason: 'not_learned' };
     if (kind === 'potion' && !['small','medium','large','epic'].includes(id)) return { ok: false, reason: 'bad_potion' };
     if (kind === 'soulshot' && !['ng','d','c','b','a','s'].includes(id)) return { ok: false, reason: 'bad_grade' };
-    if (kind === 'buff' && !['attack','crit','speed','range'].includes(id)) return { ok: false, reason: 'bad_buff' };
+    if (kind === 'buff' && !['attack','crit','speed','range','defense','evasion','critdmg','vampiric','accuracy','mana'].includes(id)) {
+  return { ok: false, reason: 'bad_buff' };
+}
     slotStr = kind + ':' + id;
   }
 

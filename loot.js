@@ -33,11 +33,17 @@ export const ITEM_REGISTRY = {
   blessed_scroll: { kind: 'backpack', make: () => createBlessedScroll(1) },
   arena_pass:     { kind: 'backpack', make: () => createArenaPass(1) },
 
-  // ----- Бафф-свитки -----
-  buff_attack: { kind: 'backpack', make: () => createBuffScroll('attack') },
-  buff_crit:   { kind: 'backpack', make: () => createBuffScroll('crit') },
-  buff_speed:  { kind: 'backpack', make: () => createBuffScroll('speed') },
-  buff_range:  { kind: 'backpack', make: () => createBuffScroll('range') },
+  // ----- Бафф-свитки (10) -----
+  buff_attack:   { kind: 'backpack', make: () => createBuffScroll('attack') },
+  buff_crit:     { kind: 'backpack', make: () => createBuffScroll('crit') },
+  buff_speed:    { kind: 'backpack', make: () => createBuffScroll('speed') },
+  buff_range:    { kind: 'backpack', make: () => createBuffScroll('range') },
+  buff_defense:  { kind: 'backpack', make: () => createBuffScroll('defense') },
+  buff_evasion:  { kind: 'backpack', make: () => createBuffScroll('evasion') },
+  buff_critdmg:  { kind: 'backpack', make: () => createBuffScroll('critdmg') },
+  buff_vampiric: { kind: 'backpack', make: () => createBuffScroll('vampiric') },
+  buff_accuracy: { kind: 'backpack', make: () => createBuffScroll('accuracy') },
+  buff_mana:     { kind: 'backpack', make: () => createBuffScroll('mana') },
 
   // ----- Книжки скиллов (31 шт) -----
   // Общие
@@ -45,12 +51,7 @@ export const ITEM_REGISTRY = {
   book_cleanse:     { kind: 'backpack', make: () => createSkillBook('cleanse') },
   book_dodge:       { kind: 'backpack', make: () => createSkillBook('dodge') },
   book_haste:       { kind: 'backpack', make: () => createSkillBook('haste') },
-  book_iron_skin:   { kind: 'backpack', make: () => createSkillBook('iron_skin') },
-  book_reflect:     { kind: 'backpack', make: () => createSkillBook('reflect') },
-  book_vampiric:    { kind: 'backpack', make: () => createSkillBook('vampiric') },
   book_berserk:     { kind: 'backpack', make: () => createSkillBook('berserk') },
-  book_focus:       { kind: 'backpack', make: () => createSkillBook('focus') },
-  book_last_stand:  { kind: 'backpack', make: () => createSkillBook('last_stand') },
 
   // Лучник
   book_multishot:    { kind: 'backpack', make: () => createSkillBook('multishot') },
@@ -62,7 +63,6 @@ export const ITEM_REGISTRY = {
   book_slow_arrow:   { kind: 'backpack', make: () => createSkillBook('slow_arrow') },
   book_poison_arrow: { kind: 'backpack', make: () => createSkillBook('poison_arrow') },
   book_arrow_rain:   { kind: 'backpack', make: () => createSkillBook('arrow_rain') },
-  book_hawk_eye:     { kind: 'backpack', make: () => createSkillBook('hawk_eye') },
   book_panther:      { kind: 'backpack', make: () => createSkillBook('panther') },
 
   // Маг
@@ -207,14 +207,14 @@ export function rollDrops(entries, ctx) {
   // ─── Штраф за оверлевел ────────────────────────────────────────
   const heroLvl = ctx.heroLevel || 1;
   const mobLvl  = ctx.mobLevel  || 1;
-  const diff    = heroLvl - mobLvl;
+  const diff    = heroLvl - mobLvl;   // >0 — моб слабее
   let dropMult;
-  if (diff <= 5)       dropMult = 1.00;
-  else if (diff <= 8)  dropMult = 0.75;
-  else if (diff <= 11) dropMult = 0.50;
-  else if (diff <= 15) dropMult = 0.15;
-  else                 dropMult = 0.00;
-
+  if (diff <= 2)       dropMult = 1.00;  // моб на уровне
+  else if (diff <= 5)  dropMult = 0.75;
+  else if (diff <= 8)  dropMult = 0.40;
+  else if (diff <= 11) dropMult = 0.15;
+  else if (diff <= 15) dropMult = 0.05;
+  else                 dropMult = 0.00;  // моб на 16+ ур. ниже — пусто             dropMult = 0.00;  // моб на 16+ уровней ниже — пусто
   const out = [];
   for (const e of entries) {
     if (!e || !e.id) continue;

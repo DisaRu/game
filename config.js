@@ -646,25 +646,48 @@ export const POTION_COOLDOWN = 3;           // секунд между авто-
 // ───────────────────────────────────────────────────────────────────────
 export const BUFF_SCROLLS = {
   attack: {
-    id:'attack', name:'Свиток ярости', icon:'🗡', color:'#ef4444',
+    id:'attack', name:'Scroll of Might', icon:'🗡', color:'#ef4444',
     stat:'attack', bonus:0.20, duration:20*60, desc:'+20% атака',
   },
   crit: {
-    id:'crit', name:'Свиток удачи', icon:'💥', color:'#f97316',
+    id:'crit', name:'Scroll of Focus', icon:'💥', color:'#f97316',
     stat:'critChance', bonus:15, duration:20*60, desc:'+15% крит',
   },
   speed: {
-    id:'speed', name:'Свиток ветра', icon:'⚡', color:'#fde047',
-    stat:'attackSpeed', bonus:0.50, duration:20*60, desc:'+50% скор. атаки',
+    id:'speed', name:'Scroll of Haste', icon:'⚡', color:'#fde047',
+    stat:'attackSpeed', bonus:0.30, duration:20*60, desc:'+30% скор. атаки',
   },
   range: {
-    id:'range', name:'Свиток охоты', icon:'📏', color:'#a3e635',
-    stat:'range', bonus:0.50, duration:20*60, desc:'+50% дальность',
+    id:'range', name:'Scroll of Hawk Eye', icon:'📏', color:'#a3e635',
+    stat:'range', bonus:0.40, duration:20*60, desc:'+40% дальность',
+  },
+  defense: {
+    id:'defense', name:'Scroll of Shield', icon:'🛡', color:'#60a5fa',
+    stat:'defense', bonus:0.20, duration:20*60, desc:'+20% защита',
+  },
+  evasion: {
+    id:'evasion', name:'Scroll of Wind Walk', icon:'💨', color:'#80d4e0',
+    stat:'dodge', bonus:15, duration:20*60, desc:'+15% уворот',
+  },
+  critdmg: {
+    id:'critdmg', name:'Scroll of Death Whisper', icon:'💢', color:'#f87171',
+    stat:'critDamage', bonus:30, duration:20*60, desc:'+30% крит-урон',
+  },
+  vampiric: {
+    id:'vampiric', name:'Scroll of Vampiric Rage', icon:'🩸', color:'#e07878',
+    stat:'lifesteal', bonus:10, duration:20*60, desc:'+10% вампиризм',
+  },
+  accuracy: {
+    id:'accuracy', name:'Scroll of Guidance', icon:'🎯', color:'#67e8f9',
+    stat:'accuracy', bonus:15, duration:20*60, desc:'+15% точность',
+  },
+  mana: {
+    id:'mana', name:'Scroll of Blessed Soul', icon:'🔷', color:'#3b82f6',
+    stat:'manaRegen', bonus:0.30, duration:20*60, desc:'+30% реген маны',
   },
 };
 
-export const BUFF_ORDER = ['attack','crit','speed','range'];
-
+export const BUFF_ORDER = ['attack','crit','speed','range','defense','evasion','critdmg','vampiric','accuracy','mana'];
 // ───────────────────────────────────────────────────────────────────────
 //  17. УРОН МОБОВ (% от максимального HP героя)
 // ───────────────────────────────────────────────────────────────────────
@@ -781,7 +804,6 @@ export const MOBS = {
       { id:'scroll_weapon_ng', chance:0.05, min:1,  max:1   },
       { id:'scroll_armor_ng',  chance:0.05, min:1,  max:1   },
       { id:'equip_random',     chance:0.003,min:1,  max:1   },
-      { id:'book_hawk_eye',    chance:0.0005,min:1, max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:150, max:250 },
@@ -859,7 +881,6 @@ export const MOBS = {
       { id:'scroll_weapon_d',  chance:0.03, min:1,  max:1   },
       { id:'equip_random',     chance:0.004,min:1,  max:1   },
       { id:'book_ice_bolt',    chance:0.0008,min:1, max:1   },
-      { id:'book_focus',       chance:0.0008,min:1, max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:200, max:340 },
@@ -884,7 +905,6 @@ export const MOBS = {
       { id:'scroll_weapon_ng', chance:0.06, min:1,  max:1   },
       { id:'scroll_weapon_d',  chance:0.03, min:1,  max:1   },
       { id:'equip_random',     chance:0.004,min:1,  max:1   },
-      { id:'book_haste',       chance:0.0008,min:1, max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:220, max:380 },
@@ -893,7 +913,6 @@ export const MOBS = {
       { id:'scroll_weapon_d',  chance:0.10, min:1,  max:3   },
       { id:'blessed_scroll',   chance:0.07, min:1,  max:1   },
       { id:'arena_pass',       chance:0.07, min:1,  max:1   },
-      { id:'book_haste',       chance:0.008,min:1,  max:1   },
     ],
   },
 
@@ -1018,8 +1037,6 @@ export const MOBS = {
       { id:'scroll_weapon_d',  chance:0.10, min:1,  max:1   },
       { id:'scroll_armor_d',   chance:0.10, min:1,  max:1   },
       { id:'equip_d',          chance:0.004,min:1,  max:1   },
-      { id:'book_iron_skin',   chance:0.0018,min:1, max:1   },
-      { id:'book_reflect',     chance:0.0018,min:1, max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:1000, max:1800 },
@@ -1031,7 +1048,6 @@ export const MOBS = {
       { id:'blessed_scroll',   chance:0.15, min:1,   max:2    },
       { id:'arena_pass',       chance:0.15, min:1,   max:1    },
       { id:'equip_d',          chance:0.20, min:1,   max:1    },
-      { id:'book_iron_skin',   chance:0.020,min:1,   max:1    },
     ],
   },
 
@@ -1102,7 +1118,6 @@ export const MOBS = {
       { id:'scroll_weapon_d',  chance:0.06, min:1,   max:1   },
       { id:'scroll_armor_d',   chance:0.06, min:1,   max:1   },
       { id:'equip_d',          chance:0.005,min:1,   max:1   },
-      { id:'book_reflect',     chance:0.0012,min:1,  max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:1600, max:2700 },
@@ -1130,7 +1145,6 @@ export const MOBS = {
       { id:'scroll_weapon_c',  chance:0.03, min:1,   max:1   },
       { id:'equip_d',          chance:0.005,min:1,   max:1   },
       { id:'equip_c',          chance:0.0005,min:1,  max:1   },
-      { id:'book_vampiric',    chance:0.0012,min:1,  max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:1900, max:3200 },
@@ -1139,7 +1153,6 @@ export const MOBS = {
       { id:'scroll_weapon_c',  chance:0.10, min:1,   max:3    },
       { id:'blessed_scroll',   chance:0.13, min:1,   max:1    },
       { id:'arena_pass',       chance:0.13, min:1,   max:1    },
-      { id:'book_vampiric',    chance:0.015,min:1,   max:1    },
     ],
   },
 
@@ -1430,7 +1443,6 @@ export const MOBS = {
       { id:'scroll_armor_b',   chance:0.08, min:1,   max:1   },
       { id:'equip_c',          chance:0.012,min:1,   max:1   },
       { id:'equip_b',          chance:0.002,min:1,   max:1   },
-      { id:'book_last_stand',  chance:0.0015,min:1,  max:1   },
     ],
     championDrops: [
       { id:'gold',             chance:1.00, min:8500, max:14000 },
@@ -2031,7 +2043,7 @@ export const BUFF_DROP_CHANCE = {
 export const MAX_SKILL_LEVEL = 100;
 
 // Множители от уровня скилла (формула: 1 + K × (уровень-1)).
-export const SKILL_LEVEL_EFFECT   = 0.02;   // +2%/ур   → урон ×2.98 на 100
+export const SKILL_LEVEL_EFFECT   = 0.03;   // +2%/ур   → урон ×2.98 на 100
 export const SKILL_LEVEL_DURATION = 0.045;  // +4.5%/ур → длительность ×5.46
 export const SKILL_LEVEL_COST     = 0.001;  // +0.1%/ур → мана +10%
 export const SKILL_LEVEL_CAST     = 0.006;  // −0.6%/ур → каст ×0.41
@@ -2058,40 +2070,33 @@ export const SKILL_MILESTONES = [
 export const SKILL_DESC = {
   // Общие
   heal:         'Восстанавливает 25% HP. На 100 уровне снимает 1 дебафф.',
-  cleanse:      'Мгновенно снимает все дебаффы (стан, слоу, немота, яд).',
-  dodge:        '+60% уворота на 4 сек. Спасает от физ. атак.',
-  haste:        '+50% скорости атаки на 6 сек.',
-  iron_skin:    '+80 защиты на 8 сек.',
-  reflect:      'Отражает 30% полученного урона на 5 сек.',
-  vampiric:     '+15% вампиризма на 8 сек (лечение от удара).',
-  berserk:      '+60% атаки на 6 сек. Срабатывает только при HP < 50%.',
-  focus:        '+25% шанса крита на 5 сек.',
-  last_stand:   '+40% уворота на 4 сек. Только при HP < 30%.',
+  cleanse:      'Снимает все дебаффы: стан, замедление, немота, яд.',
+  dodge:        '+60% уворота на 4 сек.',
+  berserk:      '+60% атаки на 6 сек при HP < 50%.',
 
   // Лучник
-  multishot:    'Выпускает 3 стрелы подряд, каждая наносит 45% урона атаки.',
-  power_shot:   'Мощный выстрел на 180% урона атаки. Медленный, но бьёт сильно.',
-  double_shot:  'Быстрые 2 стрелы по 60% урона. Малое КД, спам-скилл.',
-  precise_shot: 'Точный выстрел 120% урона с +40% к шансу крита.',
-  lethal_shot:  'Смертельный выстрел 150% урона. +80% при HP цели < 30%.',
-  stun_shot:    'Оглушает цель на 2.5 сек с шансом 70%.',
-  slow_arrow:   'Замедляет скорость атаки цели на 50% в течение 4 сек.',
-  poison_arrow: 'Ядовитая стрела: 35% урона/сек в течение 6 сек.',
-  arrow_rain:   'AoE: 5 стрел по 70% урона по площади радиуса 2 клетки.',
-  hawk_eye:     '+40% дальности атаки на 8 сек.',
-  panther:      'Призывает пантеру: 25% ATK лучника, ближний бой, 15 сек.',
+  multishot:    'Double Shot: 3 стрелы подряд по 45% урона.',
+  power_shot:   'Power Shot: мощный выстрел на 180% урона.',
+  double_shot:  'Double Shot (быстрый): 2 стрелы по 60% урона.',
+  precise_shot: 'Snipe: точный выстрел с +40% к криту.',
+  lethal_shot:  'Deadly Shot: +80% урона по цели с HP < 30%.',
+  stun_shot:    'Stun Shot: оглушение на 2.5 сек, шанс 70%.',
+  slow_arrow:   'Hamstring Shot: -50% скорости атаки цели на 4 сек.',
+  poison_arrow: 'Poison Shot: яд 35% урона/сек в течение 6 сек.',
+  arrow_rain:   'Rain of Arrows: 5 стрел по площади + DoT-поле.',
+  panther:      'Summon Shadow: призыв тени на 15 сек.',
 
   // Маг
   fireball:        'Огненный шар 160% урона + AoE 1.5 клетки.',
-  ice_bolt:        'Ледяная стрела 110% урона + замедляет цель на 30% на 3 сек.',
-  lightning:       'Молния 170% урона. Мгновенная, без AoE.',
-  chain_lightning: 'Цепь на 3 цели: 120% урона первой, 70% второй, далее — по 70%.',
-  meteor:          'Метеор 250% урона + AoE радиуса 3.5. Долгий каст.',
-  frost_nova:      'AoE-замедление: −60% скорости атаки всех врагов в радиусе 3 на 5 сек.',
-  silence:         'Немота на 3 сек: цель не может использовать скиллы.',
-  sleep:           'Сон 3.5 сек с шансом 75%. Цель не двигается, но получает урон.',
-  arcane_shield:   'Магический щит: поглощает 40% от макс. HP в виде урона. 8 сек.',
-  shadow:          'Призывает тень: 15% ATK мага, дальний бой, 15 сек.',
+  ice_bolt:        'Ice Bolt: 110% урона + замедление 30% на 3 сек.',
+  lightning:       'Lightning Strike: 170% урона, мгновенный.',
+  chain_lightning: 'Chain Lightning: цепь на 3 цели с затуханием 70%.',
+  meteor:          'Meteor: 250% урона + AoE радиуса 3.5.',
+  frost_nova:      'Frost Wall: -60% скорости атаки врагов в радиусе 3.',
+  silence:         'Silence: немота на 3 сек.',
+  sleep:           'Sleep: сон на 3.5 сек, шанс 75%.',
+  arcane_shield:   'Mana Shield: щит 40% от макс. HP на 5 минут.',
+  shadow:          'Summon Cursed Man: призыв тени на 15 сек.',
 };
 
 // ───────────────────────────────────────────────────────────────────────
@@ -2120,224 +2125,223 @@ export const SKILL_DESC = {
 // ───────────────────────────────────────────────────────────────────────
 export const SKILLS = {
 
-  // ═══ ОБЩИЕ (10) — оба класса ═══════════════════════════════════════
+  // ═══ ОБЩИЕ (10) ═══════════════════════════════════════════════════
   heal: {
-    id: 'heal', name: 'Хил', icon: '❤️',
+    id: 'heal', name: 'Heal', icon: '❤️',
     class: 'common', role: 'heal',
     manaCost: 40, cooldown: 12, castTime: 1.0,
     effect: { type: 'heal', value: 0.25 },
     tags: ['support'],
   },
   cleanse: {
-    id: 'cleanse', name: 'Очищение', icon: '✨',
+    id: 'cleanse', name: 'Purify', icon: '✨',
     class: 'common', role: 'cleanse',
     manaCost: 30, cooldown: 15, castTime: 0.5,
     effect: { type: 'cleanse' },
     tags: ['support'],
   },
   dodge: {
-    id: 'dodge', name: 'Уворот', icon: '💨',
+    id: 'dodge', name: 'Evasion', icon: '💨',
     class: 'common', role: 'buff_def',
     manaCost: 20, cooldown: 12, castTime: 0,
     effect: { type: 'buff', stat: 'dodge', value: 60, duration: 4 },
     tags: ['support'],
   },
   haste: {
-    id: 'haste', name: 'Ускорение', icon: '⚡',
-    class: 'common', role: 'buff_off',
+    id: 'haste', name: 'Haste', icon: '⚡',
+    class: 'boss', role: 'buff_off',
     manaCost: 30, cooldown: 20, castTime: 0,
-    effect: { type: 'buff', stat: 'attackSpeed', value: 50, duration: 6 },
+    effect: { type: 'buff', stat: 'attackSpeed', value: 30, duration: 1200 },
     tags: ['support'],
   },
   iron_skin: {
-    id: 'iron_skin', name: 'Каменная кожа', icon: '🛡',
-    class: 'common', role: 'buff_def',
+    id: 'iron_skin', name: 'Shield', icon: '🛡',
+    class: 'boss', role: 'buff_def',
     manaCost: 40, cooldown: 25, castTime: 1.0,
-    effect: { type: 'buff', stat: 'defense', value: 80, duration: 8 },
+    effect: { type: 'buff', stat: 'defense', value: 20, duration: 1200 },
     tags: ['support'],
   },
   reflect: {
-    id: 'reflect', name: 'Отражение', icon: '🪞',
-    class: 'common', role: 'buff_def',
+    id: 'reflect', name: 'Reflect Damage', icon: '🪞',
+    class: 'boss', role: 'buff_def',
     manaCost: 50, cooldown: 30, castTime: 1.0,
-    effect: { type: 'buff', stat: 'reflect', value: 30, duration: 5 },
+    effect: { type: 'buff', stat: 'reflect', value: 30, duration: 300 },
     tags: ['support'],
   },
   vampiric: {
-    id: 'vampiric', name: 'Вампиризм', icon: '🩸',
-    class: 'common', role: 'buff_off',
+    id: 'vampiric', name: 'Vampiric Rage', icon: '🩸',
+    class: 'boss', role: 'buff_off',
     manaCost: 40, cooldown: 25, castTime: 0.5,
-    effect: { type: 'buff', stat: 'lifesteal', value: 15, duration: 8 },
+    effect: { type: 'buff', stat: 'lifesteal', value: 15, duration: 1200 },
     tags: ['support'],
   },
   berserk: {
-    id: 'berserk', name: 'Ярость', icon: '😡',
+    id: 'berserk', name: 'Berserker Spirit', icon: '😡',
     class: 'common', role: 'emergency',
     manaCost: 0, cooldown: 40, castTime: 0,
     effect: { type: 'buff', stat: 'attack', value: 60, duration: 6, requireHpBelow: 0.5 },
     tags: ['support'],
   },
   focus: {
-    id: 'focus', name: 'Сосредоточение', icon: '🧘',
-    class: 'common', role: 'emergency',
+    id: 'focus', name: 'Focus', icon: '🧘',
+    class: 'boss', role: 'emergency',
     manaCost: 0, cooldown: 30, castTime: 0,
-    effect: { type: 'buff', stat: 'critChance', value: 25, duration: 5 },
+    effect: { type: 'buff', stat: 'critChance', value: 30, duration: 1200 },
     tags: ['support'],
   },
   last_stand: {
-    id: 'last_stand', name: 'Последний рубеж', icon: '💀',
-    class: 'common', role: 'emergency',
+    id: 'last_stand', name: 'Ultimate Defense', icon: '💀',
+    class: 'boss', role: 'emergency',
     manaCost: 0, cooldown: 60, castTime: 0,
-    effect: { type: 'buff', stat: 'dodge', value: 40, duration: 4, requireHpBelow: 0.3 },
+    effect: { type: 'buff', stat: 'defense', value: 200, duration: 8, requireHpBelow: 0.3 },
     tags: ['support'],
   },
 
-  // ═══ ЛУЧНИК (11) ═══════════════════════════════════════════════════
+  // ═══ ЛУЧНИК (11 → 9 после слияния) ═══════════════════════════════
   multishot: {
-    id: 'multishot', name: 'Мультивыстрел', icon: '🏹',
+    id: 'multishot', name: 'Double Shot', icon: '🏹',
     class: 'archer', role: 'dd_burst',
     manaCost: 25, cooldown: 12, castTime: 0.8,
-    effect: { type: 'multishot', value: 1.3, count: 3, interval: 0.5 },
+    effect: { type: 'multishot', value: 1.3, count: 2, interval: 0.5 },
     tags: ['damage'],
   },
   power_shot: {
-    id: 'power_shot', name: 'Мощный выстрел', icon: '💥',
+    id: 'power_shot', name: 'Power Shot', icon: '💥',
     class: 'archer', role: 'dd_burst',
     manaCost: 35, cooldown: 10, castTime: 1.2,
     effect: { type: 'damage', value: 4.2 },
     tags: ['damage'],
   },
   double_shot: {
-    id: 'double_shot', name: 'Двойной выстрел', icon: '⚔️',
+    id: 'double_shot', name: 'Double Shot', icon: '⚔️',
     class: 'archer', role: 'dd_sustained',
     manaCost: 15, cooldown: 4, castTime: 0,
     effect: { type: 'multishot', value: 0.9, count: 2, interval: 0.15 },
     tags: ['damage'],
   },
   precise_shot: {
-    id: 'precise_shot', name: 'Точный выстрел', icon: '🎯',
+    id: 'precise_shot', name: 'Snipe', icon: '🎯',
     class: 'archer', role: 'dd_crit',
     manaCost: 20, cooldown: 6, castTime: 0.3,
     effect: { type: 'damage', value: 2.4, critBonus: 40 },
     tags: ['damage'],
   },
   lethal_shot: {
-    id: 'lethal_shot', name: 'Смертельный выстрел', icon: '☠️',
+    id: 'lethal_shot', name: 'Deadly Shot', icon: '☠️',
     class: 'archer', role: 'dd_execute',
     manaCost: 50, cooldown: 20, castTime: 1.0,
     effect: { type: 'damage', value: 3.2, executeBonus: 0.8 },
     tags: ['damage'],
   },
   poison_arrow: {
-    id: 'poison_arrow', name: 'Ядовитая стрела', icon: '🧪',
+    id: 'poison_arrow', name: 'Poison Shot', icon: '🧪',
     class: 'archer', role: 'dd_sustained',
     manaCost: 30, cooldown: 12, castTime: 0.6,
     effect: { type: 'dot', value: 0.55, duration: 6, tickInterval: 1.0 },
     tags: ['damage', 'dot'],
   },
   arrow_rain: {
-    id: 'arrow_rain', name: 'Дождь стрел', icon: '🌧',
+    id: 'arrow_rain', name: 'Rain of Arrows', icon: '🌧',
     class: 'archer', role: 'dd_aoe',
     manaCost: 70, cooldown: 30, castTime: 1.5,
-    // dotDuration/dotValue — lingering DoT в радиусе aoe.
     effect: { type: 'multishot', value: 1.5, count: 5, interval: 0.3, aoe: 2.0, dotDuration: 3, dotValue: 0.4 },
     tags: ['damage', 'aoe', 'dot'],
   },
   stun_shot: {
-    id: 'stun_shot', name: 'Оглушающий выстрел', icon: '💫',
+    id: 'stun_shot', name: 'Stun Shot', icon: '💫',
     class: 'archer', role: 'cc_stun',
     manaCost: 60, cooldown: 25, castTime: 1.5,
     effect: { type: 'debuff', stat: 'stun', duration: 2.5, chance: 0.7 },
     tags: ['control'],
   },
   slow_arrow: {
-    id: 'slow_arrow', name: 'Замедляющая стрела', icon: '🐢',
+    id: 'slow_arrow', name: 'Hamstring Shot', icon: '🐢',
     class: 'archer', role: 'cc_slow',
     manaCost: 25, cooldown: 12, castTime: 1.0,
     effect: { type: 'debuff', stat: 'attackSpeed', value: -50, duration: 4 },
     tags: ['control'],
   },
   hawk_eye: {
-    id: 'hawk_eye', name: 'Соколиный глаз', icon: '🦅',
-    class: 'archer', role: 'buff_off',
+    id: 'hawk_eye', name: 'Hawk Eye', icon: '🦅',
+    class: 'boss', role: 'buff_off',
     manaCost: 30, cooldown: 25, castTime: 0,
-    effect: { type: 'buff', stat: 'range', value: 40, duration: 8 },
+    effect: { type: 'buff', stat: 'range', value: 40, duration: 1200 },
     tags: ['support'],
   },
   panther: {
-    id: 'panther', name: 'Пантера', icon: '🐆',
+    id: 'panther', name: 'Summon Shadow', icon: '🐆',
     class: 'archer', role: 'summon',
     manaCost: 80, cooldown: 40, castTime: 2.0,
     effect: { type: 'summon', petType: 'panther', damagePercent: 25, duration: 15, shadowPerLevels: 10 },
     tags: ['summon'],
   },
 
-  // ═══ МАГ (10) ══════════════════════════════════════════════════════
+  // ═══ МАГ (10) ═════════════════════════════════════════════════════
   fireball: {
-    id: 'fireball', name: 'Огненный шар', icon: '🔥',
+    id: 'fireball', name: 'Fireball', icon: '🔥',
     class: 'mage', role: 'dd_burst',
     manaCost: 35, cooldown: 8, castTime: 1.0,
     effect: { type: 'damage', value: 2.6, aoe: 1.5, slowProjectile: true },
     tags: ['damage', 'aoe'],
   },
   ice_bolt: {
-    id: 'ice_bolt', name: 'Ледяная стрела', icon: '❄️',
+    id: 'ice_bolt', name: 'Ice Bolt', icon: '❄️',
     class: 'mage', role: 'dd_burst',
     manaCost: 25, cooldown: 6, castTime: 0.8,
     effect: { type: 'damage', value: 2.0, debuff: { stat: 'attackSpeed', value: -30, duration: 3 } },
     tags: ['damage', 'control'],
   },
   lightning: {
-    id: 'lightning', name: 'Молния', icon: '⚡',
+    id: 'lightning', name: 'Lightning Strike', icon: '⚡',
     class: 'mage', role: 'dd_burst',
     manaCost: 40, cooldown: 8, castTime: 0.9,
     effect: { type: 'damage', value: 3.0 },
     tags: ['damage'],
   },
   chain_lightning: {
-    id: 'chain_lightning', name: 'Цепная молния', icon: '🌩',
+    id: 'chain_lightning', name: 'Chain Lightning', icon: '🌩',
     class: 'mage', role: 'dd_multi',
     manaCost: 60, cooldown: 15, castTime: 1.0,
     effect: { type: 'damage', value: 2.4, chain: 3, chainDecay: 0.7 },
     tags: ['damage', 'aoe'],
   },
   meteor: {
-    id: 'meteor', name: 'Метеор', icon: '☄️',
+    id: 'meteor', name: 'Meteor', icon: '☄️',
     class: 'mage', role: 'dd_aoe',
     manaCost: 90, cooldown: 40, castTime: 1.8,
     effect: { type: 'damage', value: 5.0, aoe: 3.5, slowProjectile: true },
     tags: ['damage', 'aoe'],
   },
   frost_nova: {
-    id: 'frost_nova', name: 'Ледяная новая', icon: '🌨',
+    id: 'frost_nova', name: 'Frost Wall', icon: '🌨',
     class: 'mage', role: 'aoe_slow',
     manaCost: 55, cooldown: 20, castTime: 1.0,
     effect: { type: 'debuff', stat: 'attackSpeed', value: -60, duration: 5, aoe: 3.0 },
     tags: ['control', 'aoe'],
   },
   silence: {
-    id: 'silence', name: 'Немота', icon: '🤐',
+    id: 'silence', name: 'Silence', icon: '🤐',
     class: 'mage', role: 'cc_silence',
     manaCost: 45, cooldown: 18, castTime: 1.0,
     effect: { type: 'debuff', stat: 'silence', duration: 3.0 },
     tags: ['control'],
   },
   sleep: {
-    id: 'sleep', name: 'Сон', icon: '😴',
+    id: 'sleep', name: 'Sleep', icon: '😴',
     class: 'mage', role: 'cc_stun',
     manaCost: 70, cooldown: 30, castTime: 2.0,
     effect: { type: 'debuff', stat: 'stun', duration: 3.5, chance: 0.75 },
     tags: ['control'],
   },
   arcane_shield: {
-    id: 'arcane_shield', name: 'Магический щит', icon: '🔮',
+    id: 'arcane_shield', name: 'Mana Shield', icon: '🔮',
     class: 'mage', role: 'shield',
     manaCost: 50, cooldown: 25, castTime: 1.0,
-    effect: { type: 'shield', value: 0.4, duration: 8 },
+    effect: { type: 'shield', value: 0.4, duration: 300 },
     tags: ['support'],
   },
   shadow: {
-    id: 'shadow', name: 'Тень', icon: '👤',
+    id: 'shadow', name: 'Summon Cursed Man', icon: '👤',
     class: 'mage', role: 'summon',
     manaCost: 80, cooldown: 40, castTime: 2.5,
     effect: { type: 'summon', petType: 'shadow', damagePercent: 15, duration: 15, shadowPerLevels: 10 },
@@ -2379,19 +2383,18 @@ export const STAT_RU = {
 
 // Порядок скиллов в UI (инвентарь, попапы, сортировка).
 export const SKILL_ORDER = [
-  // Общие
-  'heal', 'cleanse', 'dodge', 'haste', 'iron_skin', 'reflect', 'vampiric', 'berserk', 'focus', 'last_stand',
+  // Общие (игроку)
+  'heal', 'cleanse', 'dodge', 'berserk', 'arcane_shield',
   // Лучник
-  'multishot', 'power_shot', 'double_shot', 'precise_shot', 'lethal_shot', 'stun_shot', 'slow_arrow', 'poison_arrow', 'arrow_rain', 'hawk_eye', 'panther',
+  'multishot', 'power_shot', 'double_shot', 'precise_shot', 'lethal_shot', 'stun_shot', 'slow_arrow', 'poison_arrow', 'arrow_rain', 'panther',
   // Маг
-  'fireball', 'ice_bolt', 'lightning', 'chain_lightning', 'meteor', 'frost_nova', 'silence', 'sleep', 'arcane_shield', 'shadow',
+  'fireball', 'ice_bolt', 'lightning', 'chain_lightning', 'meteor', 'frost_nova', 'silence', 'sleep', 'shadow',
 ];
-
 // Скиллы по классам (используется в UI классов).
 export const SKILLS_BY_CLASS = {
-  archer: ['multishot', 'power_shot', 'double_shot', 'precise_shot', 'lethal_shot', 'stun_shot', 'slow_arrow', 'poison_arrow', 'arrow_rain', 'hawk_eye', 'panther'],
-  mage:   ['fireball', 'ice_bolt', 'lightning', 'chain_lightning', 'meteor', 'frost_nova', 'silence', 'sleep', 'arcane_shield', 'shadow'],
-  common: ['heal', 'cleanse', 'dodge', 'haste', 'iron_skin', 'reflect', 'vampiric', 'berserk', 'focus', 'last_stand'],
+  archer: ['multishot', 'power_shot', 'double_shot', 'precise_shot', 'lethal_shot', 'stun_shot', 'slow_arrow', 'poison_arrow', 'arrow_rain', 'panther'],
+  mage:   ['fireball', 'ice_bolt', 'lightning', 'chain_lightning', 'meteor', 'frost_nova', 'silence', 'sleep', 'shadow'],
+  common: ['heal', 'cleanse', 'dodge', 'berserk', 'arcane_shield'],
 };
 
 // Стартовые скиллы при создании персонажа.
@@ -2474,8 +2477,18 @@ export const LEVEL_SCALING = {
 // Используется в hero.js (XP) и loot.js (дроп).
 export function levelMultiplier(playerLevel, mobLevel) {
   const diff = (playerLevel || 1) - (mobLevel || 1);
-  const raw = 1 - diff * LEVEL_SCALING.perLevelDiff;
-  return Math.max(LEVEL_SCALING.min, Math.min(LEVEL_SCALING.max, raw));
+  // Моб на уровне — 100% XP
+  // Моб на 5+ уровней ниже — 50%
+  // Моб на 15+ ниже — 5%
+  // Моб на 5+ выше — 130% (бонус за риск)
+  if (diff <= -5) return 1.30;
+  if (diff <= -2) return 1.15;
+  if (diff <= 2)  return 1.00;
+  if (diff <= 5)  return 0.75;
+  if (diff <= 8)  return 0.50;
+  if (diff <= 11) return 0.25;
+  if (diff <= 15) return 0.05;
+  return 0.01;
 }
 
 

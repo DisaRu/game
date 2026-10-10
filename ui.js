@@ -2959,11 +2959,12 @@ export function updateArenaHud() {
   renderArenaSkillIcons('as-me-skills', 'amh-me-skills', hero);
   // Скиллы — враг
   renderArenaSkillIcons('as-opp-skills', 'amh-opp-skills', enemy);
-
+renderArenaBuffs('as-me-buffs', hero);
+renderArenaBuffs('as-opp-buffs', enemy);
   // Баффы — ты (только десктоп)
-  renderArenaBuffs('as-me-buffs', hero);
+renderArenaBuffs('hud-me-buffs', hero);
   // Баффы — враг
-  renderArenaBuffs('as-opp-buffs', enemy);
+renderArenaBuffs('hud-tgt-buffs', enemy);
 }
 
 function setFillWidth(id, pct) {

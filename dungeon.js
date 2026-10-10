@@ -49,8 +49,43 @@ export function createDungeon(zone, cityId) {
     cleared: false,
   };
 
-  const bx = 12, by = 18;
-  dungeon.boss = createBoss(cityGrade, bx, by, zone.mult);
+  // ── Ищем лаир с боссом в зоне ──
+  let bossId = null;
+  if (zone.lairs && zone.lairs.length > 0) {
+    for (const lair of zone.lairs) {
+      if (lair.bosses && lair.bosses.length > 0) {
+        bossId = lair.bosses[0].id;
+        break;
+      }
+    }
+  }
+
+  // Fallback по грейду города, если в лаирах боссов нет
+  if (!bossId) {
+    const FALLBACK_BOSSES = {
+      ng: 'gremlin_king',
+      d:  'pirate_captain',
+      c:  'fire_mage',
+      b:  'skeleton_lord_boss',
+      a:  'dragon',
+      s:  'ice_golem',
+    };
+    bossId = FALLBACK_BOSSES[cityGrade] || 'gremlin_king';
+  }
+
+const bx = 25, by = 25;   // ближе к центру
+  // Пробуем создать босса — если не получилось, fallback на gremlin_king
+  dungeon.boss = createBoss(bossId, bx, by, zone.mult);
+  if (!dungeon.boss) {
+    console.warn('[dungeon] createBoss("' + bossId + '") вернул null, fallback на gremlin_king');
+    dungeon.boss = createBoss('gremlin_king', bx, by, zone.mult);
+  }
+
+  // Если и gremlin_king не создался — что-то совсем плохо
+  if (!dungeon.boss) {
+    console.error('[dungeon] не удалось создать ни одного босса!');
+    return dungeon;
+  }
 
   // Начальная охрана — 5 мобов
   const groupId = createGroupId();
@@ -63,7 +98,6 @@ export function createDungeon(zone, cityId) {
 
   return dungeon;
 }
-
 // Создать одного моба-охрану
 export function spawnGuard(zone, x, y, groupId) {
   // Собираем список мобов зоны из всех лаиров

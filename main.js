@@ -22,17 +22,32 @@ import { updateBattle } from './battle.js';// === ПРОГРЕВ SUPABASE ===
 
 import { supabase } from './supabase.js';
 // --- ISO helpers для кликов ---
-const ISO_TW = 56, ISO_TH = 28;
+// ВАЖНО: ISO_TW / ISO_TH должны совпадать с TW / TH в render.js!
+const ISO_TW = 38;
+const ISO_TH = 22;
+
 function screenToWorld(clientX, clientY) {
   const cx = state.hero?.x ?? 0;
   const cy = state.hero?.y ?? 0;
-  const fp = { sx: (cx - cy) * (ISO_TW / 2), sy: (cx + cy) * (ISO_TH / 2) };
-  const camX = fp.sx - canvas.width / 2;
-  const camY = fp.sy - canvas.height / 2;
+
+  // Позиция героя в изо-пикселях (как в render.js: project())
+  const fpX = (cx - cy) * (ISO_TW / 2);
+  const fpY = (cx + cy) * (ISO_TH / 2);
+
+  // Камера — как в render.js: от window.innerWidth/2, НЕ от canvas.width!
+  const camX = fpX - window.innerWidth / 2;
+  const camY = fpY - window.innerHeight / 2;
+
+  // Координаты клика в мировом пространстве
+  // clientX/Y — в CSS-пикселях, camX/Y — тоже в CSS-пикселях (потому что
+  // window.innerWidth = CSS-пиксели). Рассинхрона нет.
   const dx = clientX + camX;
   const dy = clientY + camY;
+
+  // Обратное изо-преобразование
   const wx = (dx / (ISO_TW / 2) + dy / (ISO_TH / 2)) / 2;
   const wy = (dy / (ISO_TH / 2) - dx / (ISO_TW / 2)) / 2;
+
   return { x: wx, y: wy };
 }
 async function warmupSupabase() {
@@ -133,6 +148,7 @@ window.addEventListener('resize', resize);
 resize();
 
 window.addEventListener('keydown', (e) => {
+  
   if (e.code === 'KeyW' || e.code === 'ArrowUp') input.up = true;
   if (e.code === 'KeyS' || e.code === 'ArrowDown') input.down = true;
   if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.left = true;
@@ -143,6 +159,10 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyS' || e.code === 'ArrowDown') input.down = false;
   if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.left = false;
   if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
+  if (e.code === 'KeyE' && state.portal?.active && !state.dungeon && state.inBattle) {
+    enterDungeon();
+    console.log('[debug] Вход через E');
+  }
 });
 
 const joyEl = document.getElementById('joystick');
@@ -198,12 +218,22 @@ canvas.addEventListener('touchcancel', handleJoyEnd, { passive: true });
 canvas.addEventListener('click', (e) => {
   if (!state.inBattle || !state.hero) return;
   if (state.arenaMode) return;
+
   if (state.portal && state.portal.active && !state.dungeon) {
-    const px = (e.clientX) / layout.cellPx + camera.x;
-    const py = (e.clientY) / layout.cellPx + camera.y;
-    const d = Math.hypot(state.portal.x - px, state.portal.y - py);
-    if (d < 1.5) {
+    // Клик в изо-проекции → мировые координаты
+    const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+    const d = Math.hypot(state.portal.x - wx, state.portal.y - wy);
+
+    // Отладка: покажет, куда ты кликнул и где портал
+    console.log('[portal click]', {
+      click: { x: wx.toFixed(2), y: wy.toFixed(2) },
+      portal: { x: state.portal.x.toFixed(2), y: state.portal.y.toFixed(2) },
+      dist: d.toFixed(2),
+    });
+
+    if (d < 2.5) {
       enterDungeon();
+      return;
     }
   }
 });
@@ -535,8 +565,12 @@ function updateHUD() {
     tgtPlate.classList.add('hidden');
   }
   // ── Баффы под плашками ─────────────────────────
-  _renderPlateBuffs('as-me-buffs', h);
-  _renderPlateBuffs('as-opp-buffs', state.target);
+// Под плашками в фарм-зоне
+_renderPlateBuffs('as-me-buffs', h);       // арена
+_renderPlateBuffs('as-opp-buffs', state.target);  // арена
+_renderPlateBuffs('hud-me-buffs', h);      // фарм
+_renderPlateBuffs('hud-tgt-buffs', state.target); // фарм
+
   // ── Золото / уровень / XP ─────────────────────
   const gEl = document.getElementById('gold');
   if (gEl) gEl.textContent = state.gold;
@@ -1081,18 +1115,17 @@ function flushOfflineCombatLog(hero, elapsedSec) {
 
 // ===== СКИЛЛЫ: ПРИМЕНЕНИЕ ЭФФЕКТОВ =====
 function findNearestMob(hero, maxRange) {
-  const candidates = [];
-  if (state.arenaMode) {
-    if (hero.team === 'enemy') {
-      if (state.hero && !state.hero.dead) candidates.push(state.hero);
-    } else {
-      if (state.arenaEnemy && !state.arenaEnemy.dead) candidates.push(state.arenaEnemy);
-    }
-  } else {
-    for (const m of state.mobs) if (!m.dead) candidates.push(m);
+  // Если ищущий — враг (босс/моб), цель — герой
+  if (hero && hero.team === 'enemy') {
+    if (!state.hero || state.hero.dead) return null;
+    const d = Math.hypot(state.hero.x - hero.x, state.hero.y - hero.y);
+    if (d <= maxRange) return state.hero;
+    return null;
   }
+  // Иначе — ищем среди мобов (обычный игрок)
   let best = null, bestD = Infinity;
-  for (const m of candidates) {
+  for (const m of state.mobs) {
+    if (!m || m.dead) continue;
     const d = Math.hypot(m.x - hero.x, m.y - hero.y);
     if (d <= maxRange && d < bestD) { best = m; bestD = d; }
   }
@@ -1102,7 +1135,13 @@ function findNearestMob(hero, maxRange) {
 function applySkillEffect(hero, result) {
   const fx = result.effect;
   if (!fx) return;
-  const base = CONFIG.hero[hero.classType];
+  // Для боссов classType = undefined — используем дефолт
+const base = CONFIG.hero[hero.classType] || CONFIG.hero.mage || {
+  projectileSpeed: 12,
+  projectileColor: '#f97316',
+  aoe: 0,
+  range: 6,
+};
   const now = Date.now();
 
   switch (fx.type) {
@@ -1950,17 +1989,23 @@ addXp(hero, _xpGain);
   // ── Определяем текущий таргет ─────────────────
   // На арене таргет = arenaEnemy (ставится в updateArena).
   // В фарме = ближайший агрессивный моб в радиусе 12 клеток.
-  if (!state.arenaMode) {
-    let best = null, bestDist = Infinity;
-    for (const m of state.mobs) {
-      if (m.dead) continue;
-      if (!m.aggro) continue;
-      const d = Math.hypot(m.x - hero.x, m.y - hero.y);
-      if (d < 12 && d < bestDist) { best = m; bestDist = d; }
-    }
-    state.target = best;
+if (!state.arenaMode) {
+  let best = null, bestDist = Infinity;
+  for (const m of state.mobs) {
+    if (m.dead) continue;
+    // Показываем плашку и для агрессивных, и для тех что мы только что ударили
+    if (!m.aggro && !m._recentlyHit) continue;
+    m._recentlyHit = Date.now();
+    const d = Math.hypot(m.x - hero.x, m.y - hero.y);
+    if (d < 12 && d < bestDist) { best = m; bestDist = d; }
+    
   }
-
+  state.target = best;
+}
+const _now = Date.now();
+for (const m of state.mobs) {
+  if (m._recentlyHit && _now - m._recentlyHit > 3000) m._recentlyHit = 0;
+}
   updateCamera(hero);
   updateHUD();
 
@@ -2594,48 +2639,84 @@ function _renderPlateBuffs(containerId, unit) {
   const now = Date.now();
   const items = [];
 
-  // Скилловые баффы (dodge)
-  if (unit.skillBuffs?.dodge && unit.skillBuffs.dodge.until > now) {
-    items.push({ icon: '💨', time: Math.ceil((unit.skillBuffs.dodge.until - now) / 1000), color: '#80d4e0' });
-  }
-
-  // Свитки (attack/crit/speed/range)
-  const sc = (typeof BUFF_SCROLLS !== 'undefined') ? BUFF_SCROLLS : {};
-  for (const type of ['attack','crit','speed','range']) {
-    const until = unit.activeBuffs?.[type];
-    if (until && until > now) {
-      const def = sc[type];
-      if (def) items.push({ icon: def.icon, time: Math.ceil((until - now) / 1000), color: def.color });
+  // ── Скилловые баффы (короткие) ──
+  const SB_ICONS = {
+    dodge:  { icon: '💨', color: '#80d4e0' },
+    attack: { icon: '😡', color: '#ef4444' },
+    defense:{ icon: '🛡', color: '#60a5fa' },
+    attackSpeed: { icon: '⚡', color: '#fde047' },
+    critChance:  { icon: '💥', color: '#f97316' },
+    reflect:     { icon: '🪞', color: '#c084fc' },
+    range:       { icon: '📏', color: '#a3e635' },
+    lifesteal:   { icon: '🩸', color: '#e07878' },
+  };
+  if (unit.skillBuffs) {
+    for (const key in unit.skillBuffs) {
+      const b = unit.skillBuffs[key];
+      if (!b || !(b.until > now)) continue;
+      const m = SB_ICONS[key];
+      if (!m) continue;
+      items.push({
+        icon: m.icon,
+        color: m.color,
+        time: Math.ceil((b.until - now) / 1000),
+      });
     }
   }
 
-  // Дебаффы
+  // ── Бафф-свитки ──
+  const sc = (typeof BUFF_SCROLLS !== 'undefined') ? BUFF_SCROLLS : {};
+  for (const type in sc) {
+    const until = unit.activeBuffs?.[type];
+    if (until && until > now) {
+      const def = sc[type];
+      items.push({
+        icon: def.icon,
+        color: def.color,
+        time: Math.ceil((until - now) / 1000),
+      });
+    }
+  }
+
+  // ── Щит (Mana Shield) ──
+  if (unit.shield && unit.shield.until > now && unit.shield.remaining > 0) {
+    items.push({
+      icon: '🔮',
+      color: '#60a5fa',
+      time: Math.ceil((unit.shield.until - now) / 1000),
+    });
+  }
+
+  // ── Дебаффы ──
   if (unit.stunUntil && unit.stunUntil > now) {
-    items.push({ icon: '💫', time: Math.ceil((unit.stunUntil - now) / 1000), color: '#fbbf24', debuff: true });
+    items.push({ icon: '💫', color: '#fbbf24', debuff: true, time: Math.ceil((unit.stunUntil - now) / 1000) });
   }
   if (unit.slowUntil && unit.slowUntil > now) {
-    items.push({ icon: '❄️', time: Math.ceil((unit.slowUntil - now) / 1000), color: '#67e8f9', debuff: true });
+    items.push({ icon: '❄️', color: '#67e8f9', debuff: true, time: Math.ceil((unit.slowUntil - now) / 1000) });
   }
   if (unit.silenceUntil && unit.silenceUntil > now) {
-    items.push({ icon: '🤐', time: Math.ceil((unit.silenceUntil - now) / 1000), color: '#3b82f6', debuff: true });
+    items.push({ icon: '🤐', color: '#3b82f6', debuff: true, time: Math.ceil((unit.silenceUntil - now) / 1000) });
   }
   if (unit.attackSpeedDebuff && unit.attackSpeedDebuff.until > now) {
-    items.push({ icon: '🐢', time: Math.ceil((unit.attackSpeedDebuff.until - now) / 1000), color: '#67e8f9', debuff: true });
+    items.push({ icon: '🐢', color: '#67e8f9', debuff: true, time: Math.ceil((unit.attackSpeedDebuff.until - now) / 1000) });
   }
-  // DoT (яд)
   if (unit.dots && unit.dots.length > 0) {
-    items.push({ icon: '🩸', time: '', color: '#22c55e', debuff: true });
+    items.push({ icon: '🩸', color: '#22c55e', debuff: true, time: '' });
   }
 
   for (const it of items) {
     const el = document.createElement('div');
     el.className = 'as-buff' + (it.time && it.time <= 2 ? ' expiring' : '');
     if (it.color) el.style.borderColor = it.color;
-    el.innerHTML = `${it.icon}${it.time ? `<span class="as-buff-time">${it.time}</span>` : ''}`;
+
+    // Таймер показываем ТОЛЬКО если <= 60 секунд
+    const showTime = it.time && it.time > 0 && it.time <= 60;
+    el.innerHTML = `${it.icon}` + (showTime ? `<span class="as-buff-time">${it.time}</span>` : '');
     box.appendChild(el);
   }
 }
-  
+  // updateCamera(hero);
+  updateHUD();
 window.openOfflinePanel = openOfflinePanel;
 window.enterArena = enterArena;
 requestAnimationFrame(loop);

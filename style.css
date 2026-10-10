@@ -4237,3 +4237,11 @@ input#qty-input { -moz-appearance: textfield; }
 .wiki-source-qty { color: #94a3b8; min-width: 50px; text-align: right; font-size: 9px; }
 .wiki-source-chance { color: #fbbf24; font-weight: bold; min-width: 55px; text-align: right; }
 .wiki-empty { text-align: center; color: #64748b; font-size: 11px; font-style: italic; padding: 30px; }
+.plate-buffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+  min-height: 0;
+}
+.plate-buffs:empty { display: none; }

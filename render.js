@@ -2,7 +2,25 @@
 // Вся логика и координаты (x, y) — те же. Меняется только projection.
 
 import { SKILLS } from './config.js';
-
+// Цвет ника моба по разнице уровней (как в L2)
+// Разница = mobLvl - playerLvl
+//  +11 и выше → тёмно-красный (очень опасно)
+//  +6…+10    → красный
+//  +3…+5     → светло-красный
+//  −2…+2     → зелёный (норма, полный дроп)
+//  −3…−5     → жёлто-зелёный (маленький штраф)
+//  −6…−10    → светло-синий (сильный штраф)
+//  −11 и ниже → тёмно-синий (почти 0 дропа)
+export function mobNameColor(playerLvl, mobLvl) {
+  const diff = (mobLvl || 1) - (playerLvl || 1);
+  if (diff >= 11)  return '#dc2626';  // тёмно-красный
+  if (diff >= 6)   return '#ef4444';  // красный
+  if (diff >= 3)   return '#f87171';  // светло-красный
+  if (diff >= -2)  return '#4ade80';  // зелёный (норма)
+  if (diff >= -5)  return '#a3e635';  // жёлто-зелёный
+  if (diff >= -10) return '#67e8f9';  // светло-синий
+  return '#3b82f6';                   // тёмно-синий
+}
 // ============================================================
 // ISO-ПРОЕКЦИЯ
 // ============================================================
@@ -192,8 +210,8 @@ export function render(ctx, canvas, state, layout, camera) {
   entities.sort((a, b) => a.sortY - b.sortY);
 
   // ===== 5. Рисуем в порядке дальние → ближние =====
-  for (const e of entities) {
-    if (e.kind === 'mob')          drawMob(ctx, e.ref);
+ for (const e of entities) {
+  if (e.kind === 'mob')          drawMob(ctx, e.ref, state.hero?.level || 1);
     else if (e.kind === 'shadow')  drawShadow(ctx, e.ref);
     else if (e.kind === 'hero')    drawHero(ctx, e.ref, false);
     else if (e.kind === 'arenaEnemy') drawHero(ctx, e.ref, true);
@@ -314,16 +332,16 @@ function drawPortal(ctx, portal) {
   const p = project(portal.x, portal.y);
   const pulse = 1 + Math.sin(portal.pulse) * 0.15;
 
-  // Кольцо-основание на земле (эллипс)
+  // ── Зона клика (невидимая, но пусть будет пунктир) ──
   ctx.save();
-  ctx.globalAlpha = 0.5 + Math.sin(portal.pulse * 2) * 0.3;
+  ctx.globalAlpha = 0.25;
   ctx.strokeStyle = '#a855f7';
-  ctx.lineWidth = 3;
-  ctx.shadowColor = '#a855f7';
-  ctx.shadowBlur = 20;
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.ellipse(p.sx, p.sy, TW * 0.6 * pulse, TH * 0.6 * pulse, 0, 0, Math.PI * 2);
+  ctx.ellipse(p.sx, p.sy, 2.0 * (TW / 2), 2.0 * (TH / 2), 0, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.setLineDash([]);
   ctx.restore();
 
   // Иконка
@@ -340,13 +358,13 @@ function drawPortal(ctx, portal) {
 // ============================================================
 // МОБ
 // ============================================================
-function drawMob(ctx, m) {
+function drawMob(ctx, m, heroLvl = 1) {
   const p = project(m.x, m.y);
   const size = m.size || 0.7;
-  const scale = m.spawnAnim > 0 ? (1 - m.spawnAnim / 0.3) : 1;
+  const scale = m.spawnAnim > 0 ? Math.max(0.01, 1 - m.spawnAnim / 0.3) : 1;
   const shake = m.hitFlash > 0 ? (Math.random() - 0.5) * 4 : 0;
 
-  // Защита: если у моба битые координаты — лечим, не удаляем
+  // Защита: если у моба битые координаты — лечим
   if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) {
     if (Number.isFinite(m.lairCx) && Number.isFinite(m.lairCy)) {
       m.x = m.lairCx;
@@ -380,22 +398,25 @@ function drawMob(ctx, m) {
   drawEllipseShadow(ctx, p.sx, p.sy, shadowRx, shadowRy);
   ctx.restore();
 
-  // Аура агра — только у босса (тонкая тёмная тень под ним)
+  // Аура агра — только у босса
   if (m.boss) {
     ctx.save();
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.85;
     ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#dc2626';
+    ctx.shadowBlur = 15;
     ctx.beginPath();
-    ctx.ellipse(p.sx, p.sy, shadowRx * 1.3, shadowRy * 1.3, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.sx, p.sy, shadowRx * 2.0, shadowRy * 2.0, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
 
   // Спрайт
   const sprite = getSprite(m.emoji);
-   const drawH = TH *0.5 * size * scale;
-
+  // Боссы крупнее обычных мобов
+  const sizeBoost = m.boss ? 2.0 : 1.0;
+  const drawH = Math.max(TH * 0.5 * size * scale * sizeBoost, m.boss ? 70 : 0);
   const drawW = drawH;
 
   ctx.save();
@@ -404,24 +425,29 @@ function drawMob(ctx, m) {
     ctx.shadowBlur = 12;
   } else {
     ctx.shadowColor = 'rgba(0,0,0,.6)';
-    ctx.shadowBlur = 0;   // отключаем размытие у обычных мобов — большая экономия
+    ctx.shadowBlur = 0;
   }
+
+  // ВАЖНО: явно ставим fillStyle — иначе эмодзи может рисоваться неправильным цветом
+  ctx.fillStyle = '#ffffff';
+
   if (sprite) {
     ctx.translate(p.sx + shake, p.sy - drawH * 0.5);
     ctx.scale(m.facing < 0 ? -1 : 1, 1);
     ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
   } else {
+    const icon = m.emoji || (m.boss ? '👑' : '❓');
     ctx.font = `${Math.floor(drawH * 0.9)}px serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(m.emoji, p.sx + shake, p.sy - 2);
+    ctx.fillText(icon, p.sx + shake, p.sy - 2);
   }
   ctx.restore();
 
-  // ── ИМЯ над спрайтом (без HP-бара) ──
+  // ── ИМЯ над спрайтом ──
   const nameColor = m.boss ? '#fbbf24'
                   : m.champion ? '#fbbf24'
-                  : '#cbd5e1';
+                  : mobNameColor(heroLvl, m.level || 1);
   const nameY = p.sy - drawH - 4;
 
   drawNameplate(ctx, p.sx, nameY, m.name, nameColor);
@@ -429,76 +455,12 @@ function drawMob(ctx, m) {
   // ── Дебаффы над именем ──
   drawDebuffIcons(ctx, p.sx, nameY - 12, m);
 
-  // ── Яд (DoT) — зелёные пузыри на теле ──
+  // ── Яд (DoT) ──
   if (m.dots && m.dots.length > 0) {
     drawPoisonPuff(ctx, p.sx, p.sy - drawH * 0.45, size);
   }
 }
-// ============================================================
-// ТЕНЬ ГЕРОЯ (summon_shadow)
-// ============================================================
-function drawShadow(ctx, s) {
-  const p = project(s.x, s.y);
-  const levit = Math.sin((s._levitate || 0) * 2) * 6;
-  const rx = TW * 0.28;
-  const ry = TH * 0.28;
 
-  // Тень на земле
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  drawEllipseShadow(ctx, p.sx, p.sy, rx, ry);
-  ctx.restore();
-
-  // Сияние
-  ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.translate(p.sx, p.sy - ry + levit);
-  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx * 1.6);
-  grad.addColorStop(0, 'rgba(168, 85, 247, 0.6)');
-  grad.addColorStop(1, 'rgba(168, 85, 247, 0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(0, 0, rx * 1.6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // Тело
-  ctx.save();
-  ctx.globalAlpha = 0.7;
-  ctx.font = `${Math.floor(TH * 1.2)}px serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(s.emoji || '👤', p.sx, p.sy - ry + levit);
-  ctx.restore();
-
-  // Имя
-  ctx.save();
-  ctx.globalAlpha = 0.75;
-  ctx.font = 'bold 10px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 3;
-  ctx.strokeText('👤 ' + s.name, p.sx, p.sy - ry * 2 - 12 + levit);
-  ctx.fillStyle = '#c084fc';
-  ctx.fillText('👤 ' + s.name, p.sx, p.sy - ry * 2 - 12 + levit);
-  ctx.restore();
-
-  // Мини-HP-бар
-  const sMaxHp = s.maxHp || s.hp || 1;
-  const pct = Math.max(0, Math.min(1, (s.hp || 0) / sMaxHp));
-  const bw = TW * 0.7;
-  const bh = 3;
-  const bx = p.sx - bw / 2;
-  const by = p.sy - ry * 2 - 8 + levit;
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  ctx.fillStyle = 'rgba(0,0,0,.8)';
-  ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
-  ctx.fillStyle = pct > 0.3 ? '#a855f7' : '#7f1d1d';
-  ctx.fillRect(bx, by, bw * pct, bh);
-  ctx.restore();
-}
 
 // ============================================================
 // ГЕРОЙ

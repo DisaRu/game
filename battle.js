@@ -17,7 +17,7 @@ import { updateMob, aggroGroup } from './mobs.js';
 import { castBossAoe, checkAoeHit, GUARD_CALL, BOSS_AOE } from './bosses.js';
 import { aiControl } from './ai.js';
 import { sfxHit, sfxHeroHit, sfxDeath } from './audio.js';
-
+import { SKILLS } from './config.js';
 export function updateBattle(dt, world) {
   const {
     heroes, enemies, projectiles, effects, aoeList,
@@ -59,33 +59,65 @@ export function updateBattle(dt, world) {
     if (m.dead) continue;
 
      // Враг — тоже герой (арена). Автоатака через updateHero.
-    if (m.isAI) {
-      if (m.stunUntil && m.stunUntil > Date.now()) {
-        m.hitAnim = 0.15;
-        continue;
-      }
-      if (m.silenceUntil && m.silenceUntil > Date.now() && m.casting) {
-        m.casting = null;
-      }
-      // Фикс залипания каста
-      if (m.casting && m.casting.elapsed > m.casting.duration + 2) {
-        m.casting = null;
-      }
-      // Фикс залипания кулдауна
-      if (m.cooldown < -5) m.cooldown = 0;
-      if (m.skillCooldowns) {
-        for (const k in m.skillCooldowns) {
-          if (m.skillCooldowns[k] < -5) m.skillCooldowns[k] = 0;
-        }
-      }
-      // Враги тоже видят теней героя как цели
-      const _extraTargets = (world.shadows || []).filter(s => s.ownerTeam !== 'enemy');
-      const _targets = [...heroes, ..._extraTargets];
-      updateHero(m, dt, _targets, projectiles,
-        { left: false, right: false, up: false, down: false },
-        bounds, effects);
-      continue;
+  if (m.isAI) {
+  if (m.stunUntil && m.stunUntil > Date.now()) {
+    m.hitAnim = 0.15;
+    continue;
+  }
+  if (m.silenceUntil && m.silenceUntil > Date.now() && m.casting) {
+    m.casting = null;
+  }
+  if (m.casting && m.casting.elapsed > m.casting.duration + 2) {
+    m.casting = null;
+  }
+  if (m.cooldown < -5) m.cooldown = 0;
+  if (m.skillCooldowns) {
+    for (const k in m.skillCooldowns) {
+      if (m.skillCooldowns[k] < -5) m.skillCooldowns[k] = 0;
     }
+  }
+
+  // ── БОСС: движение + автоатака уже в aiControl ──
+  // Не вызываем updateHero для боссов — там нет base stats
+if (m.boss) {
+  // Тик каста
+  if (m.casting) {
+    m.casting.elapsed += dt;
+    if (m.casting.elapsed >= m.casting.duration) {
+      const c = m.casting;
+      m.casting = null;
+      if (m.mana >= c.cost) {
+        m.mana -= c.cost;
+        m._pendingCastResult = {
+          skill: SKILLS[c.skillId],
+          skillId: c.skillId,
+          level: c.level,
+          cost: c.cost,
+          cooldown: c.cooldown,
+          effect: c.effect,
+        };
+      }
+    }
+  }
+  // ← ДОБАВЬ ТИК КУЛДАУНОВ
+  if (m.skillCooldowns) {
+    for (const k in m.skillCooldowns) {
+      if (m.skillCooldowns[k] > 0) {
+        m.skillCooldowns[k] = Math.max(0, m.skillCooldowns[k] - dt);
+      }
+    }
+  }
+  continue;
+}
+
+  // ── Арена-бот (isAI, не босс): через updateHero ──
+  const _extraTargets = (world.shadows || []).filter(s => s.ownerTeam !== 'enemy');
+  const _targets = [...heroes, ..._extraTargets];
+  updateHero(m, dt, _targets, projectiles,
+    { left: false, right: false, up: false, down: false },
+    bounds, effects);
+  continue;
+}
     // Silence прерывает каст у врагов
     if (m.silenceUntil && m.silenceUntil > Date.now() && m.casting) {
       m.casting = null;

@@ -43,6 +43,84 @@ export function aiControl(hero, dt, enemies, applyEffect) {
   if (!hero.skills) return;
   if (!tryUseSkill) return;
 
+  // ═══════════════════════════════════════════════════════
+  // ── БОСС: движение к цели + автоатака ──
+  // ═══════════════════════════════════════════════════════
+  if (hero.boss && enemies && enemies.length > 0) {
+    // Ищем живую цель
+    let target = null, bestD = Infinity;
+    for (const e of enemies) {
+      if (!e || e.dead) continue;
+      const d = Math.hypot(e.x - hero.x, e.y - hero.y);
+      if (d < bestD) { target = e; bestD = d; }
+    }
+
+    if (target) {
+      const tx = target.x - hero.x;
+      const ty = target.y - hero.y;
+      const dist = Math.hypot(tx, ty) || 1;
+
+      // Двигаемся к цели, если не в радиусе атаки
+      const attackRange = hero.attackRange || 1.5;
+      if (dist > attackRange) {
+        const speed = (hero.speed || 0.6) * dt;
+        hero.x += tx / dist * speed;
+        hero.y += ty / dist * speed;
+        hero.hitAnim = 0;
+      }
+
+      // ── Автоатака в радиусе ──
+      hero.attackCd = (hero.attackCd || 0) - dt;
+      if (dist <= attackRange + 0.3 && hero.attackCd <= 0) {
+        hero.attackCd = hero.baseAttackCd || 1.5;
+        hero.attackAnim = 0.15;
+
+const mobDmg = Math.max(1, Math.floor(hero.attack || 10));
+        // Промах или попадание
+        const dodgePct = target.dodge || 0;
+        const isDodge = Math.random() * 100 < dodgePct;
+
+        const st = (typeof window !== 'undefined' && window.state) ? window.state : null;
+
+        if (isDodge) {
+          // Промах
+          if (st) {
+            st.effects.push({
+              x: target.x, y: target.y - 0.5,
+              life: 0.7, maxLife: 0.7,
+              color: '#a5f3fc', text: 'DODGE',
+            });
+          }
+        } else {
+          // Урон с учётом defense
+          const def = target.defense || 0;
+          const finalDmg = Math.max(1, mobDmg - Math.floor(def * 0.5));
+          target.hp -= finalDmg;
+          target.hitFlash = 0.15;
+          target.hitAnim = 0.15;
+
+          // Всплывашка «-N»
+          if (st) {
+            st.effects.push({
+              x: target.x, y: target.y - 0.5,
+              life: 0.7, maxLife: 0.7,
+              color: '#ef4444', text: '-' + finalDmg,
+            });
+          }
+
+          // Смерть цели
+          if (target.hp <= 0) {
+            target.hp = 0;
+            target.dead = true;
+          }
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // ── Дальше — обычная AI логика (скиллы, слоты) ──
+  // ═══════════════════════════════════════════════════════
   const nearest = findNearestEnemy(hero, enemies);
 
   const slots = hero.skillSlots || [];
@@ -113,7 +191,7 @@ export function aiControl(hero, dt, enemies, applyEffect) {
     }
   }
 
-  // ── 4) Дебаффы на цель — все, которых ещё нет ───────
+  // ── 4) Дебаффы на цель ───────
   if (nearest && manaPct > MANA_MIN) {
     for (const id of debuffSkills) {
       const eff = SKILLS[id]?.effect || {};
@@ -126,7 +204,7 @@ export function aiControl(hero, dt, enemies, applyEffect) {
     }
   }
 
-  // ── 5) Урон — все damage-скиллы ─────────────────────
+  // ── 5) Урон — damage-скиллы ─────────────────────
   if (nearest && manaPct >= MANA_FOR_DAMAGE) {
     if (nearest.hp / nearest.maxHp > HP_KILL_THRESHOLD) {
       for (const id of damageSkills) {
@@ -135,7 +213,7 @@ export function aiControl(hero, dt, enemies, applyEffect) {
     }
   }
 
-  // ── 6) Баффы (dodge/attackSpeed/defense/attack/crit/lifesteal/range) ─
+  // ── 6) Баффы ─
   if (manaPct > MANA_MIN) {
     for (const id of buffSkills) {
       const eff = SKILLS[id]?.effect || {};
@@ -146,16 +224,14 @@ export function aiControl(hero, dt, enemies, applyEffect) {
       }
       if (active) continue;
 
-      // Defensive — только при HP < 60%
       const defensive = stat === 'dodge' || stat === 'defense' || stat === 'reflect';
       if (defensive && hero.hp / hero.maxHp >= 0.6) continue;
 
-      // Offensive (attack, attackSpeed, critChance, lifesteal, range) — кастуем сразу
       if (_tryAndApply(hero, id, applyEffect)) return;
     }
   }
 
-  // ── 7) Summon (тень/пантера) — если нет ─────────────
+  // ── 7) Summon ─
   if (manaPct > MANA_MIN && summonSkills.length > 0) {
     const shadows = (typeof window !== 'undefined' && window.state?.shadows) || [];
     const myShadow = shadows.some(s => s.ownerName === hero.name && s.expiresAt > now);
@@ -166,7 +242,7 @@ export function aiControl(hero, dt, enemies, applyEffect) {
     }
   }
 
-  // ── 8) Бафф-свитки — если нет активного и не КД ─────
+  // ── 8) Бафф-свитки ─────
   for (const type of buffScrolls) {
     const def = BUFF_SCROLLS[type];
     if (!def) continue;
@@ -184,7 +260,30 @@ export function aiControl(hero, dt, enemies, applyEffect) {
   }
 }
 
+function _canCast(hero, skillId) {
+  const meta = hero.skills?.[skillId];
+  if (!meta) return false;
+  const when = meta.when || 'always';
+  if (when === 'always') return true;
+
+  const hpPct = hero.hp / hero.maxHp;
+  if (when === 'hp_below_30') return hpPct < 0.30;
+  if (when === 'hp_below_40') return hpPct < 0.40;
+  if (when === 'hp_below_50') return hpPct < 0.50;
+  if (when === 'hp_below_60') return hpPct < 0.60;
+  if (when === 'hp_below_70') return hpPct < 0.70;
+  if (when === 'hp_below_80') return hpPct < 0.80;
+  if (when === 'hp_above_50') return hpPct > 0.50;
+  if (when === 'hp_above_60') return hpPct > 0.60;
+  if (when === 'hp_above_70') return hpPct > 0.70;
+  if (when === 'hp_above_80') return hpPct > 0.80;
+  return true;
+}
+
 function _tryAndApply(hero, skillId, applyEffect) {
+  // ─── Проверка when ───
+  if (!_canCast(hero, skillId)) return false;
+
   const r = tryUseSkill(hero, skillId);
   if (!r || !r.ok) return false;
   if (r.casting) return true;
